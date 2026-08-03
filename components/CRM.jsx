@@ -6,14 +6,14 @@ import {
   Plus, X, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Search, Settings, Users, Building2,
   HardHat, CalendarClock, Trash2, Pencil, Check, AlertTriangle,
   Tag, Star, Clock3, ListChecks, Repeat, ArrowLeft, ArrowDownAZ, ArrowUpAZ, GitBranch, Archive,
-  BarChart3, FileSpreadsheet, Download, Trello, GripVertical, LogOut,
+  BarChart3, FileSpreadsheet, Download, Trello, GripVertical, LogOut, Menu, Tags, FolderKanban, Briefcase, Layers,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.2.0";
+const APP_VERSION = "1.3.0";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -591,6 +591,7 @@ export default function CRM({ userId, onLogout }) {
   const [tab, setTab] = useState("agenda");
   const [detail, setDetail] = useState(null); // { type: 'persona'|'empresa'|'obra', id }
   const [search, setSearch] = useState("");
+  const [showMenu, setShowMenu] = useState(false);
   const [guardado, setGuardado] = useState("ok"); // 'ok' | 'guardando' | 'error'
   const primerRenderCore = useRef(true);
   const primerRenderAcciones = useRef(true);
@@ -647,10 +648,17 @@ export default function CRM({ userId, onLogout }) {
     { id: "agenda", label: "Seguimientos", icon: Trello },
     { id: "tareas", label: "Tareas", icon: ListChecks },
     { id: "calendario", label: "Calendario", icon: CalendarClock },
+    { id: "informes", label: "Informes", icon: BarChart3 },
+  ];
+
+  const MENU_ABM = [
     { id: "personas", label: "Personas", icon: Users },
     { id: "empresas", label: "Empresas", icon: Building2 },
     { id: "obras", label: "Obras", icon: HardHat },
-    { id: "informes", label: "Informes", icon: BarChart3 },
+    { id: "tiposAccion", label: "Tipos de acción", icon: Layers },
+    { id: "etiquetas", label: "Etiquetas", icon: Tags },
+    { id: "categorias", label: "Categorías", icon: FolderKanban },
+    { id: "cargos", label: "Cargos", icon: Briefcase },
   ];
 
   return (
@@ -682,27 +690,13 @@ export default function CRM({ userId, onLogout }) {
               <Search size={17} />
             </button>
             <button
-              onClick={() => { setTab("config"); setDetail(null); }}
-              aria-label="Configuración"
-              style={
-                tab === "config" && !detail
-                  ? { backgroundColor: core.tema.botonActivo, color: "#FFFFFF" }
-                  : { backgroundColor: core.tema.botonInactivo, color: "#2A2118" }
-              }
+              onClick={() => setShowMenu(true)}
+              aria-label="Menú"
+              style={{ backgroundColor: core.tema.botonInactivo, color: "#2A2118" }}
               className="flex items-center justify-center w-10 h-10 rounded-sm"
             >
-              <Settings size={17} />
+              <Menu size={17} />
             </button>
-            {onLogout && (
-              <button
-                onClick={onLogout}
-                aria-label="Cerrar sesión"
-                style={{ backgroundColor: core.tema.botonInactivo, color: "#2A2118" }}
-                className="flex items-center justify-center w-10 h-10 rounded-sm"
-              >
-                <LogOut size={17} />
-              </button>
-            )}
           </div>
         </header>
 
@@ -734,6 +728,10 @@ export default function CRM({ userId, onLogout }) {
               {tab === "personas" && <PersonasView core={core} setCore={setCore} onOpen={openDetail} />}
               {tab === "empresas" && <EmpresasView core={core} setCore={setCore} onOpen={openDetail} />}
               {tab === "obras" && <ObrasView core={core} setCore={setCore} onOpen={openDetail} />}
+              {tab === "tiposAccion" && <TiposAccionView core={core} setCore={setCore} />}
+              {tab === "etiquetas" && <EtiquetasView core={core} setCore={setCore} />}
+              {tab === "categorias" && <CategoriasView core={core} setCore={setCore} />}
+              {tab === "cargos" && <CargosView core={core} setCore={setCore} />}
               {tab === "informes" && <InformesView core={core} acciones={acciones} />}
               {tab === "buscar" && <BuscarView core={core} search={search} setSearch={setSearch} onOpen={openDetail} />}
               {tab === "config" && <ConfigView core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} />}
@@ -741,6 +739,48 @@ export default function CRM({ userId, onLogout }) {
           )}
         </main>
       </div>
+
+      {showMenu && (
+        <Modal title="Menú" onClose={() => setShowMenu(false)}>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wide text-[#A69C88] mb-2">ABM</p>
+            <div className="space-y-1 mb-4">
+              {MENU_ABM.map((item) => {
+                const Icon = item.icon;
+                const active = tab === item.id && !detail;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => { setTab(item.id); setDetail(null); setShowMenu(false); }}
+                    style={active ? { backgroundColor: core.tema.botonActivo, color: "#FFFFFF" } : { color: "#2A2118" }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-sm text-sm font-semibold"
+                  >
+                    <Icon size={16} className={active ? "" : "text-[#8A8272]"} /> {item.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[10px] font-bold uppercase tracking-wide text-[#A69C88] mb-2 pt-3 border-t border-[#E4DECF]">Sistema</p>
+            <div className="space-y-1">
+              <button
+                onClick={() => { setTab("config"); setDetail(null); setShowMenu(false); }}
+                style={tab === "config" && !detail ? { backgroundColor: core.tema.botonActivo, color: "#FFFFFF" } : { color: "#2A2118" }}
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-sm text-sm font-semibold"
+              >
+                <Settings size={16} className={tab === "config" && !detail ? "" : "text-[#8A8272]"} /> Configuración
+              </button>
+              {onLogout && (
+                <button
+                  onClick={() => { setShowMenu(false); onLogout(); }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-sm text-sm font-semibold text-[#B0452E]"
+                >
+                  <LogOut size={16} /> Cerrar sesión
+                </button>
+              )}
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -4320,9 +4360,151 @@ function InformeSinContacto({ core, acciones }) {
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
+function TiposAccionView({ core, setCore }) {
+  const [modal, setModal] = useState(null);
+  const saveTipo = (data) => {
+    setCore((prev) => {
+      const exists = prev.tiposAccion.some((t) => t.id === data.id);
+      return { ...prev, tiposAccion: exists ? prev.tiposAccion.map((t) => (t.id === data.id ? data : t)) : [...prev.tiposAccion, data] };
+    });
+    setModal(null);
+  };
+  const delTipo = (id) => setCore((prev) => ({ ...prev, tiposAccion: prev.tiposAccion.filter((t) => t.id !== id) }));
+
+  return (
+    <div>
+      <div className="flex justify-end mb-2"><button onClick={() => setModal({})} className="bg-[#E8871E] text-[#2A2118] rounded-sm px-3 py-1.5 font-bold text-sm flex items-center gap-1"><Plus size={14} /> Agregar</button></div>
+      <div className="space-y-1.5">
+        {core.tiposAccion.map((t) => (
+          <div key={t.id} className="bg-white border border-[#E4DECF] rounded-sm p-2.5 flex items-center justify-between text-sm">
+            <span className="font-semibold text-[#2A2118]">{t.nombre}</span>
+            <div className="flex gap-1">
+              <IconBtn label="Editar" onClick={() => setModal(t)}><Pencil size={14} /></IconBtn>
+              <IconBtn label="Eliminar" danger onClick={() => delTipo(t.id)}><Trash2 size={14} /></IconBtn>
+            </div>
+          </div>
+        ))}
+      </div>
+      {modal !== null && (
+        <Modal title={modal.id ? "Editar tipo de acción" : "Nuevo tipo de acción"} onClose={() => setModal(null)}>
+          <TipoAccionForm data={modal} onSave={saveTipo} />
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function EtiquetasView({ core, setCore }) {
+  const [modal, setModal] = useState(null);
+  const saveEtiqueta = (data) => {
+    setCore((prev) => {
+      const exists = prev.etiquetas.some((t) => t.id === data.id);
+      return { ...prev, etiquetas: exists ? prev.etiquetas.map((t) => (t.id === data.id ? data : t)) : [...prev.etiquetas, data] };
+    });
+    setModal(null);
+  };
+  const delEtiqueta = (id) => setCore((prev) => ({
+    ...prev,
+    etiquetas: prev.etiquetas.filter((t) => t.id !== id),
+    entidadEtiqueta: prev.entidadEtiqueta.filter((r) => r.etiquetaId !== id),
+  }));
+
+  return (
+    <div>
+      <div className="flex justify-end mb-2"><button onClick={() => setModal({})} className="bg-[#E8871E] text-[#2A2118] rounded-sm px-3 py-1.5 font-bold text-sm flex items-center gap-1"><Plus size={14} /> Agregar</button></div>
+      <div className="space-y-1.5">
+        {core.etiquetas.map((t) => (
+          <div key={t.id} className="bg-white border border-[#E4DECF] rounded-sm p-2.5 flex items-center justify-between text-sm">
+            <div>
+              <span className="font-semibold text-[#2A2118]">{t.etiqueta}</span>
+              <span className="text-[#8A8272]"> · {(core.categorias || []).find((c) => c.id === t.categoriaId)?.nombre || "sin categoría"} · aplica a {t.aplicaA}</span>
+            </div>
+            <div className="flex gap-1">
+              <IconBtn label="Editar" onClick={() => setModal(t)}><Pencil size={14} /></IconBtn>
+              <IconBtn label="Eliminar" danger onClick={() => delEtiqueta(t.id)}><Trash2 size={14} /></IconBtn>
+            </div>
+          </div>
+        ))}
+      </div>
+      {modal !== null && (
+        <Modal title={modal.id ? "Editar etiqueta" : "Nueva etiqueta"} onClose={() => setModal(null)}>
+          <EtiquetaForm data={modal} core={core} setCore={setCore} onSave={saveEtiqueta} />
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function CategoriasView({ core, setCore }) {
+  const [modal, setModal] = useState(null);
+  const saveCategoria = (data) => {
+    setCore((prev) => {
+      const exists = (prev.categorias || []).some((c) => c.id === data.id);
+      return { ...prev, categorias: exists ? prev.categorias.map((c) => (c.id === data.id ? data : c)) : [...(prev.categorias || []), data] };
+    });
+    setModal(null);
+  };
+  const delCategoria = (id) => setCore((prev) => ({ ...prev, categorias: (prev.categorias || []).filter((c) => c.id !== id) }));
+
+  return (
+    <div>
+      <div className="flex justify-end mb-2"><button onClick={() => setModal({})} className="bg-[#E8871E] text-[#2A2118] rounded-sm px-3 py-1.5 font-bold text-sm flex items-center gap-1"><Plus size={14} /> Agregar</button></div>
+      <div className="space-y-1.5">
+        {(core.categorias || []).map((c) => (
+          <div key={c.id} className="bg-white border border-[#E4DECF] rounded-sm p-2.5 flex items-center justify-between text-sm">
+            <span className="font-semibold text-[#2A2118]">{c.nombre}</span>
+            <div className="flex gap-1">
+              <IconBtn label="Editar" onClick={() => setModal(c)}><Pencil size={14} /></IconBtn>
+              <IconBtn label="Eliminar" danger onClick={() => delCategoria(c.id)}><Trash2 size={14} /></IconBtn>
+            </div>
+          </div>
+        ))}
+      </div>
+      {modal !== null && (
+        <Modal title={modal.id ? "Editar categoría" : "Nueva categoría"} onClose={() => setModal(null)}>
+          <CategoriaForm data={modal} onSave={saveCategoria} />
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function CargosView({ core, setCore }) {
+  const [modal, setModal] = useState(null);
+  const saveCargo = (data) => {
+    setCore((prev) => {
+      const exists = prev.cargos.some((c) => c.id === data.id);
+      return { ...prev, cargos: exists ? prev.cargos.map((c) => (c.id === data.id ? data : c)) : [...prev.cargos, data] };
+    });
+    setModal(null);
+  };
+  const delCargo = (id) => setCore((prev) => ({ ...prev, cargos: prev.cargos.filter((c) => c.id !== id) }));
+
+  return (
+    <div>
+      <div className="flex justify-end mb-2"><button onClick={() => setModal({})} className="bg-[#E8871E] text-[#2A2118] rounded-sm px-3 py-1.5 font-bold text-sm flex items-center gap-1"><Plus size={14} /> Agregar</button></div>
+      <div className="space-y-1.5">
+        {(core.cargos || []).map((c) => (
+          <div key={c.id} className="bg-white border border-[#E4DECF] rounded-sm p-2.5 flex items-center justify-between text-sm">
+            <span className="font-semibold text-[#2A2118]">{c.nombre}</span>
+            <div className="flex gap-1">
+              <IconBtn label="Editar" onClick={() => setModal(c)}><Pencil size={14} /></IconBtn>
+              <IconBtn label="Eliminar" danger onClick={() => delCargo(c.id)}><Trash2 size={14} /></IconBtn>
+            </div>
+          </div>
+        ))}
+      </div>
+      {modal !== null && (
+        <Modal title={modal.id ? "Editar cargo" : "Nuevo cargo"} onClose={() => setModal(null)}>
+          <CargoForm data={modal} onSave={saveCargo} />
+        </Modal>
+      )}
+    </div>
+  );
+}
+
 function ConfigView({ core, setCore, acciones, setAcciones }) {
   const [section, setSection] = useState("parametros");
-  const [modal, setModal] = useState(null);
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmVaciar, setConfirmVaciar] = useState(false);
 
@@ -4348,28 +4530,6 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
     setAcciones([]);
     setConfirmVaciar(false);
   };
-
-  const saveTipo = (data) => {
-    setCore((prev) => {
-      const exists = prev.tiposAccion.some((t) => t.id === data.id);
-      return { ...prev, tiposAccion: exists ? prev.tiposAccion.map((t) => (t.id === data.id ? data : t)) : [...prev.tiposAccion, data] };
-    });
-    setModal(null);
-  };
-  const delTipo = (id) => setCore((prev) => ({ ...prev, tiposAccion: prev.tiposAccion.filter((t) => t.id !== id) }));
-
-  const saveEtiqueta = (data) => {
-    setCore((prev) => {
-      const exists = prev.etiquetas.some((t) => t.id === data.id);
-      return { ...prev, etiquetas: exists ? prev.etiquetas.map((t) => (t.id === data.id ? data : t)) : [...prev.etiquetas, data] };
-    });
-    setModal(null);
-  };
-  const delEtiqueta = (id) => setCore((prev) => ({
-    ...prev,
-    etiquetas: prev.etiquetas.filter((t) => t.id !== id),
-    entidadEtiqueta: prev.entidadEtiqueta.filter((r) => r.etiquetaId !== id),
-  }));
 
   const setUmbral = (v) => setCore((prev) => ({ ...prev, parametros: { ...prev.parametros, umbralDiaLleno: Number(v) || 1 } }));
   const setDiasUrgente = (v) => setCore((prev) => ({ ...prev, parametros: { ...prev.parametros, diasUrgente: Math.max(0, Number(v) || 0) } }));
@@ -4397,31 +4557,9 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
   };
   const quitarFechaNoHabil = (iso) => setCore((prev) => ({ ...prev, parametros: { ...prev.parametros, fechasNoHabiles: (prev.parametros.fechasNoHabiles || []).filter((f) => f !== iso) } }));
 
-  const saveCargo = (data) => {
-    setCore((prev) => {
-      const exists = prev.cargos.some((c) => c.id === data.id);
-      return { ...prev, cargos: exists ? prev.cargos.map((c) => (c.id === data.id ? data : c)) : [...prev.cargos, data] };
-    });
-    setModal(null);
-  };
-  const delCargo = (id) => setCore((prev) => ({ ...prev, cargos: prev.cargos.filter((c) => c.id !== id) }));
-
-  const saveCategoria = (data) => {
-    setCore((prev) => {
-      const exists = (prev.categorias || []).some((c) => c.id === data.id);
-      return { ...prev, categorias: exists ? prev.categorias.map((c) => (c.id === data.id ? data : c)) : [...(prev.categorias || []), data] };
-    });
-    setModal(null);
-  };
-  const delCategoria = (id) => setCore((prev) => ({ ...prev, categorias: (prev.categorias || []).filter((c) => c.id !== id) }));
-
   const SECTIONS = [
     ["parametros", "Parámetros"],
     ["apariencia", "Apariencia"],
-    ["tipos", "Tipos de acción"],
-    ["etiquetas", "Etiquetas"],
-    ["categorias", "Categorías"],
-    ["cargos", "Cargos"],
   ];
 
   return (
@@ -4556,77 +4694,6 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
         </div>
       )}
 
-      {section === "tipos" && (
-        <div>
-          <div className="flex justify-end mb-2"><button onClick={() => setModal({ kind: "tipo", data: {} })} className="bg-[#E8871E] text-[#2A2118] rounded-sm px-3 py-1.5 font-bold text-sm flex items-center gap-1"><Plus size={14} /> Agregar</button></div>
-          <div className="space-y-1.5">
-            {core.tiposAccion.map((t) => (
-              <div key={t.id} className="bg-white border border-[#E4DECF] rounded-sm p-2.5 flex items-center justify-between text-sm">
-                <span className="font-semibold text-[#2A2118]">{t.nombre}</span>
-                <div className="flex gap-1">
-                  <IconBtn label="Editar" onClick={() => setModal({ kind: "tipo", data: t })}><Pencil size={14} /></IconBtn>
-                  <IconBtn label="Eliminar" danger onClick={() => delTipo(t.id)}><Trash2 size={14} /></IconBtn>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {section === "etiquetas" && (
-        <div>
-          <div className="flex justify-end mb-2"><button onClick={() => setModal({ kind: "etiqueta", data: {} })} className="bg-[#E8871E] text-[#2A2118] rounded-sm px-3 py-1.5 font-bold text-sm flex items-center gap-1"><Plus size={14} /> Agregar</button></div>
-          <div className="space-y-1.5">
-            {core.etiquetas.map((t) => (
-              <div key={t.id} className="bg-white border border-[#E4DECF] rounded-sm p-2.5 flex items-center justify-between text-sm">
-                <div>
-                  <span className="font-semibold text-[#2A2118]">{t.etiqueta}</span>
-                  <span className="text-[#8A8272]"> · {(core.categorias || []).find((c) => c.id === t.categoriaId)?.nombre || "sin categoría"} · aplica a {t.aplicaA}</span>
-                </div>
-                <div className="flex gap-1">
-                  <IconBtn label="Editar" onClick={() => setModal({ kind: "etiqueta", data: t })}><Pencil size={14} /></IconBtn>
-                  <IconBtn label="Eliminar" danger onClick={() => delEtiqueta(t.id)}><Trash2 size={14} /></IconBtn>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {section === "categorias" && (
-        <div>
-          <div className="flex justify-end mb-2"><button onClick={() => setModal({ kind: "categoria", data: {} })} className="bg-[#E8871E] text-[#2A2118] rounded-sm px-3 py-1.5 font-bold text-sm flex items-center gap-1"><Plus size={14} /> Agregar</button></div>
-          <div className="space-y-1.5">
-            {(core.categorias || []).map((c) => (
-              <div key={c.id} className="bg-white border border-[#E4DECF] rounded-sm p-2.5 flex items-center justify-between text-sm">
-                <span className="font-semibold text-[#2A2118]">{c.nombre}</span>
-                <div className="flex gap-1">
-                  <IconBtn label="Editar" onClick={() => setModal({ kind: "categoria", data: c })}><Pencil size={14} /></IconBtn>
-                  <IconBtn label="Eliminar" danger onClick={() => delCategoria(c.id)}><Trash2 size={14} /></IconBtn>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {section === "cargos" && (
-        <div>
-          <div className="flex justify-end mb-2"><button onClick={() => setModal({ kind: "cargo", data: {} })} className="bg-[#E8871E] text-[#2A2118] rounded-sm px-3 py-1.5 font-bold text-sm flex items-center gap-1"><Plus size={14} /> Agregar</button></div>
-          <div className="space-y-1.5">
-            {(core.cargos || []).map((c) => (
-              <div key={c.id} className="bg-white border border-[#E4DECF] rounded-sm p-2.5 flex items-center justify-between text-sm">
-                <span className="font-semibold text-[#2A2118]">{c.nombre}</span>
-                <div className="flex gap-1">
-                  <IconBtn label="Editar" onClick={() => setModal({ kind: "cargo", data: c })}><Pencil size={14} /></IconBtn>
-                  <IconBtn label="Eliminar" danger onClick={() => delCargo(c.id)}><Trash2 size={14} /></IconBtn>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       <div className="mt-6 pt-4 border-t border-[#E4DECF]">
         <button onClick={() => setConfirmVaciar(true)} className="text-xs font-bold uppercase tracking-wide text-[#B0452E] flex items-center gap-1.5">
           <AlertTriangle size={13} /> Vaciar todos los datos cargados
@@ -4663,28 +4730,6 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
         </Modal>
       )}
 
-      {modal?.kind === "cargo" && (
-        <Modal title={modal.data.id ? "Editar cargo" : "Nuevo cargo"} onClose={() => setModal(null)}>
-          <CargoForm data={modal.data} onSave={saveCargo} />
-        </Modal>
-      )}
-
-      {modal?.kind === "categoria" && (
-        <Modal title={modal.data.id ? "Editar categoría" : "Nueva categoría"} onClose={() => setModal(null)}>
-          <CategoriaForm data={modal.data} onSave={saveCategoria} />
-        </Modal>
-      )}
-
-      {modal?.kind === "tipo" && (
-        <Modal title={modal.data.id ? "Editar tipo de acción" : "Nuevo tipo de acción"} onClose={() => setModal(null)}>
-          <TipoAccionForm data={modal.data} onSave={saveTipo} />
-        </Modal>
-      )}
-      {modal?.kind === "etiqueta" && (
-        <Modal title={modal.data.id ? "Editar etiqueta" : "Nueva etiqueta"} onClose={() => setModal(null)}>
-          <EtiquetaForm data={modal.data} core={core} setCore={setCore} onSave={saveEtiqueta} />
-        </Modal>
-      )}
     </div>
   );
 }
