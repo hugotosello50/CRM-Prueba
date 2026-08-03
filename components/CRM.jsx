@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.1.0";
+const APP_VERSION = "1.1.1";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -380,13 +380,13 @@ const inputCls = "w-full bg-white border border-[#D8D2C4] rounded-sm px-3 py-2 t
 
 function Modal({ title, onClose, children }) {
   return (
-    <div style={{ backgroundColor: "#1C1914" }} className="absolute inset-0 flex items-start sm:items-center justify-center z-50 p-0 sm:p-4">
-      <div style={{ backgroundColor: "#F7F5F0" }} className="w-full sm:max-w-md sm:rounded-sm rounded-t-lg">
-        <div style={{ backgroundColor: "#F7F5F0" }} className="flex items-center justify-between px-4 py-3 border-b border-[#E4DECF] z-10">
+    <div style={{ backgroundColor: "#1C1914" }} className="fixed inset-0 flex items-start sm:items-center justify-center z-50 p-0 sm:p-4 overflow-y-auto">
+      <div style={{ backgroundColor: "#F7F5F0" }} className="w-full sm:max-w-md sm:rounded-sm rounded-t-lg flex flex-col max-h-full sm:max-h-[85vh] my-0 sm:my-auto">
+        <div style={{ backgroundColor: "#F7F5F0" }} className="flex items-center justify-between px-4 py-3 border-b border-[#E4DECF] z-10 shrink-0">
           <h3 className="font-extrabold text-[#2A2118]">{title}</h3>
           <button onClick={onClose} aria-label="Cerrar"><X size={20} className="text-[#8A8272]" /></button>
         </div>
-        <div className="p-4">{children}</div>
+        <div className="p-4 overflow-y-auto">{children}</div>
       </div>
     </div>
   );
