@@ -13,6 +13,8 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
+const APP_VERSION = "1.1.0";
+
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
 const seedCore = () => ({
@@ -4137,6 +4139,8 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
         </button>
         <p className="text-xs text-[#A69C88] mt-1">Borra todo lo que cargaste y vuelve a dejar los datos ficticios originales.</p>
       </div>
+
+      <p className="text-center text-[10px] font-mono text-[#C9C1AE] mt-6">Versión {APP_VERSION}</p>
 
       {confirmVaciar && (
         <Modal title="¿Vaciar todos los datos cargados?" onClose={() => setConfirmVaciar(false)}>
