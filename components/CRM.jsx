@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.1.1";
+const APP_VERSION = "1.1.58";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
