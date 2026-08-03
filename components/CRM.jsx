@@ -3821,11 +3821,29 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
   const [section, setSection] = useState("parametros");
   const [modal, setModal] = useState(null);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [confirmVaciar, setConfirmVaciar] = useState(false);
 
   const resetDemo = () => {
     setCore(seedCore());
     setAcciones(seedAcciones());
     setConfirmReset(false);
+  };
+
+  // Borra personas, empresas, obras, hilos (seguimientos y tareas) y acciones,
+  // sin tocar etiquetas, categorías, cargos, tipos de acción, parámetros ni apariencia.
+  const vaciarDatos = () => {
+    setCore((prev) => ({
+      ...prev,
+      personas: [],
+      empresas: [],
+      obras: [],
+      hilos: [],
+      personaEmpresa: [],
+      empresaObra: [],
+      entidadEtiqueta: [],
+    }));
+    setAcciones([]);
+    setConfirmVaciar(false);
   };
 
   const saveTipo = (data) => {
@@ -4107,11 +4125,28 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
       )}
 
       <div className="mt-6 pt-4 border-t border-[#E4DECF]">
+        <button onClick={() => setConfirmVaciar(true)} className="text-xs font-bold uppercase tracking-wide text-[#B0452E] flex items-center gap-1.5">
+          <AlertTriangle size={13} /> Vaciar todos los datos cargados
+        </button>
+        <p className="text-xs text-[#A69C88] mt-1">Borra personas, empresas, obras, seguimientos, tareas y acciones. No toca etiquetas, categorías, cargos, tipos de acción ni la apariencia.</p>
+      </div>
+
+      <div className="mt-4 pt-4 border-t border-[#E4DECF]">
         <button onClick={() => setConfirmReset(true)} className="text-xs font-bold uppercase tracking-wide text-[#B0452E] flex items-center gap-1.5">
           <AlertTriangle size={13} /> Reiniciar datos de demo
         </button>
         <p className="text-xs text-[#A69C88] mt-1">Borra todo lo que cargaste y vuelve a dejar los datos ficticios originales.</p>
       </div>
+
+      {confirmVaciar && (
+        <Modal title="¿Vaciar todos los datos cargados?" onClose={() => setConfirmVaciar(false)}>
+          <p className="text-sm text-[#2A2118] mb-4">Esto borra permanentemente todas las personas, empresas, obras, seguimientos, tareas y acciones. Las etiquetas, categorías, cargos, tipos de acción y la apariencia quedan como están. No se puede deshacer.</p>
+          <div className="flex gap-2">
+            <button onClick={() => setConfirmVaciar(false)} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
+            <button onClick={vaciarDatos} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, vaciar todo</button>
+          </div>
+        </Modal>
+      )}
 
       {confirmReset && (
         <Modal title="¿Reiniciar datos de demo?" onClose={() => setConfirmReset(false)}>
