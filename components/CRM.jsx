@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.4.1";
+const APP_VERSION = "1.4.2";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -672,7 +672,7 @@ export default function CRM({ userId, onLogout }) {
         <header className="mb-4 px-1 flex items-start justify-between gap-2">
           <div>
             <h1 className="text-xl font-extrabold text-[#2A2118] tracking-tight">Seguimiento comercial</h1>
-            <p className="text-[10px] font-bold uppercase tracking-wide text-[#A69C88] mt-0.5">
+            <p className={`text-[10px] font-bold uppercase tracking-wide mt-0.5 ${guardado === "error" ? "text-[#B0452E]" : "text-[#A69C88]"}`}>
               {guardado === "guardando" ? "Guardando..." : guardado === "error" ? "Error al guardar" : "Guardado"}
             </p>
           </div>
