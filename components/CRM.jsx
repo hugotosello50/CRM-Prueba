@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.3.0";
+const APP_VERSION = "1.4.0";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -806,6 +806,7 @@ function BackHeader({ title, onClose }) {
 // ---------------------------------------------------------------------------
 function AgendaView({ core, setCore, acciones, setAcciones, onOpen }) {
   const t = todayISO();
+  const [showNuevoHilo, setShowNuevoHilo] = useState(false);
 
   const reprogramar = (id, nuevaFecha) => {
     setAcciones((prev) => prev.map((a) => (a.id === id ? { ...a, fechaProgramada: nuevaFecha } : a)));
@@ -813,7 +814,71 @@ function AgendaView({ core, setCore, acciones, setAcciones, onOpen }) {
 
   return (
     <div>
+      <div className="flex justify-end mb-3">
+        <button onClick={() => setShowNuevoHilo(true)} className="bg-[#E8871E] text-[#2A2118] rounded-sm px-3.5 py-2 font-bold text-sm flex items-center gap-1.5">
+          <Plus size={16} /> Nuevo hilo
+        </button>
+      </div>
       <KanbanView core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onOpen={onOpen} onReprogramar={reprogramar} t={t} soloTipo="cliente" />
+      {showNuevoHilo && (
+        <Modal title="Nuevo hilo" onClose={() => setShowNuevoHilo(false)}>
+          <NuevoHiloDesdeSeguimientoForm
+            core={core}
+            setCore={setCore}
+            onCreated={(hiloId) => { setShowNuevoHilo(false); onOpen("hilo", hiloId); }}
+            onCancelar={() => setShowNuevoHilo(false)}
+          />
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// Crea un hilo eligiendo libremente persona, empresa y/o obra (con al menos una de las tres),
+// sin exigir una acción — se completa después, desde la ficha del hilo.
+function NuevoHiloDesdeSeguimientoForm({ core, setCore, onCreated, onCancelar }) {
+  const [titulo, setTitulo] = useState("");
+  const [personaId, setPersonaId] = useState("");
+  const [empresaId, setEmpresaId] = useState("");
+  const [obraId, setObraId] = useState("");
+
+  const faltaVinculo = !personaId && !empresaId && !obraId;
+
+  const crear = () => {
+    if (!titulo.trim() || faltaVinculo) return;
+    const hoy = todayISO();
+    const participantes = personaId ? [{ id: uid("part"), personaId, desde: hoy, hasta: null, principal: true }] : [];
+    const nuevo = { id: uid("H"), participantes, empresaId: empresaId || "", obraId: obraId || "", titulo: titulo.trim(), estado: "Activo", fechaCreacion: hoy, tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" };
+    setCore((prev) => ({ ...prev, hilos: [nuevo, ...prev.hilos] }));
+    onCreated(nuevo.id);
+  };
+
+  return (
+    <div>
+      <Field label="Título del tema *"><input autoFocus className={inputCls} value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Ej: Presupuesto cables solares" /></Field>
+      <Field label="Persona">
+        <select className={inputCls} value={personaId} onChange={(e) => setPersonaId(e.target.value)}>
+          <option value="">— ninguna —</option>
+          {core.personas.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+        </select>
+      </Field>
+      <Field label="Empresa">
+        <select className={inputCls} value={empresaId} onChange={(e) => setEmpresaId(e.target.value)}>
+          <option value="">— ninguna —</option>
+          {core.empresas.map((e) => <option key={e.id} value={e.id}>{e.denominacion}</option>)}
+        </select>
+      </Field>
+      <Field label="Obra">
+        <select className={inputCls} value={obraId} onChange={(e) => setObraId(e.target.value)}>
+          <option value="">— ninguna —</option>
+          {core.obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+        </select>
+      </Field>
+      <p className="text-xs text-[#A69C88] mb-3">Elegí al menos una — persona, empresa u obra. La próxima acción se programa después, desde el hilo.</p>
+      <div className="flex gap-2">
+        <button onClick={onCancelar} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
+        <button onClick={crear} disabled={!titulo.trim() || faltaVinculo} className={`flex-1 rounded-sm py-2.5 font-bold text-sm ${!titulo.trim() || faltaVinculo ? "bg-[#E7E2D8] text-[#A69C88] cursor-not-allowed" : "bg-[#E8871E] text-[#2A2118]"}`}>Crear hilo</button>
+      </div>
     </div>
   );
 }
@@ -1562,6 +1627,19 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, onReprograma
     [gruposPorHilo, agruparPersona, core, orden]
   );
 
+  // Hilos activos que todavía no tienen ninguna acción pendiente programada — sin esto,
+  // quedan invisibles en Seguimientos aunque existan (solo se ven desde la ficha de origen).
+  // Las acciones no tienen columnaId hasta que se les asigna una, así que este bloque solo
+  // aplica en "Sin columna".
+  const hilosSinAccion = useMemo(() => {
+    if (columnaActiva !== null) return [];
+    return core.hilos.filter((h) => {
+      if (h.estado !== "Activo") return false;
+      if (soloTipo && (h.tipo || "cliente") !== soloTipo) return false;
+      return !acciones.some((a) => a.hiloId === h.id && a.estado === "Pendiente");
+    });
+  }, [core.hilos, acciones, soloTipo, columnaActiva]);
+
   useEffect(() => { hoverRef.current = hoverColumnaId; }, [hoverColumnaId]);
 
   const moverGrupo = (grupo, colId) => {
@@ -1692,6 +1770,66 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, onReprograma
             </Fragment>
           ))}
         </div>
+      )}
+
+      {hilosSinAccion.length > 0 && (
+        <div className="mt-4">
+          <div className="border-t border-[#E4DECF] mb-3" />
+          <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352] mb-2">Sin acción programada ({hilosSinAccion.length})</p>
+          <div>
+            {hilosSinAccion.map((h, i) => (
+              <Fragment key={h.id}>
+                {i > 0 && <div className="flex justify-center py-2"><span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: core.tema.botonActivo }} /></div>}
+                <HiloSinAccionCard hilo={h} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onOpen={onOpen} />
+              </Fragment>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HiloSinAccionCard({ hilo, core, setCore, acciones, setAcciones, onOpen }) {
+  const [showAvanzar, setShowAvanzar] = useState(false);
+  const esTarea = hilo.tipo === "tarea";
+  const persona = personaPrincipalDeHilo(hilo, core);
+  const personasDelHilo = personasActivasDeHilo(hilo, core);
+  const empresa = core.empresas.find((e) => e.id === hilo.empresaId);
+  const obra = core.obras.find((o) => o.id === hilo.obraId);
+  const accionesDelHilo = acciones.filter((a) => a.hiloId === hilo.id);
+
+  return (
+    <div className="bg-white border-l-4 border-y-2 border-r-2 border-y-[#8A8272] border-r-[#8A8272] rounded-sm p-3" style={{ borderLeftColor: "#C9C1AE" }}>
+      <div className="flex items-start gap-1.5 min-w-0">
+        <CasillaFinalizar hilo={hilo} acciones={accionesDelHilo} setCore={setCore} size={18} />
+        <button onClick={() => (esTarea || !persona ? onOpen("hilo", hilo.id) : onOpen("persona", persona.id))} className="text-left min-w-0 flex-1">
+          <p className="text-[15px] font-semibold text-[#2A2118] truncate">{esTarea ? hilo.titulo : (personasDelHilo.length > 0 ? personasDelHilo.map((p) => p.nombre).join(", ") : etiquetaVinculoHilo(hilo, core))}</p>
+          {!esTarea && (
+            <p className="text-xs text-[#8A8272] mt-0.5 flex items-center gap-1">
+              <GitBranch size={11} className="shrink-0" /> {hilo.titulo}
+            </p>
+          )}
+          {(empresa || obra) && (
+            <p className="text-[11px] text-[#A69C88] mt-0.5 truncate">{[empresa?.denominacion, obra?.nombre].filter(Boolean).join(" · ")}</p>
+          )}
+        </button>
+        {persona && <WhatsAppLink persona={persona} size={15} />}
+      </div>
+      <div className="flex items-center justify-between mt-2 pt-2 border-t border-[#EFEBE0]">
+        <PrimaryBtn onClick={() => setShowAvanzar(true)}>Avanzar hilo</PrimaryBtn>
+        <button onClick={() => onOpen("hilo", hilo.id)} className="text-xs font-bold text-[#6B6352]">Ver hilo completo</button>
+      </div>
+      {showAvanzar && (
+        <AvanzarHiloForm
+          hilo={hilo}
+          pendienteActual={null}
+          core={core}
+          setCore={setCore}
+          acciones={acciones}
+          setAcciones={setAcciones}
+          onClose={() => setShowAvanzar(false)}
+        />
       )}
     </div>
   );
