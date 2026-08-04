@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.6.0";
+const APP_VERSION = "1.6.1";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -2056,15 +2056,15 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, onReprograma
 
       <div className="border-t border-[#E4DECF] my-3" />
 
-      <div className="flex items-center gap-2 mb-3 flex-wrap">
+      <div className="flex items-center gap-1.5 mb-3 flex-wrap">
         <button
           onClick={() => setShowNuevoHilo(true)}
           style={{ backgroundColor: "#E8871E", color: "#2A2118" }}
-          className="h-8 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide px-2 rounded-sm"
+          className="h-8 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide px-2 rounded-sm shrink-0"
         >
           <Plus size={14} /> Hilo
         </button>
-        <div className="flex items-center rounded-sm overflow-hidden border border-[#E4DECF]">
+        <div className="flex items-center rounded-sm overflow-hidden border border-[#E4DECF] shrink-0">
           {[["activos", "Activos"], ["inactivos", "Inactivos"], ["todos", "Todos"]].map(([key, label]) => (
             <button
               key={key}
@@ -2076,19 +2076,17 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, onReprograma
             </button>
           ))}
         </div>
-      </div>
-
-      <div className="flex items-center justify-end gap-2 mb-3 flex-wrap">
-        <label className="h-8 flex items-center gap-1.5 text-[11px] font-bold text-[#6B6352]">
+        <label className="h-8 flex items-center gap-1.5 text-[11px] font-bold text-[#6B6352] ml-auto shrink-0">
           <input type="checkbox" checked={agruparPersona} onChange={(e) => setAgruparPersona(e.target.checked)} />
           Agrupar personas
         </label>
         <button
           onClick={() => setOrden((o) => (o === "asc" ? "desc" : "asc"))}
+          aria-label={orden === "asc" ? "Más antiguas primero" : "Más recientes primero"}
           style={{ backgroundColor: core.tema.botonInactivo, color: "#2A2118" }}
-          className="h-8 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide px-2.5 rounded-sm"
+          className="h-8 w-8 flex items-center justify-center rounded-sm shrink-0"
         >
-          {orden === "asc" ? <><ArrowDownAZ size={12} /> Más antiguas</> : <><ArrowUpAZ size={12} /> Más recientes</>}
+          {orden === "asc" ? <ArrowDownAZ size={14} /> : <ArrowUpAZ size={14} />}
         </button>
       </div>
 
