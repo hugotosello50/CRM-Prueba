@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.6.2";
+const APP_VERSION = "1.6.3";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -2925,7 +2925,7 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
   const [showReprogramar, setShowReprogramar] = useState(false);
   const [showEditarTitulo, setShowEditarTitulo] = useState(false);
   const [showVincularCliente, setShowVincularCliente] = useState(false);
-  const [showNuevaTareaVinculada, setShowNuevaTareaVinculada] = useState(false);
+  const [showAgregarTarea, setShowAgregarTarea] = useState(false);
   const [editingAccion, setEditingAccion] = useState(null);
   const [deletingAccionId, setDeletingAccionId] = useState(null);
   const [showFechaTarea, setShowFechaTarea] = useState(false);
@@ -3088,7 +3088,7 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
         <div className="border-t border-[#E4DECF] mt-3 pt-3">
           <div className="flex items-center justify-between mb-2">
             <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Tareas vinculadas</p>
-            <button onClick={() => setShowNuevaTareaVinculada(true)} className="text-xs font-bold text-[#B0452E]">+ Nueva tarea vinculada</button>
+            <button onClick={() => setShowAgregarTarea(true)} className="text-xs font-bold text-[#B0452E]">+ Agregar tarea</button>
           </div>
           {tareasVinculadas.length === 0 ? (
             <p className="text-sm text-[#A69C88]">Sin tareas vinculadas todavía.</p>
@@ -3211,11 +3211,16 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
           />
         </Modal>
       )}
-      {showNuevaTareaVinculada && (
-        <Modal title="Nueva tarea vinculada" onClose={() => setShowNuevaTareaVinculada(false)}>
-          <NuevaTareaVinculadaForm
+      {showAgregarTarea && (
+        <Modal title="Agregar tarea" onClose={() => setShowAgregarTarea(false)}>
+          <AgregarTareaAlHiloForm
             core={core}
             hiloClienteId={id}
+            personasDelHilo={personasDelHilo}
+            onVincular={(tareaId) => {
+              setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === tareaId ? { ...h, hiloRelacionadoId: id } : h)) }));
+              setShowAgregarTarea(false);
+            }}
             onCrear={(nuevoHilo, fecha, hora) => {
               setCore((prev) => ({ ...prev, hilos: [nuevoHilo, ...prev.hilos] }));
               if (fecha) {
@@ -3224,9 +3229,8 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
                   return [{ id: uid("A"), hiloId: nuevoHilo.id, tipoAccionId: "", estado: "Pendiente", fechaRealizada: "", fechaProgramada: fecha, horaProgramada: hora, prioridad: "Media", notaPlanificada: nuevoHilo.titulo, notaHecho: "", origenId: null, destinoId: null, numero: siguienteNumero, recurrente: false, repiteCadaN: null, repiteUnidad: null, fechaCreacion: todayISO(), secuencia: Date.now() }, ...prev];
                 });
               }
-              setShowNuevaTareaVinculada(false);
+              setShowAgregarTarea(false);
             }}
-            onCancelar={() => setShowNuevaTareaVinculada(false)}
           />
         </Modal>
       )}
@@ -3263,17 +3267,36 @@ function EditarTituloHiloForm({ hilo, onSave }) {
   );
 }
 
-function NuevaTareaVinculadaForm({ core, hiloClienteId, onCrear, onCancelar }) {
+// Agrega una tarea a un hilo de cliente: buscando entre las tareas sueltas (sin vincular
+// todavía a ningún hilo de cliente) — priorizando las que comparten alguna persona con este
+// hilo — o creando una nueva si no la encuentra.
+function AgregarTareaAlHiloForm({ core, hiloClienteId, personasDelHilo, onVincular, onCrear }) {
+  const [modo, setModo] = useState("existente"); // 'existente' | 'nueva'
+  const [q, setQ] = useState("");
   const [titulo, setTitulo] = useState("");
   const [columnaId, setColumnaId] = useState("");
   const [fecha, setFecha] = useState("");
   const [hora, setHora] = useState("");
   const columnas = core.kanbanColumnasTareas || [];
 
+  const disponibles = useMemo(() => {
+    const personaIds = new Set(personasDelHilo.map((p) => p.id));
+    const sueltas = core.hilos.filter((h) => h.tipo === "tarea" && !h.hiloRelacionadoId);
+    const texto = q.trim().toLowerCase();
+    const filtradas = texto ? sueltas.filter((h) => h.titulo.toLowerCase().includes(texto)) : sueltas;
+    const conMismaPersona = [];
+    const resto = [];
+    filtradas.forEach((h) => {
+      const coincide = personasActivasDeHilo(h, core).some((p) => personaIds.has(p.id));
+      (coincide ? conMismaPersona : resto).push(h);
+    });
+    return [...conMismaPersona, ...resto];
+  }, [core.hilos, q, personasDelHilo]);
+
   const crear = () => {
     if (!titulo.trim()) return;
     const nuevoHilo = {
-      id: uid("H"), personaId: null, empresaId: "", obraId: "", titulo: titulo.trim(),
+      id: uid("H"), participantes: [], empresaId: "", obraId: "", titulo: titulo.trim(),
       estado: "Activo", fechaCreacion: todayISO(), tipo: "tarea",
       columnaTareaId: columnaId || null, hiloRelacionadoId: hiloClienteId, notaCierre: "",
     };
@@ -3281,22 +3304,58 @@ function NuevaTareaVinculadaForm({ core, hiloClienteId, onCrear, onCancelar }) {
   };
 
   return (
-    <div>
-      <Field label="Título de la tarea *"><input autoFocus className={inputCls} value={titulo} onChange={(e) => setTitulo(e.target.value)} /></Field>
-      <Field label="Columna del Kanban de Tareas (opcional)">
-        <select className={inputCls} value={columnaId} onChange={(e) => setColumnaId(e.target.value)}>
-          <option value="">— Sin columna —</option>
-          {columnas.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-        </select>
-      </Field>
-      <Field label="Fecha (opcional)"><input type="date" className={inputCls} value={fecha} onChange={(e) => setFecha(e.target.value)} /></Field>
-      <Field label="Hora (opcional)"><input type="time" className={inputCls} value={hora} onChange={(e) => setHora(e.target.value)} /></Field>
-      <p className="text-xs text-[#A69C88] mb-3">Si cargás fecha, se crea con esa acción pendiente. Si no, la tarea queda sin fecha hasta que la avances.</p>
-      <div className="flex gap-2">
-        <button onClick={onCancelar} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
-        <button onClick={crear} className="flex-1 bg-[#E8871E] text-[#2A2118] rounded-sm py-2.5 font-bold text-sm">Crear tarea</button>
+    <>
+      <div className="flex gap-2 mb-3">
+        <button
+          type="button"
+          onClick={() => setModo("existente")}
+          style={{ backgroundColor: modo === "existente" ? "#2A2F36" : "#E7E2D8", color: modo === "existente" ? "#FFFFFF" : "#6B6352" }}
+          className="flex-1 py-2 rounded-sm text-sm font-bold"
+        >Tarea existente</button>
+        <button
+          type="button"
+          onClick={() => setModo("nueva")}
+          style={{ backgroundColor: modo === "nueva" ? "#2A2F36" : "#E7E2D8", color: modo === "nueva" ? "#FFFFFF" : "#6B6352" }}
+          className="flex-1 py-2 rounded-sm text-sm font-bold"
+        >Nueva tarea</button>
       </div>
-    </div>
+      {modo === "existente" ? (
+        <>
+          <Field label="Buscar tarea">
+            <input autoFocus className={inputCls} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Título de la tarea..." />
+          </Field>
+          {disponibles.length === 0 ? (
+            <p className="text-sm text-[#A69C88]">No encontré tareas sueltas con ese criterio — probá creando una nueva.</p>
+          ) : (
+            <div className="space-y-1.5 max-h-72 overflow-y-auto">
+              {disponibles.map((h) => (
+                <button
+                  key={h.id}
+                  onClick={() => onVincular(h.id)}
+                  className="w-full text-left bg-[#F7F5F0] border border-[#E4DECF] rounded-sm p-2.5 text-sm font-semibold text-[#2A2118]"
+                >
+                  {h.titulo}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          <Field label="Título de la tarea *"><input autoFocus className={inputCls} value={titulo} onChange={(e) => setTitulo(e.target.value)} /></Field>
+          <Field label="Columna del Kanban de Tareas (opcional)">
+            <select className={inputCls} value={columnaId} onChange={(e) => setColumnaId(e.target.value)}>
+              <option value="">— Sin columna —</option>
+              {columnas.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            </select>
+          </Field>
+          <Field label="Fecha (opcional)"><input type="date" className={inputCls} value={fecha} onChange={(e) => setFecha(e.target.value)} /></Field>
+          <Field label="Hora (opcional)"><input type="time" className={inputCls} value={hora} onChange={(e) => setHora(e.target.value)} /></Field>
+          <p className="text-xs text-[#A69C88] mb-3">Si cargás fecha, se crea con esa acción pendiente. Si no, la tarea queda sin fecha hasta que la avances.</p>
+          <PrimaryBtn full onClick={crear}>Crear tarea</PrimaryBtn>
+        </>
+      )}
+    </>
   );
 }
 
