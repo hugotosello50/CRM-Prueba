@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.5.1";
+const APP_VERSION = "1.6.0";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -65,7 +65,7 @@ const seedCore = () => ({
     { id: uid("et"), etiquetaId: "ET03", entidadTipo: "Empresa", entidadId: "E001" },
     { id: uid("et"), etiquetaId: "ET02", entidadTipo: "Obra", entidadId: "O001" },
   ],
-  parametros: { umbralDiaLleno: 8, diasHabiles: [1, 2, 3, 4, 5], fechasNoHabiles: [], diasUrgente: 3, diasProximos: 7, googleContactsLabel: "CRM" },
+  parametros: { umbralDiaLleno: 8, diasHabiles: [1, 2, 3, 4, 5], fechasNoHabiles: [], diasUrgente: 3, diasProximos: 7, googleContactsLabel: "CRM", tituloApp: "Seguimiento comercial", nombreSinColumnaSeguimientos: "Sin columna", nombreSinColumnaTareas: "Sin columna" },
   tema: { botonActivo: "#1B4D2E", botonInactivo: "#D9F0DE", tarjeta: "#FFFFFF", linea: "#E4DECF" },
   kanbanColumnas: [
     { id: "K1", nombre: "Por hacer", orden: 0 },
@@ -134,7 +134,7 @@ function normalizeCore(c) {
     }
     return base;
   });
-  out.parametros = { umbralDiaLleno: 8, diasHabiles: [1, 2, 3, 4, 5], fechasNoHabiles: [], diasUrgente: 3, diasProximos: 7, googleContactsLabel: "CRM", ...(out.parametros || {}) };
+  out.parametros = { umbralDiaLleno: 8, diasHabiles: [1, 2, 3, 4, 5], fechasNoHabiles: [], diasUrgente: 3, diasProximos: 7, googleContactsLabel: "CRM", tituloApp: "Seguimiento comercial", nombreSinColumnaSeguimientos: "Sin columna", nombreSinColumnaTareas: "Sin columna", ...(out.parametros || {}) };
   out.tema = { ...{ botonActivo: "#1B4D2E", botonInactivo: "#D9F0DE", tarjeta: "#FFFFFF", linea: "#E4DECF" }, ...(out.tema || {}) };
   if (!Array.isArray(out.kanbanColumnas)) out.kanbanColumnas = seed.kanbanColumnas;
   if (!Array.isArray(out.kanbanColumnasTareas)) out.kanbanColumnasTareas = seed.kanbanColumnasTareas;
@@ -593,8 +593,10 @@ export default function CRM({ userId, onLogout }) {
   const [search, setSearch] = useState("");
   const [showMenu, setShowMenu] = useState(false);
   const [guardado, setGuardado] = useState("ok"); // 'ok' | 'guardando' | 'error'
+  const [showResumenHoy, setShowResumenHoy] = useState(false);
   const primerRenderCore = useRef(true);
   const primerRenderAcciones = useRef(true);
+  const resumenMostrado = useRef(false);
 
   useEffect(() => {
     (async () => {
@@ -637,6 +639,15 @@ export default function CRM({ userId, onLogout }) {
     saveCrmField(userId, "acciones", acciones).then((ok) => setGuardado(ok ? "ok" : "error"));
   }, [acciones, userId]);
 
+  useEffect(() => {
+    if (!core || !acciones) return;
+    if (resumenMostrado.current) return;
+    resumenMostrado.current = true;
+    const t = todayISO();
+    const hayAlgo = acciones.some((a) => a.estado === "Pendiente" && a.fechaProgramada && a.fechaProgramada <= t);
+    if (hayAlgo) setShowResumenHoy(true);
+  }, [core, acciones]);
+
   if (!core || !acciones) {
     return <div className="min-h-screen bg-[#F7F5F0] flex items-center justify-center text-[#A69C88] text-sm">Cargando...</div>;
   }
@@ -657,7 +668,7 @@ export default function CRM({ userId, onLogout }) {
     { id: "obras", label: "Obras", icon: HardHat },
     { id: "tiposAccion", label: "Tipos de acción", icon: Layers },
     { id: "etiquetas", label: "Etiquetas", icon: Tags },
-    { id: "categorias", label: "Categorías", icon: FolderKanban },
+    { id: "categorias", label: "Categorías de etiquetas", icon: FolderKanban },
     { id: "cargos", label: "Cargos", icon: Briefcase },
   ];
 
@@ -671,7 +682,7 @@ export default function CRM({ userId, onLogout }) {
       <div className="w-full max-w-md px-3 pt-5 pb-6 flex flex-col min-h-screen">
         <header className="mb-4 px-1 flex items-start justify-between gap-2">
           <div>
-            <h1 className="text-xl font-extrabold text-[#2A2118] tracking-tight">Seguimiento comercial</h1>
+            <h1 className="text-xl font-extrabold text-[#2A2118] tracking-tight">{core.parametros.tituloApp || "Seguimiento comercial"}</h1>
             <p className={`text-[10px] font-bold uppercase tracking-wide mt-0.5 ${guardado === "error" ? "text-[#B0452E]" : "text-[#A69C88]"}`}>
               {guardado === "guardando" ? "Guardando..." : guardado === "error" ? "Error al guardar" : "Guardado"}
             </p>
@@ -709,7 +720,7 @@ export default function CRM({ userId, onLogout }) {
                 key={n.id}
                 onClick={() => { setTab(n.id); setDetail(null); }}
                 style={active ? { backgroundColor: core.tema.botonActivo, color: "#FFFFFF" } : { backgroundColor: core.tema.botonInactivo, color: "#2A2118" }}
-                className="shrink-0 h-8 flex items-center gap-1.5 px-3 rounded-sm text-[11px] font-bold uppercase tracking-wide transition-colors"
+                className="shrink-0 h-8 flex items-center gap-1.5 px-2 rounded-sm text-[11px] font-bold transition-colors"
               >
                 <Icon size={13} /> {n.label}
               </button>
@@ -781,14 +792,61 @@ export default function CRM({ userId, onLogout }) {
           </div>
         </Modal>
       )}
+
+      {showResumenHoy && (
+        <ResumenHoyModal core={core} acciones={acciones} onOpen={openDetail} onClose={() => setShowResumenHoy(false)} />
+      )}
     </div>
+  );
+}
+
+function ResumenHoyModal({ core, acciones, onOpen, onClose }) {
+  const t = todayISO();
+  const pendientes = acciones.filter((a) => a.estado === "Pendiente" && a.fechaProgramada);
+  const hoy = pendientes.filter((a) => a.fechaProgramada === t);
+  const vencidas = pendientes.filter((a) => a.fechaProgramada < t).sort((a, b) => (a.fechaProgramada < b.fechaProgramada ? -1 : 1));
+
+  const Fila = ({ a }) => {
+    const hilo = core.hilos.find((h) => h.id === a.hiloId);
+    if (!hilo) return null;
+    const tipoAccion = core.tiposAccion.find((ta) => ta.id === a.tipoAccionId);
+    const esTarea = hilo.tipo === "tarea";
+    const persona = esTarea ? null : personaPrincipalDeHilo(hilo, core);
+    return (
+      <button
+        onClick={() => { onClose(); onOpen("hilo", hilo.id); }}
+        className="w-full text-left bg-white border border-[#E4DECF] rounded-sm p-2.5 mb-1.5"
+      >
+        <p className="text-sm font-semibold text-[#2A2118] truncate">{esTarea ? hilo.titulo : (persona?.nombre || hilo.titulo)}</p>
+        <p className="text-xs text-[#6B6352] truncate">{[tipoAccion?.nombre, esTarea ? "" : hilo.titulo, a.notaPlanificada].filter(Boolean).join(" · ")}</p>
+      </button>
+    );
+  };
+
+  return (
+    <Modal title="Resumen de hoy" onClose={onClose}>
+      <div>
+        <p className="text-[10px] font-bold uppercase tracking-wide text-[#6B6352] mb-1.5">Hoy{hoy.length > 0 ? ` (${hoy.length})` : ""}</p>
+        {hoy.length === 0 ? (
+          <p className="text-xs text-[#A69C88] mb-3">Nada programado para hoy.</p>
+        ) : (
+          <div className="mb-3">{hoy.map((a) => <Fila key={a.id} a={a} />)}</div>
+        )}
+        <p className="text-[10px] font-bold uppercase tracking-wide text-[#B0452E] mb-1.5">Vencidas{vencidas.length > 0 ? ` (${vencidas.length})` : ""}</p>
+        {vencidas.length === 0 ? (
+          <p className="text-xs text-[#A69C88]">No hay pendientes vencidas.</p>
+        ) : (
+          <div>{vencidas.map((a) => <Fila key={a.id} a={a} />)}</div>
+        )}
+      </div>
+    </Modal>
   );
 }
 
 function DetailRouter({ detail, core, setCore, acciones, setAcciones, onClose, onOpen }) {
   if (detail.type === "persona") return <PersonaDetail id={detail.id} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onClose={onClose} onOpen={onOpen} />;
-  if (detail.type === "empresa") return <EmpresaDetail id={detail.id} core={core} setCore={setCore} acciones={acciones} onClose={onClose} onOpen={onOpen} />;
-  if (detail.type === "obra") return <ObraDetail id={detail.id} core={core} setCore={setCore} onClose={onClose} onOpen={onOpen} />;
+  if (detail.type === "empresa") return <EmpresaDetail id={detail.id} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onClose={onClose} onOpen={onOpen} />;
+  if (detail.type === "obra") return <ObraDetail id={detail.id} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onClose={onClose} onOpen={onOpen} />;
   if (detail.type === "hilo") return <HiloDetail id={detail.id} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onClose={onClose} onOpen={onOpen} />;
   return null;
 }
@@ -820,49 +878,313 @@ function AgendaView({ core, setCore, acciones, setAcciones, onOpen }) {
 
 // Crea un hilo eligiendo libremente persona, empresa y/o obra (con al menos una de las tres),
 // sin exigir una acción — se completa después, desde la ficha del hilo.
-function NuevoHiloDesdeSeguimientoForm({ core, setCore, onCreated, onCancelar }) {
+// Formulario unificado para crear un hilo desde cualquier punto de entrada (Seguimientos,
+// Personas, Empresas, Obras): simple por defecto (título + vínculos opcionales), con una
+// sección opcional para cargar el primer contacto y programar la próxima acción sin que
+// sea obligatorio desde el inicio. "personaFija" ata el hilo a esa persona (y habilita el
+// flujo de vincular empresa/obra a ese contacto); "empresaFijaId"/"obraFijaId" atan el hilo
+// a esa empresa/obra sin mostrar el select correspondiente.
+function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empresaFijaId, obraFijaId, onCreated, onCancelar }) {
   const [titulo, setTitulo] = useState("");
   const [personaId, setPersonaId] = useState("");
-  const [empresaId, setEmpresaId] = useState("");
-  const [obraId, setObraId] = useState("");
+  const [empresaId, setEmpresaId] = useState(empresaFijaId || "");
+  const [obraId, setObraId] = useState(obraFijaId || "");
+  const [showVincularEmpresa, setShowVincularEmpresa] = useState(false);
+  const [showVincularObra, setShowVincularObra] = useState(false);
+  const [showPrimerContacto, setShowPrimerContacto] = useState(false);
 
-  const faltaVinculo = !personaId && !empresaId && !obraId;
+  const [tipoAccionId1, setTipoAccionId1] = useState(tipoDefaultId(core));
+  const [notas1, setNotas1] = useState("");
+  const [programarProxima, setProgramarProxima] = useState(true);
+  const [tipoAccionId2, setTipoAccionId2] = useState(tipoDefaultId(core));
+  const [notas2, setNotas2] = useState("");
+  const [modoFecha, setModoFecha] = useState("periodo");
+  const [cantidad, setCantidad] = useState(1);
+  const [unidad, setUnidad] = useState("semanas");
+  const [fechaEspecifica, setFechaEspecifica] = useState(todayISO());
+  const [horaEspecifica, setHoraEspecifica] = useState("");
+  const [confirmarEspecifica, setConfirmarEspecifica] = useState(false);
+  const [prioridad, setPrioridad] = useState("Media");
+  const [recurrente, setRecurrente] = useState(false);
+  const [repiteCadaN, setRepiteCadaN] = useState(1);
+  const [repiteUnidad, setRepiteUnidad] = useState("meses");
+  const [preview, setPreview] = useState(null);
+
+  const empresasDeLaPersona = useMemo(() => {
+    if (!personaFija) return [];
+    const relEmpresas = core.personaEmpresa.filter((r) => r.personaId === personaFija.id);
+    return relEmpresas.map((r) => core.empresas.find((e) => e.id === r.empresaId)).filter(Boolean);
+  }, [personaFija, core.personaEmpresa, core.empresas]);
+
+  const obrasDeLaEmpresa = useMemo(() => {
+    if (!empresaId) return [];
+    return core.empresaObra.filter((r) => r.empresaId === empresaId).map((r) => core.obras.find((o) => o.id === r.obraId)).filter(Boolean);
+  }, [empresaId, core.empresaObra, core.obras]);
+
+  useEffect(() => {
+    if (showPrimerContacto && programarProxima && modoFecha === "periodo") {
+      const base = addPeriod(todayISO(), Number(cantidad) || 1, unidad);
+      setPreview(computeSmartDate(base, acciones, core.parametros));
+    }
+  }, [showPrimerContacto, programarProxima, modoFecha, cantidad, unidad]); // eslint-disable-line
+
+  const especificaInhabil = showPrimerContacto && programarProxima && modoFecha === "especifica" && esFechaInhabil(fechaEspecifica, core.parametros);
+  const faltaVinculo = !personaFija && !empresaFijaId && !obraFijaId && !personaId && !empresaId && !obraId;
 
   const crear = () => {
     if (!titulo.trim() || faltaVinculo) return;
     const hoy = todayISO();
-    const participantes = personaId ? [{ id: uid("part"), personaId, desde: hoy, hasta: null, principal: true }] : [];
-    const nuevo = { id: uid("H"), participantes, empresaId: empresaId || "", obraId: obraId || "", titulo: titulo.trim(), estado: "Activo", fechaCreacion: hoy, tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" };
-    setCore((prev) => ({ ...prev, hilos: [nuevo, ...prev.hilos] }));
-    onCreated(nuevo.id);
+    const personaIdFinal = personaFija ? personaFija.id : personaId;
+    const participantes = personaIdFinal ? [{ id: uid("part"), personaId: personaIdFinal, desde: hoy, hasta: null, principal: true }] : [];
+    const nuevoHilo = { id: uid("H"), participantes, empresaId: empresaId || "", obraId: obraId || "", titulo: titulo.trim(), estado: "Activo", fechaCreacion: hoy, tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" };
+    setCore((prev) => ({ ...prev, hilos: [nuevoHilo, ...prev.hilos] }));
+
+    if (showPrimerContacto && setAcciones) {
+      setAcciones((prev) => {
+        let siguienteNumero = Math.max(0, ...prev.map((a) => a.numero || 0)) + 1;
+        const idPrimera = uid("A");
+        let next = [{ id: idPrimera, hiloId: nuevoHilo.id, tipoAccionId: tipoAccionId1, estado: "Realizada", fechaRealizada: hoy, fechaProgramada: "", horaProgramada: "", prioridad: "", notaPlanificada: "", notaHecho: notas1, origenId: null, destinoId: null, numero: siguienteNumero++, recurrente: false, repiteCadaN: null, repiteUnidad: null, fechaCreacion: hoy, secuencia: Date.now() }, ...prev];
+
+        if (programarProxima) {
+          const fecha = modoFecha === "periodo" ? (preview || hoy) : (fechaEspecifica || hoy);
+          const hora = modoFecha === "especifica" ? horaEspecifica : "";
+          const idNueva = uid("A");
+          next = [{ id: idNueva, hiloId: nuevoHilo.id, tipoAccionId: tipoAccionId2, estado: "Pendiente", fechaRealizada: "", fechaProgramada: fecha, horaProgramada: hora, prioridad, notaPlanificada: notas2, notaHecho: "", origenId: idPrimera, destinoId: null, numero: siguienteNumero++, recurrente, repiteCadaN: recurrente ? Number(repiteCadaN) : null, repiteUnidad: recurrente ? repiteUnidad : null, fechaCreacion: hoy, secuencia: Date.now() + 1 }, ...next];
+          next = next.map((a) => (a.id === idPrimera ? { ...a, destinoId: idNueva } : a));
+        }
+        return next;
+      });
+    }
+
+    onCreated(nuevoHilo.id);
+  };
+
+  const submit = () => {
+    if (showPrimerContacto && programarProxima && especificaInhabil && !confirmarEspecifica) { setConfirmarEspecifica(true); return; }
+    crear();
   };
 
   return (
     <div>
       <Field label="Título del tema *"><input autoFocus className={inputCls} value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Ej: Presupuesto cables solares" /></Field>
-      <Field label="Persona">
-        <select className={inputCls} value={personaId} onChange={(e) => setPersonaId(e.target.value)}>
-          <option value="">— ninguna —</option>
-          {core.personas.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-        </select>
-      </Field>
-      <Field label="Empresa">
-        <select className={inputCls} value={empresaId} onChange={(e) => setEmpresaId(e.target.value)}>
-          <option value="">— ninguna —</option>
-          {core.empresas.map((e) => <option key={e.id} value={e.id}>{e.denominacion}</option>)}
-        </select>
-      </Field>
-      <Field label="Obra">
-        <select className={inputCls} value={obraId} onChange={(e) => setObraId(e.target.value)}>
-          <option value="">— ninguna —</option>
-          {core.obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
-        </select>
-      </Field>
-      <p className="text-xs text-[#A69C88] mb-3">Elegí al menos una — persona, empresa u obra. La próxima acción se programa después, desde el hilo.</p>
+
+      {!personaFija && (
+        <Field label="Persona">
+          <select className={inputCls} value={personaId} onChange={(e) => setPersonaId(e.target.value)}>
+            <option value="">— ninguna —</option>
+            {core.personas.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+          </select>
+        </Field>
+      )}
+
+      {!empresaFijaId && (
+        <Field label="Empresa">
+          {personaFija ? (
+            empresasDeLaPersona.length === 0 ? (
+              <p className="text-sm text-[#A69C88] mb-1.5">Este contacto no tiene empresas vinculadas todavía.</p>
+            ) : (
+              <select className={inputCls} value={empresaId} onChange={(e) => { setEmpresaId(e.target.value); setObraId(""); }}>
+                <option value="">— sin empresa —</option>
+                {empresasDeLaPersona.map((e) => <option key={e.id} value={e.id}>{e.denominacion}</option>)}
+              </select>
+            )
+          ) : (
+            <select className={inputCls} value={empresaId} onChange={(e) => { setEmpresaId(e.target.value); setObraId(""); }}>
+              <option value="">— ninguna —</option>
+              {core.empresas.map((e) => <option key={e.id} value={e.id}>{e.denominacion}</option>)}
+            </select>
+          )}
+          {personaFija && (
+            <button type="button" onClick={() => setShowVincularEmpresa(true)} className="text-xs font-bold text-[#B0452E] mt-1.5">+ Vincular otra empresa a este contacto</button>
+          )}
+        </Field>
+      )}
+
+      {!obraFijaId && (
+        <Field label="Obra">
+          {personaFija ? (
+            obrasDeLaEmpresa.length === 0 ? (
+              <p className="text-sm text-[#A69C88] mb-1.5">{empresaId ? "Esta empresa no tiene obras vinculadas." : "Elegí primero una empresa para poder sumar una obra."}</p>
+            ) : (
+              <select className={inputCls} value={obraId} onChange={(e) => setObraId(e.target.value)}>
+                <option value="">— sin obra —</option>
+                {obrasDeLaEmpresa.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+              </select>
+            )
+          ) : (
+            <select className={inputCls} value={obraId} onChange={(e) => setObraId(e.target.value)}>
+              <option value="">— ninguna —</option>
+              {core.obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+            </select>
+          )}
+          {personaFija && (
+            <button
+              type="button"
+              disabled={!empresaId}
+              onClick={() => setShowVincularObra(true)}
+              className={`text-xs font-bold mt-1.5 ${empresaId ? "text-[#B0452E]" : "text-[#C9C1AE] cursor-not-allowed"}`}
+            >
+              + Vincular obra a esta empresa
+            </button>
+          )}
+        </Field>
+      )}
+
+      {faltaVinculo && (
+        <p className="text-xs text-[#A69C88] mb-3">Elegí al menos una — persona, empresa u obra.</p>
+      )}
+
+      {!showPrimerContacto ? (
+        <button type="button" onClick={() => setShowPrimerContacto(true)} className="text-xs font-bold text-[#B0452E] mb-3">
+          + Cargar primer contacto y próxima acción
+        </button>
+      ) : (
+        <div className="border-t border-[#E4DECF] my-3 pt-3">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-[#B0452E]">Primer contacto</p>
+            <button type="button" onClick={() => setShowPrimerContacto(false)} className="text-xs font-bold text-[#6B6352]">Quitar</button>
+          </div>
+          <SelectConCrear
+            label="Tipo de acción"
+            opciones={core.tiposAccion}
+            value={tipoAccionId1}
+            onChange={setTipoAccionId1}
+            placeholderCrear="Ej: Videollamada"
+            onCrear={(nombre) => {
+              const nuevo = { id: uid("TA"), nombre };
+              setCore((prev) => ({ ...prev, tiposAccion: [...prev.tiposAccion, nuevo] }));
+              return nuevo;
+            }}
+          />
+          <Field label="Se hizo">
+            <textarea className={inputCls} rows={2} value={notas1} onChange={(e) => setNotas1(e.target.value)} placeholder="Qué hablaron, qué resultó..." />
+          </Field>
+
+          <label className="flex items-center gap-2 mb-2 text-sm font-bold text-[#2A2118]">
+            <input type="checkbox" checked={programarProxima} onChange={(e) => setProgramarProxima(e.target.checked)} /> Programar próxima acción
+          </label>
+
+          {programarProxima && (
+            <>
+              <SelectConCrear
+                label="Tipo de acción"
+                opciones={core.tiposAccion}
+                value={tipoAccionId2}
+                onChange={setTipoAccionId2}
+                placeholderCrear="Ej: Videollamada"
+                onCrear={(nombre) => {
+                  const nuevo = { id: uid("TA"), nombre };
+                  setCore((prev) => ({ ...prev, tiposAccion: [...prev.tiposAccion, nuevo] }));
+                  return nuevo;
+                }}
+              />
+              <Field label="Se planifica (qué se busca con esta acción)">
+                <textarea className={inputCls} rows={2} value={notas2} onChange={(e) => setNotas2(e.target.value)} placeholder="Ej: confirmar si aceptaron la propuesta, próximos pasos a seguir..." />
+              </Field>
+
+              <div className="flex gap-2 mb-2">
+                <button
+                  type="button"
+                  onClick={() => setModoFecha("periodo")}
+                  style={{ backgroundColor: modoFecha === "periodo" ? "#2A2F36" : "#E7E2D8", color: modoFecha === "periodo" ? "#FFFFFF" : "#6B6352" }}
+                  className="flex-1 py-1.5 rounded-sm text-xs font-bold"
+                >Dentro de un período</button>
+                <button
+                  type="button"
+                  onClick={() => setModoFecha("especifica")}
+                  style={{ backgroundColor: modoFecha === "especifica" ? "#2A2F36" : "#E7E2D8", color: modoFecha === "especifica" ? "#FFFFFF" : "#6B6352" }}
+                  className="flex-1 py-1.5 rounded-sm text-xs font-bold"
+                >Fecha específica</button>
+              </div>
+
+              {modoFecha === "periodo" ? (
+                <>
+                  <Field label="¿Dentro de cuánto?">
+                    <div className="flex gap-2">
+                      <input type="number" min={1} className={inputCls} value={cantidad} onChange={(e) => setCantidad(e.target.value)} />
+                      <select className={inputCls} value={unidad} onChange={(e) => setUnidad(e.target.value)}>
+                        <option value="dias">días</option>
+                        <option value="semanas">semanas</option>
+                        <option value="meses">meses</option>
+                      </select>
+                    </div>
+                  </Field>
+                  {preview && (
+                    <p className="text-xs text-[#6B6352] mb-3 -mt-2 bg-[#EFEBE0] rounded-sm px-2.5 py-1.5">
+                      Fecha sugerida: <span className="font-bold">{fmtDate(preview)}</span> (ajustada para no caer en día no hábil ni en un día muy cargado)
+                    </p>
+                  )}
+                </>
+              ) : (
+                <>
+                  <Field label="Fecha">
+                    <input type="date" className={inputCls} value={fechaEspecifica} onChange={(e) => { setFechaEspecifica(e.target.value); setConfirmarEspecifica(false); }} />
+                  </Field>
+                  <Field label="Hora (opcional)">
+                    <input type="time" className={inputCls} value={horaEspecifica} onChange={(e) => setHoraEspecifica(e.target.value)} />
+                  </Field>
+                  {especificaInhabil && (
+                    <div className="bg-[#FBEEE7] border border-[#E8871E] rounded-sm p-2.5 mb-3">
+                      <p className="text-xs text-[#2A2118]">Ese día está marcado como no hábil. Si guardás de nuevo, se confirma igual.</p>
+                    </div>
+                  )}
+                </>
+              )}
+
+              <Field label="Prioridad">
+                <select className={inputCls} value={prioridad} onChange={(e) => setPrioridad(e.target.value)}>
+                  <option>Alta</option><option>Media</option><option>Baja</option>
+                </select>
+              </Field>
+              <label className="flex items-center gap-2 mb-2 text-sm text-[#2A2118]">
+                <input type="checkbox" checked={recurrente} onChange={(e) => setRecurrente(e.target.checked)} /> Es una acción repetitiva
+              </label>
+              {recurrente && (
+                <Field label="Repetir cada">
+                  <div className="flex gap-2">
+                    <input type="number" min={1} className={inputCls} value={repiteCadaN} onChange={(e) => setRepiteCadaN(e.target.value)} />
+                    <select className={inputCls} value={repiteUnidad} onChange={(e) => setRepiteUnidad(e.target.value)}>
+                      <option value="dias">días</option>
+                      <option value="semanas">semanas</option>
+                      <option value="meses">meses</option>
+                    </select>
+                  </div>
+                </Field>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
       <div className="flex gap-2">
         <button onClick={onCancelar} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
-        <button onClick={crear} disabled={!titulo.trim() || faltaVinculo} className={`flex-1 rounded-sm py-2.5 font-bold text-sm ${!titulo.trim() || faltaVinculo ? "bg-[#E7E2D8] text-[#A69C88] cursor-not-allowed" : "bg-[#E8871E] text-[#2A2118]"}`}>Crear hilo</button>
+        <button onClick={submit} disabled={!titulo.trim() || faltaVinculo} className={`flex-1 rounded-sm py-2.5 font-bold text-sm ${!titulo.trim() || faltaVinculo ? "bg-[#E7E2D8] text-[#A69C88] cursor-not-allowed" : "bg-[#E8871E] text-[#2A2118]"}`}>
+          {especificaInhabil && confirmarEspecifica ? "Sí, crear igual" : "Crear hilo"}
+        </button>
       </div>
+
+      {showVincularEmpresa && personaFija && (
+        <VincularEmpresaForm
+          core={core}
+          setCore={setCore}
+          onClose={() => setShowVincularEmpresa(false)}
+          onSave={(rel) => {
+            setCore((prev) => ({ ...prev, personaEmpresa: [...prev.personaEmpresa, { ...rel, personaId: personaFija.id, id: uid("pe") }] }));
+            setEmpresaId(rel.empresaId);
+            setObraId("");
+            setShowVincularEmpresa(false);
+          }}
+        />
+      )}
+      {showVincularObra && personaFija && (
+        <VincularObraForm
+          core={core}
+          setCore={setCore}
+          empresaId={empresaId}
+          onClose={() => setShowVincularObra(false)}
+          onLinked={(newObraId) => { setObraId(newObraId); setShowVincularObra(false); }}
+        />
+      )}
     </div>
   );
 }
@@ -965,7 +1287,8 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
     setMostrarFecha(false);
   };
 
-  const nombreColumnaActiva = columnaActiva === null ? "Sin columna" : columnas.find((c) => c.id === columnaActiva)?.nombre || "Columna";
+  const nombreSinColumna = core.parametros.nombreSinColumnaTareas || "Sin columna";
+  const nombreColumnaActiva = columnaActiva === null ? nombreSinColumna : columnas.find((c) => c.id === columnaActiva)?.nombre || "Columna";
 
   return (
     <div>
@@ -1007,6 +1330,7 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
         tabs={columnas}
         activeId={columnaActiva}
         incluirSinTab
+        sinColumnaNombre={nombreSinColumna}
         onSelect={setColumnaActiva}
         onCreate={(nombre) => {
           const nueva = { id: uid("T"), nombre, orden: columnas.length };
@@ -1014,6 +1338,7 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
           setColumnaActiva(nueva.id);
         }}
         onRename={(id, nombre) => setCore((prev) => ({ ...prev, kanbanColumnasTareas: (prev.kanbanColumnasTareas || []).map((c) => (c.id === id ? { ...c, nombre } : c)) }))}
+        onRenameSinColumna={(nombre) => setCore((prev) => ({ ...prev, parametros: { ...prev.parametros, nombreSinColumnaTareas: nombre } }))}
         onDelete={eliminarColumna}
         contarTab={contarColumna}
         tabsRef={tabsRef}
@@ -1447,10 +1772,10 @@ function TextoCierreForm({ onConfirmar, onCancelar }) {
   );
 }
 
-function ExcelTabsBar({ core, tabs, activeId, incluirSinTab, onSelect, onCreate, onRename, onDelete, contarTab, tabsRef, hoverId, dragging }) {
+function ExcelTabsBar({ core, tabs, activeId, incluirSinTab, sinColumnaNombre, onSelect, onCreate, onRename, onRenameSinColumna, onDelete, contarTab, tabsRef, hoverId, dragging }) {
   const [creando, setCreando] = useState(false);
   const [nombreNuevo, setNombreNuevo] = useState("");
-  const [editandoId, setEditandoId] = useState(undefined); // undefined = nadie, null = "Sin columna" (no editable), id = esa pestaña
+  const [editandoId, setEditandoId] = useState(undefined); // undefined = nadie editando, null = "Sin columna", id = esa pestaña
 
   const confirmarCrear = () => {
     if (!nombreNuevo.trim()) return;
@@ -1459,12 +1784,16 @@ function ExcelTabsBar({ core, tabs, activeId, incluirSinTab, onSelect, onCreate,
     setCreando(false);
   };
   const confirmarRenombrar = (id, valor) => {
-    if (valor.trim()) onRename(id, valor.trim());
+    if (valor.trim()) {
+      if (id === null) onRenameSinColumna?.(valor.trim());
+      else onRename(id, valor.trim());
+    }
     setEditandoId(undefined);
   };
 
+  const nombreSinColumna = sinColumnaNombre || "Sin columna";
   const activa = incluirSinTab ? activeId : activeId;
-  const tabActivaNombre = activeId === null ? "Sin columna" : tabs.find((t) => t.id === activeId)?.nombre || "";
+  const tabActivaNombre = activeId === null ? nombreSinColumna : tabs.find((t) => t.id === activeId)?.nombre || "";
 
   const renderTab = (id, nombre) => {
     const key = id === null ? "null" : id;
@@ -1490,7 +1819,7 @@ function ExcelTabsBar({ core, tabs, activeId, incluirSinTab, onSelect, onCreate,
         key={key}
         data-tab-id={key}
         onClick={() => onSelect(id)}
-        onDoubleClick={() => id !== null && setEditandoId(id)}
+        onDoubleClick={() => setEditandoId(id)}
         style={{
           backgroundColor: esHover || esActiva ? core.tema.botonActivo : core.tema.botonInactivo,
           color: esHover || esActiva ? "#FFFFFF" : "#2A2118",
@@ -1514,7 +1843,7 @@ function ExcelTabsBar({ core, tabs, activeId, incluirSinTab, onSelect, onCreate,
         className="flex gap-0.5 overflow-x-auto no-scrollbar"
         style={{ borderBottom: `2px solid ${core.tema.linea}`, outline: dragging ? `2px dashed ${core.tema.botonActivo}` : undefined, outlineOffset: dragging ? "3px" : undefined }}
       >
-        {incluirSinTab && renderTab(null, "Sin columna")}
+        {incluirSinTab && renderTab(null, nombreSinColumna)}
         {tabs.map((t) => renderTab(t.id, t.nombre))}
         {creando ? (
           <div className="shrink-0 h-8 flex items-center gap-1 border border-b-0 rounded-t-sm px-1.5" style={{ backgroundColor: core.tema.tarjeta, borderColor: core.tema.linea }}>
@@ -1534,11 +1863,11 @@ function ExcelTabsBar({ core, tabs, activeId, incluirSinTab, onSelect, onCreate,
         )}
       </div>
 
-      {activeId !== null && (
-        <div className="flex justify-end gap-3 mt-1.5 mb-1">
-          <button onClick={() => setEditandoId(activeId)} className="text-[10px] font-bold uppercase tracking-wide text-[#6B6352] flex items-center gap-1">
-            <Pencil size={11} /> Renombrar
-          </button>
+      <div className="flex justify-end gap-3 mt-1.5 mb-1">
+        <button onClick={() => setEditandoId(activeId)} className="text-[10px] font-bold uppercase tracking-wide text-[#6B6352] flex items-center gap-1">
+          <Pencil size={11} /> Renombrar
+        </button>
+        {activeId !== null && (
           <button
             onClick={() => onDelete(activeId)}
             disabled={contarTab(activeId) > 0}
@@ -1546,8 +1875,8 @@ function ExcelTabsBar({ core, tabs, activeId, incluirSinTab, onSelect, onCreate,
           >
             <Trash2 size={11} /> Eliminar "{tabActivaNombre}"{contarTab(activeId) > 0 ? " (vaciala primero)" : ""}
           </button>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
@@ -1560,14 +1889,21 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, onReprograma
   const [orden, setOrden] = useState("asc");
   const [agruparPersona, setAgruparPersona] = useState(false);
   const [showNuevoHilo, setShowNuevoHilo] = useState(false);
+  const [estadoFiltro, setEstadoFiltro] = useState("activos"); // 'activos' | 'inactivos' | 'todos'
   const tabsRef = useRef(null);
   const hoverRef = useRef(undefined);
 
   const columnas = core.kanbanColumnas || [];
+  const hiloPasaFiltroEstado = (h) => {
+    if (estadoFiltro === "todos") return true;
+    if (estadoFiltro === "inactivos") return h?.estado === "Cerrado";
+    return h?.estado === "Activo";
+  };
   const pendientes = acciones.filter((a) => {
     if (a.estado !== "Pendiente" || !a.fechaProgramada) return false;
-    if (!soloTipo) return true;
     const h = core.hilos.find((hh) => hh.id === a.hiloId);
+    if (!hiloPasaFiltroEstado(h)) return false;
+    if (!soloTipo) return true;
     return (h?.tipo || "cliente") === soloTipo;
   });
 
@@ -1619,11 +1955,11 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, onReprograma
   const hilosSinAccion = useMemo(() => {
     if (columnaActiva !== null) return [];
     return core.hilos.filter((h) => {
-      if (h.estado !== "Activo") return false;
+      if (!hiloPasaFiltroEstado(h)) return false;
       if (soloTipo && (h.tipo || "cliente") !== soloTipo) return false;
       return !acciones.some((a) => a.hiloId === h.id && a.estado === "Pendiente");
     });
-  }, [core.hilos, acciones, soloTipo, columnaActiva]);
+  }, [core.hilos, acciones, soloTipo, columnaActiva, estadoFiltro]);
 
   useEffect(() => { hoverRef.current = hoverColumnaId; }, [hoverColumnaId]);
 
@@ -1671,7 +2007,8 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, onReprograma
     if (columnaActiva === colId) setColumnaActiva(null);
   };
 
-  const nombreColumnaActiva = columnaActiva === null ? "Sin columna" : columnas.find((c) => c.id === columnaActiva)?.nombre || "Columna";
+  const nombreSinColumna = core.parametros.nombreSinColumnaSeguimientos || "Sin columna";
+  const nombreColumnaActiva = columnaActiva === null ? nombreSinColumna : columnas.find((c) => c.id === columnaActiva)?.nombre || "Columna";
 
   return (
     <div>
@@ -1685,6 +2022,7 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, onReprograma
         tabs={columnas}
         activeId={columnaActiva}
         incluirSinTab
+        sinColumnaNombre={nombreSinColumna}
         onSelect={setColumnaActiva}
         onCreate={(nombre) => {
           const nueva = { id: uid("K"), nombre, orden: columnas.length };
@@ -1692,6 +2030,7 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, onReprograma
           setColumnaActiva(nueva.id);
         }}
         onRename={(id, nombre) => setCore((prev) => ({ ...prev, kanbanColumnas: (prev.kanbanColumnas || []).map((c) => (c.id === id ? { ...c, nombre } : c)) }))}
+        onRenameSinColumna={(nombre) => setCore((prev) => ({ ...prev, parametros: { ...prev.parametros, nombreSinColumnaSeguimientos: nombre } }))}
         onDelete={eliminarColumna}
         contarTab={contarColumna}
         tabsRef={tabsRef}
@@ -1717,27 +2056,40 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, onReprograma
 
       <div className="border-t border-[#E4DECF] my-3" />
 
-      <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
         <button
           onClick={() => setShowNuevoHilo(true)}
           style={{ backgroundColor: "#E8871E", color: "#2A2118" }}
+          className="h-8 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide px-2 rounded-sm"
+        >
+          <Plus size={14} /> Hilo
+        </button>
+        <div className="flex items-center rounded-sm overflow-hidden border border-[#E4DECF]">
+          {[["activos", "Activos"], ["inactivos", "Inactivos"], ["todos", "Todos"]].map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setEstadoFiltro(key)}
+              style={estadoFiltro === key ? { backgroundColor: core.tema.botonActivo, color: "#FFFFFF" } : { backgroundColor: "#FFFFFF", color: "#6B6352" }}
+              className="h-8 flex items-center text-[10px] font-bold uppercase tracking-wide px-2"
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex items-center justify-end gap-2 mb-3 flex-wrap">
+        <label className="h-8 flex items-center gap-1.5 text-[11px] font-bold text-[#6B6352]">
+          <input type="checkbox" checked={agruparPersona} onChange={(e) => setAgruparPersona(e.target.checked)} />
+          Agrupar personas
+        </label>
+        <button
+          onClick={() => setOrden((o) => (o === "asc" ? "desc" : "asc"))}
+          style={{ backgroundColor: core.tema.botonInactivo, color: "#2A2118" }}
           className="h-8 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide px-2.5 rounded-sm"
         >
-          <Plus size={14} /> Nuevo hilo
+          {orden === "asc" ? <><ArrowDownAZ size={12} /> Más antiguas</> : <><ArrowUpAZ size={12} /> Más recientes</>}
         </button>
-        <div className="flex items-center gap-2 flex-wrap">
-          <label className="h-8 flex items-center gap-1.5 text-[11px] font-bold text-[#6B6352]">
-            <input type="checkbox" checked={agruparPersona} onChange={(e) => setAgruparPersona(e.target.checked)} />
-            Agrupar por persona
-          </label>
-          <button
-            onClick={() => setOrden((o) => (o === "asc" ? "desc" : "asc"))}
-            style={{ backgroundColor: core.tema.botonInactivo, color: "#2A2118" }}
-            className="h-8 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide px-2.5 rounded-sm"
-          >
-            {orden === "asc" ? <><ArrowDownAZ size={12} /> Más antiguas primero</> : <><ArrowUpAZ size={12} /> Más recientes primero</>}
-          </button>
-        </div>
       </div>
 
       <div className="border-t border-[#E4DECF] mb-3" />
@@ -1783,9 +2135,11 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, onReprograma
 
       {showNuevoHilo && (
         <Modal title="Nuevo hilo" onClose={() => setShowNuevoHilo(false)}>
-          <NuevoHiloDesdeSeguimientoForm
+          <NuevoHiloForm
             core={core}
             setCore={setCore}
+            acciones={acciones}
+            setAcciones={setAcciones}
             onCreated={(hiloId) => { setShowNuevoHilo(false); onOpen("hilo", hiloId); }}
             onCancelar={() => setShowNuevoHilo(false)}
           />
@@ -1811,12 +2165,12 @@ function HiloSinAccionCard({ hilo, core, setCore, acciones, setAcciones, onOpen 
         <button onClick={() => (esTarea || !persona ? onOpen("hilo", hilo.id) : onOpen("persona", persona.id))} className="text-left min-w-0 flex-1">
           <p className="text-[15px] font-semibold text-[#2A2118] truncate">{esTarea ? hilo.titulo : (personasDelHilo.length > 0 ? personasDelHilo.map((p) => p.nombre).join(", ") : etiquetaVinculoHilo(hilo, core))}</p>
           {!esTarea && (
-            <p className="text-xs text-[#8A8272] mt-0.5 flex items-center gap-1">
+            <p className="text-sm text-[#8A8272] mt-0.5 flex items-center gap-1">
               <GitBranch size={11} className="shrink-0" /> {hilo.titulo}
             </p>
           )}
           {(empresa || obra) && (
-            <p className="text-[11px] text-[#A69C88] mt-0.5 truncate">{[empresa?.denominacion, obra?.nombre].filter(Boolean).join(" · ")}</p>
+            <p className="text-[11px] text-[#2A2118] mt-0.5 truncate">{[empresa?.denominacion, obra?.nombre].filter(Boolean).join(" · ")}</p>
           )}
         </button>
         {persona && <WhatsAppLink persona={persona} size={15} />}
@@ -1879,16 +2233,16 @@ function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, 
             <>
               <p className="text-[15px] font-semibold text-[#2A2118] truncate">{personasDelHilo.length > 0 ? personasDelHilo.map((p) => p.nombre).join(", ") : etiquetaVinculoHilo(hilo, core)}</p>
               {hilo && (
-                <p className="text-xs text-[#8A8272] mt-0.5 flex items-center gap-1 flex-wrap">
+                <p className="text-sm text-[#8A8272] mt-0.5 flex items-center gap-1 flex-wrap">
                   <GitBranch size={11} className="shrink-0" /> {hilo.titulo}
-                  <span className="text-[#C9C1AE]">
+                  <span className="text-xs text-[#C9C1AE]">
                     · {accionesDelHilo.length} acci{accionesDelHilo.length === 1 ? "ón" : "ones"}
                     {(() => { const nt = core.hilos.filter((h) => h.tipo === "tarea" && h.hiloRelacionadoId === hilo.id).length; return nt > 0 ? ` · ${nt} tarea${nt === 1 ? "" : "s"}` : ""; })()}
                   </span>
                 </p>
               )}
               {(empresa || obra) && (
-                <p className="text-[11px] text-[#A69C88] mt-0.5 truncate">{[empresa?.denominacion, obra?.nombre].filter(Boolean).join(" · ")}</p>
+                <p className="text-[11px] text-[#2A2118] mt-0.5 truncate">{[empresa?.denominacion, obra?.nombre].filter(Boolean).join(" · ")}</p>
               )}
             </>
           )}
@@ -2310,15 +2664,17 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
         />
       )}
       {showNuevoHilo && (
-        <NuevoHiloForm
-          persona={persona}
-          core={core}
-          setCore={setCore}
-          acciones={acciones}
-          setAcciones={setAcciones}
-          onClose={() => setShowNuevoHilo(false)}
-          onCreated={(hiloId) => { setShowNuevoHilo(false); onOpen("hilo", hiloId); }}
-        />
+        <Modal title={`Nuevo hilo — ${persona.nombre}`} onClose={() => setShowNuevoHilo(false)}>
+          <NuevoHiloForm
+            personaFija={persona}
+            core={core}
+            setCore={setCore}
+            acciones={acciones}
+            setAcciones={setAcciones}
+            onCancelar={() => setShowNuevoHilo(false)}
+            onCreated={(hiloId) => { setShowNuevoHilo(false); onOpen("hilo", hiloId); }}
+          />
+        </Modal>
       )}
     </div>
   );
@@ -2505,279 +2861,6 @@ function VincularEmpresaForm({ core, setCore, onClose, onSave }) {
         <input type="checkbox" checked={principal} onChange={(e) => setPrincipal(e.target.checked)} /> Es el contacto principal de esta empresa
       </label>
       <PrimaryBtn full onClick={submit}>Vincular</PrimaryBtn>
-    </Modal>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Hilos de seguimiento
-// ---------------------------------------------------------------------------
-// Crear un hilo sin persona todavía (arrancando desde una empresa o una obra). Se puede
-// sumar la persona más adelante desde la ficha del hilo.
-function NuevoHiloSimpleForm({ core, setCore, empresaId, obraId, onCreated, onCancelar }) {
-  const [titulo, setTitulo] = useState("");
-
-  const crear = () => {
-    if (!titulo.trim()) return;
-    const hoy = todayISO();
-    const nuevo = { id: uid("H"), participantes: [], empresaId: empresaId || "", obraId: obraId || "", titulo: titulo.trim(), estado: "Activo", fechaCreacion: hoy, tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" };
-    setCore((prev) => ({ ...prev, hilos: [nuevo, ...prev.hilos] }));
-    onCreated(nuevo.id);
-  };
-
-  return (
-    <div>
-      <Field label="Título del tema *"><input autoFocus className={inputCls} value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Ej: Presupuesto cables solares" /></Field>
-      <p className="text-xs text-[#A69C88] mb-3">Todavía no tiene ninguna persona vinculada — podés sumarla después desde la ficha del hilo.</p>
-      <div className="flex gap-2">
-        <button onClick={onCancelar} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
-        <button onClick={crear} className="flex-1 bg-[#E8871E] text-[#2A2118] rounded-sm py-2.5 font-bold text-sm">Crear hilo</button>
-      </div>
-    </div>
-  );
-}
-
-function NuevoHiloForm({ persona, core, setCore, acciones, setAcciones, onClose, onCreated }) {
-  const [titulo, setTitulo] = useState("");
-  const [empresaId, setEmpresaId] = useState("");
-  const [obraId, setObraId] = useState("");
-  const [showVincularEmpresa, setShowVincularEmpresa] = useState(false);
-  const [showVincularObra, setShowVincularObra] = useState(false);
-
-  const [tipoAccionId1, setTipoAccionId1] = useState(tipoDefaultId(core));
-  const [notas1, setNotas1] = useState("");
-  const [programarProxima, setProgramarProxima] = useState(true);
-  const [tipoAccionId2, setTipoAccionId2] = useState(tipoDefaultId(core));
-  const [notas2, setNotas2] = useState("");
-  const [modoFecha, setModoFecha] = useState("periodo");
-  const [cantidad, setCantidad] = useState(1);
-  const [unidad, setUnidad] = useState("semanas");
-  const [fechaEspecifica, setFechaEspecifica] = useState(todayISO());
-  const [horaEspecifica, setHoraEspecifica] = useState("");
-  const [confirmarEspecifica, setConfirmarEspecifica] = useState(false);
-  const [prioridad, setPrioridad] = useState("Media");
-  const [recurrente, setRecurrente] = useState(false);
-  const [repiteCadaN, setRepiteCadaN] = useState(1);
-  const [repiteUnidad, setRepiteUnidad] = useState("meses");
-  const [preview, setPreview] = useState(null);
-
-  const relEmpresas = core.personaEmpresa.filter((r) => r.personaId === persona.id);
-  const empresasDisponibles = relEmpresas.map((r) => core.empresas.find((e) => e.id === r.empresaId)).filter(Boolean);
-  const obrasDisponibles = useMemo(() => {
-    if (!empresaId) return [];
-    return core.empresaObra.filter((r) => r.empresaId === empresaId).map((r) => core.obras.find((o) => o.id === r.obraId)).filter(Boolean);
-  }, [empresaId, core.empresaObra, core.obras]);
-
-  useEffect(() => {
-    if (programarProxima && modoFecha === "periodo") {
-      const base = addPeriod(todayISO(), Number(cantidad) || 1, unidad);
-      setPreview(computeSmartDate(base, acciones, core.parametros));
-    }
-  }, [programarProxima, modoFecha, cantidad, unidad]); // eslint-disable-line
-
-  const especificaInhabil = modoFecha === "especifica" && esFechaInhabil(fechaEspecifica, core.parametros);
-
-  const crear = () => {
-    if (!titulo.trim()) return;
-    const hoy = todayISO();
-    const nuevoHilo = { id: uid("H"), participantes: [{ id: uid("part"), personaId: persona.id, desde: hoy, hasta: null, principal: true }], empresaId: empresaId || "", obraId: obraId || "", titulo: titulo.trim(), estado: "Activo", fechaCreacion: hoy, tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" };
-    setCore((prev) => ({ ...prev, hilos: [nuevoHilo, ...prev.hilos] }));
-
-    setAcciones((prev) => {
-      let siguienteNumero = Math.max(0, ...prev.map((a) => a.numero || 0)) + 1;
-      const idPrimera = uid("A");
-      let next = [{ id: idPrimera, hiloId: nuevoHilo.id, tipoAccionId: tipoAccionId1, estado: "Realizada", fechaRealizada: hoy, fechaProgramada: "", horaProgramada: "", prioridad: "", notaPlanificada: "", notaHecho: notas1, origenId: null, destinoId: null, numero: siguienteNumero++, recurrente: false, repiteCadaN: null, repiteUnidad: null, fechaCreacion: hoy, secuencia: Date.now() }, ...prev];
-
-      if (programarProxima) {
-        const fecha = modoFecha === "periodo" ? (preview || hoy) : (fechaEspecifica || hoy);
-        const hora = modoFecha === "especifica" ? horaEspecifica : "";
-        const idNueva = uid("A");
-        next = [{ id: idNueva, hiloId: nuevoHilo.id, tipoAccionId: tipoAccionId2, estado: "Pendiente", fechaRealizada: "", fechaProgramada: fecha, horaProgramada: hora, prioridad, notaPlanificada: notas2, notaHecho: "", origenId: idPrimera, destinoId: null, numero: siguienteNumero++, recurrente, repiteCadaN: recurrente ? Number(repiteCadaN) : null, repiteUnidad: recurrente ? repiteUnidad : null, fechaCreacion: hoy, secuencia: Date.now() + 1 }, ...next];
-        next = next.map((a) => (a.id === idPrimera ? { ...a, destinoId: idNueva } : a));
-      }
-      return next;
-    });
-
-    onCreated(nuevoHilo.id);
-  };
-
-  const submit = () => {
-    if (programarProxima && especificaInhabil && !confirmarEspecifica) { setConfirmarEspecifica(true); return; }
-    crear();
-  };
-
-  return (
-    <Modal title={`Nuevo hilo — ${persona.nombre}`} onClose={onClose}>
-      <Field label="Título del tema *"><input className={inputCls} value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Ej: Presupuesto cables solares" /></Field>
-
-      <Field label="Empresa (opcional)">
-        {empresasDisponibles.length === 0 ? (
-          <p className="text-sm text-[#A69C88] mb-1.5">Este contacto no tiene empresas vinculadas todavía.</p>
-        ) : (
-          <select className={inputCls} value={empresaId} onChange={(e) => { setEmpresaId(e.target.value); setObraId(""); }}>
-            <option value="">— sin empresa —</option>
-            {empresasDisponibles.map((e) => <option key={e.id} value={e.id}>{e.denominacion}</option>)}
-          </select>
-        )}
-        <button type="button" onClick={() => setShowVincularEmpresa(true)} className="text-xs font-bold text-[#B0452E] mt-1.5">+ Vincular otra empresa a este contacto</button>
-      </Field>
-
-      <Field label="Obra (opcional)">
-        {obrasDisponibles.length === 0 ? (
-          <p className="text-sm text-[#A69C88] mb-1.5">{empresaId ? "Esta empresa no tiene obras vinculadas." : "Elegí primero una empresa para poder sumar una obra."}</p>
-        ) : (
-          <select className={inputCls} value={obraId} onChange={(e) => setObraId(e.target.value)}>
-            <option value="">— sin obra —</option>
-            {obrasDisponibles.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
-          </select>
-        )}
-        <button
-          type="button"
-          disabled={!empresaId}
-          onClick={() => setShowVincularObra(true)}
-          className={`text-xs font-bold mt-1.5 ${empresaId ? "text-[#B0452E]" : "text-[#C9C1AE] cursor-not-allowed"}`}
-        >
-          + Vincular obra a esta empresa
-        </button>
-      </Field>
-
-      <div className="border-t border-[#E4DECF] my-3 pt-3">
-        <p className="text-[11px] font-bold uppercase tracking-wide text-[#B0452E] mb-2">Primer contacto</p>
-        <SelectConCrear
-          label="Tipo de acción"
-          opciones={core.tiposAccion}
-          value={tipoAccionId1}
-          onChange={setTipoAccionId1}
-          placeholderCrear="Ej: Videollamada"
-          onCrear={(nombre) => {
-            const nuevo = { id: uid("TA"), nombre };
-            setCore((prev) => ({ ...prev, tiposAccion: [...prev.tiposAccion, nuevo] }));
-            return nuevo;
-          }}
-        />
-        <Field label="Se hizo">
-          <textarea className={inputCls} rows={2} value={notas1} onChange={(e) => setNotas1(e.target.value)} placeholder="Qué hablaron, qué resultó..." />
-        </Field>
-
-        <label className="flex items-center gap-2 mb-2 text-sm font-bold text-[#2A2118]">
-          <input type="checkbox" checked={programarProxima} onChange={(e) => setProgramarProxima(e.target.checked)} /> Programar próxima acción
-        </label>
-
-        {programarProxima && (
-          <>
-            <SelectConCrear
-              label="Tipo de acción"
-              opciones={core.tiposAccion}
-              value={tipoAccionId2}
-              onChange={setTipoAccionId2}
-              placeholderCrear="Ej: Videollamada"
-              onCrear={(nombre) => {
-                const nuevo = { id: uid("TA"), nombre };
-                setCore((prev) => ({ ...prev, tiposAccion: [...prev.tiposAccion, nuevo] }));
-                return nuevo;
-              }}
-            />
-            <Field label="Se planifica (qué se busca con esta acción)">
-              <textarea className={inputCls} rows={2} value={notas2} onChange={(e) => setNotas2(e.target.value)} placeholder="Ej: confirmar si aceptaron la propuesta, próximos pasos a seguir..." />
-            </Field>
-
-            <div className="flex gap-2 mb-2">
-              <button
-                type="button"
-                onClick={() => setModoFecha("periodo")}
-                style={{ backgroundColor: modoFecha === "periodo" ? "#2A2F36" : "#E7E2D8", color: modoFecha === "periodo" ? "#FFFFFF" : "#6B6352" }}
-                className="flex-1 py-1.5 rounded-sm text-xs font-bold"
-              >Dentro de un período</button>
-              <button
-                type="button"
-                onClick={() => setModoFecha("especifica")}
-                style={{ backgroundColor: modoFecha === "especifica" ? "#2A2F36" : "#E7E2D8", color: modoFecha === "especifica" ? "#FFFFFF" : "#6B6352" }}
-                className="flex-1 py-1.5 rounded-sm text-xs font-bold"
-              >Fecha específica</button>
-            </div>
-
-            {modoFecha === "periodo" ? (
-              <>
-                <Field label="¿Dentro de cuánto?">
-                  <div className="flex gap-2">
-                    <input type="number" min={1} className={inputCls} value={cantidad} onChange={(e) => setCantidad(e.target.value)} />
-                    <select className={inputCls} value={unidad} onChange={(e) => setUnidad(e.target.value)}>
-                      <option value="dias">días</option>
-                      <option value="semanas">semanas</option>
-                      <option value="meses">meses</option>
-                    </select>
-                  </div>
-                </Field>
-                {preview && (
-                  <p className="text-xs text-[#6B6352] mb-3 -mt-2 bg-[#EFEBE0] rounded-sm px-2.5 py-1.5">
-                    Fecha sugerida: <span className="font-bold">{fmtDate(preview)}</span> (ajustada para no caer en día no hábil ni en un día muy cargado)
-                  </p>
-                )}
-              </>
-            ) : (
-              <>
-                <Field label="Fecha">
-                  <input type="date" className={inputCls} value={fechaEspecifica} onChange={(e) => { setFechaEspecifica(e.target.value); setConfirmarEspecifica(false); }} />
-                </Field>
-                <Field label="Hora (opcional)">
-                  <input type="time" className={inputCls} value={horaEspecifica} onChange={(e) => setHoraEspecifica(e.target.value)} />
-                </Field>
-                {especificaInhabil && (
-                  <div className="bg-[#FBEEE7] border border-[#E8871E] rounded-sm p-2.5 mb-3">
-                    <p className="text-xs text-[#2A2118]">Ese día está marcado como no hábil. Si guardás de nuevo, se confirma igual.</p>
-                  </div>
-                )}
-              </>
-            )}
-
-            <Field label="Prioridad">
-              <select className={inputCls} value={prioridad} onChange={(e) => setPrioridad(e.target.value)}>
-                <option>Alta</option><option>Media</option><option>Baja</option>
-              </select>
-            </Field>
-            <label className="flex items-center gap-2 mb-2 text-sm text-[#2A2118]">
-              <input type="checkbox" checked={recurrente} onChange={(e) => setRecurrente(e.target.checked)} /> Es una acción repetitiva
-            </label>
-            {recurrente && (
-              <Field label="Repetir cada">
-                <div className="flex gap-2">
-                  <input type="number" min={1} className={inputCls} value={repiteCadaN} onChange={(e) => setRepiteCadaN(e.target.value)} />
-                  <select className={inputCls} value={repiteUnidad} onChange={(e) => setRepiteUnidad(e.target.value)}>
-                    <option value="dias">días</option>
-                    <option value="semanas">semanas</option>
-                    <option value="meses">meses</option>
-                  </select>
-                </div>
-              </Field>
-            )}
-          </>
-        )}
-      </div>
-
-      <PrimaryBtn full onClick={submit}>{especificaInhabil && confirmarEspecifica ? "Sí, crear igual" : "Crear hilo"}</PrimaryBtn>
-
-      {showVincularEmpresa && (
-        <VincularEmpresaForm
-          core={core}
-          setCore={setCore}
-          onClose={() => setShowVincularEmpresa(false)}
-          onSave={(rel) => {
-            setCore((prev) => ({ ...prev, personaEmpresa: [...prev.personaEmpresa, { ...rel, personaId: persona.id, id: uid("pe") }] }));
-            setEmpresaId(rel.empresaId);
-            setObraId("");
-            setShowVincularEmpresa(false);
-          }}
-        />
-      )}
-      {showVincularObra && (
-        <VincularObraForm
-          core={core}
-          setCore={setCore}
-          empresaId={empresaId}
-          onClose={() => setShowVincularObra(false)}
-          onLinked={(newObraId) => { setObraId(newObraId); setShowVincularObra(false); }}
-        />
-      )}
     </Modal>
   );
 }
@@ -3813,7 +3896,7 @@ function EmpresaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
   );
 }
 
-function EmpresaDetail({ id, core, setCore, acciones, onClose, onOpen }) {
+function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen }) {
   const empresa = core.empresas.find((e) => e.id === id);
   const [showObraLink, setShowObraLink] = useState(false);
   const [showPersonaLink, setShowPersonaLink] = useState(false);
@@ -3908,10 +3991,12 @@ function EmpresaDetail({ id, core, setCore, acciones, onClose, onOpen }) {
 
       {showNuevoHiloEmpresa && (
         <Modal title="Nuevo hilo" onClose={() => setShowNuevoHiloEmpresa(false)}>
-          <NuevoHiloSimpleForm
+          <NuevoHiloForm
             core={core}
             setCore={setCore}
-            empresaId={id}
+            acciones={acciones}
+            setAcciones={setAcciones}
+            empresaFijaId={id}
             onCreated={(hiloId) => { setShowNuevoHiloEmpresa(false); onOpen("hilo", hiloId); }}
             onCancelar={() => setShowNuevoHiloEmpresa(false)}
           />
@@ -4099,7 +4184,7 @@ function ObraForm({ initial, core, onSave, onDelete, onClose }) {
   );
 }
 
-function ObraDetail({ id, core, setCore, onClose, onOpen }) {
+function ObraDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen }) {
   const obra = core.obras.find((o) => o.id === id);
   const [showNuevoHiloObra, setShowNuevoHiloObra] = useState(false);
   const [showEmpresaLink, setShowEmpresaLink] = useState(false);
@@ -4150,10 +4235,12 @@ function ObraDetail({ id, core, setCore, onClose, onOpen }) {
       </div>
       {showNuevoHiloObra && (
         <Modal title="Nuevo hilo" onClose={() => setShowNuevoHiloObra(false)}>
-          <NuevoHiloSimpleForm
+          <NuevoHiloForm
             core={core}
             setCore={setCore}
-            obraId={id}
+            acciones={acciones}
+            setAcciones={setAcciones}
+            obraFijaId={id}
             onCreated={(hiloId) => { setShowNuevoHiloObra(false); onOpen("hilo", hiloId); }}
             onCancelar={() => setShowNuevoHiloObra(false)}
           />
@@ -4756,6 +4843,7 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
   const setDiasUrgente = (v) => setCore((prev) => ({ ...prev, parametros: { ...prev.parametros, diasUrgente: Math.max(0, Number(v) || 0) } }));
   const setDiasProximos = (v) => setCore((prev) => ({ ...prev, parametros: { ...prev.parametros, diasProximos: Math.max(1, Number(v) || 1) } }));
   const setGoogleContactsLabel = (v) => setCore((prev) => ({ ...prev, parametros: { ...prev.parametros, googleContactsLabel: v } }));
+  const setTituloApp = (v) => setCore((prev) => ({ ...prev, parametros: { ...prev.parametros, tituloApp: v } }));
 
   const setTemaColor = (clave, valor) => setCore((prev) => ({ ...prev, tema: { ...prev.tema, [clave]: valor } }));
   const restablecerTema = () => setCore((prev) => ({ ...prev, tema: { botonActivo: "#1B4D2E", botonInactivo: "#D9F0DE", tarjeta: "#FFFFFF", linea: "#E4DECF" } }));
@@ -4794,6 +4882,12 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
 
       {section === "parametros" && (
         <div className="space-y-3">
+          <div className="bg-white border border-[#E4DECF] rounded-sm p-4">
+            <Field label="Título de la app">
+              <input className={inputCls} value={core.parametros.tituloApp ?? "Seguimiento comercial"} onChange={(e) => setTituloApp(e.target.value)} placeholder="Seguimiento comercial" />
+            </Field>
+          </div>
+
           <div className="bg-white border border-[#E4DECF] rounded-sm p-4">
             <Field label="Umbral de día lleno (cant. de acciones pendientes en un mismo día a partir de la cual se busca otra fecha)">
               <input type="number" min={1} className={inputCls} value={core.parametros.umbralDiaLleno} onChange={(e) => setUmbral(e.target.value)} />
