@@ -31,12 +31,25 @@ async function refreshAccessToken(refreshToken) {
   return data;
 }
 
-async function fetchAllContacts(accessToken) {
+// Busca, entre las etiquetas (contact groups) del usuario, la que coincide con el
+// nombre configurado. Devuelve su resourceName, o null si todavía no la creó.
+async function findLabelGroup(accessToken, labelName) {
+  const url = new URL('https://people.googleapis.com/v1/contactGroups');
+  url.searchParams.set('pageSize', '1000');
+  const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${accessToken}` } });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error?.message || 'Error consultando las etiquetas de Google Contacts');
+  const target = labelName.trim().toLowerCase();
+  const grupo = (data.contactGroups || []).find((g) => (g.formattedName || g.name || '').trim().toLowerCase() === target);
+  return grupo ? grupo.resourceName : null;
+}
+
+async function fetchContactsInGroup(accessToken, groupResourceName) {
   let contacts = [];
   let pageToken = '';
   do {
     const url = new URL('https://people.googleapis.com/v1/people/me/connections');
-    url.searchParams.set('personFields', 'names,phoneNumbers');
+    url.searchParams.set('personFields', 'names,phoneNumbers,memberships');
     url.searchParams.set('pageSize', '1000');
     if (pageToken) url.searchParams.set('pageToken', pageToken);
     const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${accessToken}` } });
@@ -45,7 +58,10 @@ async function fetchAllContacts(accessToken) {
     contacts = contacts.concat(data.connections || []);
     pageToken = data.nextPageToken || '';
   } while (pageToken);
-  return contacts;
+
+  return contacts.filter((c) =>
+    (c.memberships || []).some((m) => m.contactGroupMembership?.contactGroupResourceName === groupResourceName)
+  );
 }
 
 export async function POST(request) {
@@ -79,17 +95,30 @@ export async function POST(request) {
     }
   }
 
-  let googleContacts;
-  try {
-    googleContacts = await fetchAllContacts(accessToken);
-  } catch {
-    return NextResponse.json({ connected: true, error: 'reconectar' });
-  }
-
   const { data: row } = await supabaseAdmin.from('crm_data').select('core').eq('user_id', user.id).maybeSingle();
   if (!row) return NextResponse.json({ connected: true, agregados: 0, actualizados: 0 });
 
   const core = row.core;
+  const labelName = (core.parametros?.googleContactsLabel || 'CRM').trim() || 'CRM';
+
+  let groupResourceName;
+  try {
+    groupResourceName = await findLabelGroup(accessToken, labelName);
+  } catch {
+    return NextResponse.json({ connected: true, error: 'reconectar' });
+  }
+
+  if (!groupResourceName) {
+    return NextResponse.json({ connected: true, error: 'sin_etiqueta', label: labelName });
+  }
+
+  let googleContacts;
+  try {
+    googleContacts = await fetchContactsInGroup(accessToken, groupResourceName);
+  } catch {
+    return NextResponse.json({ connected: true, error: 'reconectar' });
+  }
+
   const personas = Array.isArray(core.personas) ? [...core.personas] : [];
   let agregados = 0;
   let actualizados = 0;

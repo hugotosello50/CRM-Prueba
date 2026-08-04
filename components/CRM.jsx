@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.5.0";
+const APP_VERSION = "1.5.1";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -65,7 +65,7 @@ const seedCore = () => ({
     { id: uid("et"), etiquetaId: "ET03", entidadTipo: "Empresa", entidadId: "E001" },
     { id: uid("et"), etiquetaId: "ET02", entidadTipo: "Obra", entidadId: "O001" },
   ],
-  parametros: { umbralDiaLleno: 8, diasHabiles: [1, 2, 3, 4, 5], fechasNoHabiles: [], diasUrgente: 3, diasProximos: 7 },
+  parametros: { umbralDiaLleno: 8, diasHabiles: [1, 2, 3, 4, 5], fechasNoHabiles: [], diasUrgente: 3, diasProximos: 7, googleContactsLabel: "CRM" },
   tema: { botonActivo: "#1B4D2E", botonInactivo: "#D9F0DE", tarjeta: "#FFFFFF", linea: "#E4DECF" },
   kanbanColumnas: [
     { id: "K1", nombre: "Por hacer", orden: 0 },
@@ -134,7 +134,7 @@ function normalizeCore(c) {
     }
     return base;
   });
-  out.parametros = { umbralDiaLleno: 8, diasHabiles: [1, 2, 3, 4, 5], fechasNoHabiles: [], diasUrgente: 3, diasProximos: 7, ...(out.parametros || {}) };
+  out.parametros = { umbralDiaLleno: 8, diasHabiles: [1, 2, 3, 4, 5], fechasNoHabiles: [], diasUrgente: 3, diasProximos: 7, googleContactsLabel: "CRM", ...(out.parametros || {}) };
   out.tema = { ...{ botonActivo: "#1B4D2E", botonInactivo: "#D9F0DE", tarjeta: "#FFFFFF", linea: "#E4DECF" }, ...(out.tema || {}) };
   if (!Array.isArray(out.kanbanColumnas)) out.kanbanColumnas = seed.kanbanColumnas;
   if (!Array.isArray(out.kanbanColumnasTareas)) out.kanbanColumnasTareas = seed.kanbanColumnasTareas;
@@ -2025,7 +2025,8 @@ function PersonasView({ core, setCore, onOpen }) {
   const [modal, setModal] = useState(null); // null | {} (new) | persona (edit)
   const [q, setQ] = useState("");
   const [deletingId, setDeletingId] = useState(null);
-  const [googleEstado, setGoogleEstado] = useState("verificando"); // verificando | noConectado | sincronizando | ok | reconectar | error
+  const [googleEstado, setGoogleEstado] = useState("verificando"); // verificando | noConectado | sincronizando | ok | reconectar | sinEtiqueta | error
+  const [googleLabel, setGoogleLabel] = useState("");
   const yaSincronizoRef = useRef(false);
 
   const sincronizarGoogle = async () => {
@@ -2040,6 +2041,7 @@ function PersonasView({ core, setCore, onOpen }) {
       const data = await res.json();
       if (!data.connected) { setGoogleEstado("noConectado"); return; }
       if (data.error === "reconectar") { setGoogleEstado("reconectar"); return; }
+      if (data.error === "sin_etiqueta") { setGoogleLabel(data.label || core.parametros.googleContactsLabel || "CRM"); setGoogleEstado("sinEtiqueta"); return; }
       if (data.personas) setCore((prev) => ({ ...prev, personas: data.personas }));
       setGoogleEstado("ok");
     } catch {
@@ -2112,6 +2114,13 @@ function PersonasView({ core, setCore, onOpen }) {
           <button onClick={conectarGoogle} className="shrink-0 bg-[#E8871E] text-[#2A2118] rounded-sm px-3 py-1.5 font-bold text-xs">
             {googleEstado === "reconectar" ? "Reconectar" : "Conectar Google"}
           </button>
+        </div>
+      )}
+      {googleEstado === "sinEtiqueta" && (
+        <div className="bg-[#FBEEE7] border border-[#E8871E] rounded-sm p-3 mb-3">
+          <p className="text-xs text-[#2A2118]">
+            Conectado, pero todavía no encontré la etiqueta <b>"{googleLabel}"</b> en tus Contactos de Google. Creala ahí y asignásela a los contactos que querés traer acá — los personales, sin esa etiqueta, no se importan.
+          </p>
         </div>
       )}
       {googleEstado === "sincronizando" && (
@@ -4746,6 +4755,7 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
   const setUmbral = (v) => setCore((prev) => ({ ...prev, parametros: { ...prev.parametros, umbralDiaLleno: Number(v) || 1 } }));
   const setDiasUrgente = (v) => setCore((prev) => ({ ...prev, parametros: { ...prev.parametros, diasUrgente: Math.max(0, Number(v) || 0) } }));
   const setDiasProximos = (v) => setCore((prev) => ({ ...prev, parametros: { ...prev.parametros, diasProximos: Math.max(1, Number(v) || 1) } }));
+  const setGoogleContactsLabel = (v) => setCore((prev) => ({ ...prev, parametros: { ...prev.parametros, googleContactsLabel: v } }));
 
   const setTemaColor = (clave, valor) => setCore((prev) => ({ ...prev, tema: { ...prev.tema, [clave]: valor } }));
   const restablecerTema = () => setCore((prev) => ({ ...prev, tema: { botonActivo: "#1B4D2E", botonInactivo: "#D9F0DE", tarjeta: "#FFFFFF", linea: "#E4DECF" } }));
@@ -4795,6 +4805,13 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
             <Field label='Pestaña "N días" del Kanban — cuántos días hacia adelante incluye (contando hoy)'>
               <input type="number" min={1} className={inputCls} value={core.parametros.diasProximos ?? 7} onChange={(e) => setDiasProximos(e.target.value)} />
             </Field>
+          </div>
+
+          <div className="bg-white border border-[#E4DECF] rounded-sm p-4">
+            <Field label="Etiqueta de Google Contacts a sincronizar">
+              <input className={inputCls} value={core.parametros.googleContactsLabel ?? "CRM"} onChange={(e) => setGoogleContactsLabel(e.target.value)} placeholder="Ej: CRM" />
+            </Field>
+            <p className="text-xs text-[#8A8272]">Solo se importan los contactos de Google que tengan esta etiqueta puesta (creála desde la app de Contactos de Google). Así separás tus contactos personales de los que querés ver acá.</p>
           </div>
 
           <div className="bg-white border border-[#E4DECF] rounded-sm p-4">
