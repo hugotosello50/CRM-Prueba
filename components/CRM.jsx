@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.4.3";
+const APP_VERSION = "1.5.0";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -2025,6 +2025,59 @@ function PersonasView({ core, setCore, onOpen }) {
   const [modal, setModal] = useState(null); // null | {} (new) | persona (edit)
   const [q, setQ] = useState("");
   const [deletingId, setDeletingId] = useState(null);
+  const [googleEstado, setGoogleEstado] = useState("verificando"); // verificando | noConectado | sincronizando | ok | reconectar | error
+  const yaSincronizoRef = useRef(false);
+
+  const sincronizarGoogle = async () => {
+    setGoogleEstado("sincronizando");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { setGoogleEstado("noConectado"); return; }
+      const res = await fetch("/api/google/sync", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const data = await res.json();
+      if (!data.connected) { setGoogleEstado("noConectado"); return; }
+      if (data.error === "reconectar") { setGoogleEstado("reconectar"); return; }
+      if (data.personas) setCore((prev) => ({ ...prev, personas: data.personas }));
+      setGoogleEstado("ok");
+    } catch {
+      setGoogleEstado("noConectado");
+    }
+  };
+
+  useEffect(() => {
+    if (yaSincronizoRef.current) return;
+    yaSincronizoRef.current = true;
+    const params = new URLSearchParams(window.location.search);
+    const googleParam = params.get("google");
+    if (googleParam) window.history.replaceState({}, "", window.location.pathname);
+    if (googleParam === "error") { setGoogleEstado("error"); return; }
+    sincronizarGoogle();
+  }, []); // eslint-disable-line
+
+  const conectarGoogle = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    const params = new URLSearchParams({
+      client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID,
+      redirect_uri: `${window.location.origin}/api/google/callback`,
+      response_type: "code",
+      scope: "https://www.googleapis.com/auth/contacts.readonly",
+      access_type: "offline",
+      prompt: "consent",
+      state: session.access_token,
+    });
+    window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+  };
+
+  const desconectarGoogle = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    await fetch("/api/google/disconnect", { method: "POST", headers: { Authorization: `Bearer ${session.access_token}` } });
+    setGoogleEstado("noConectado");
+  };
 
   const list = core.personas.filter((p) => p.nombre.toLowerCase().includes(q.toLowerCase()));
 
@@ -2047,6 +2100,29 @@ function PersonasView({ core, setCore, onOpen }) {
 
   return (
     <div>
+      {(googleEstado === "noConectado" || googleEstado === "reconectar" || googleEstado === "error") && (
+        <div className="bg-white border border-[#E4DECF] rounded-sm p-3 mb-3 flex items-center justify-between gap-2">
+          <p className="text-xs text-[#6B6352]">
+            {googleEstado === "reconectar"
+              ? "Tu conexión con Google Contacts venció."
+              : googleEstado === "error"
+              ? "No se pudo conectar con Google. Probá de nuevo."
+              : "Traé tus contactos automáticamente desde Google (nombre y teléfono)."}
+          </p>
+          <button onClick={conectarGoogle} className="shrink-0 bg-[#E8871E] text-[#2A2118] rounded-sm px-3 py-1.5 font-bold text-xs">
+            {googleEstado === "reconectar" ? "Reconectar" : "Conectar Google"}
+          </button>
+        </div>
+      )}
+      {googleEstado === "sincronizando" && (
+        <p className="text-[10px] text-[#A69C88] mb-2">Sincronizando con Google Contacts...</p>
+      )}
+      {googleEstado === "ok" && (
+        <p className="text-[10px] text-[#A69C88] mb-3">
+          Google Contacts conectado · <button onClick={desconectarGoogle} className="underline font-bold">Desconectar</button>
+        </p>
+      )}
+
       <div className="flex gap-2 mb-3">
         <div className="relative flex-1">
           <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#A69C88]" />
