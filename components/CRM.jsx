@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.6.3";
+const APP_VERSION = "1.6.4";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -2959,6 +2959,10 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
     ...prev,
     hilos: prev.hilos.map((h) => (h.id === id ? { ...h, participantes: h.participantes.map((p) => (p.id === partId ? { ...p, hasta: todayISO(), principal: false } : p)) } : h)),
   }));
+  const desvincularTarea = (tareaId) => setCore((prev) => ({
+    ...prev,
+    hilos: prev.hilos.map((h) => (h.id === tareaId ? { ...h, hiloRelacionadoId: null } : h)),
+  }));
   const agregarPersona = (personaId, comoPrincipal) => setCore((prev) => ({
     ...prev,
     hilos: prev.hilos.map((h) => {
@@ -3095,10 +3099,13 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
           ) : (
             <div className="space-y-1.5">
               {tareasVinculadas.map((tv) => (
-                <button key={tv.id} onClick={() => onOpen("hilo", tv.id)} className="w-full text-left text-sm flex items-center gap-1.5">
-                  <span className={tv.estado === "Cerrado" ? "line-through text-[#A69C88]" : "text-[#2A2118] font-semibold"}>{tv.titulo}</span>
-                  {tv.estado === "Cerrado" && <Chip tone="neutral">Cerrada</Chip>}
-                </button>
+                <div key={tv.id} className="flex items-center justify-between gap-2 text-sm">
+                  <button onClick={() => onOpen("hilo", tv.id)} className="text-left flex-1 min-w-0 flex items-center gap-1.5">
+                    <span className={tv.estado === "Cerrado" ? "line-through text-[#A69C88]" : "text-[#2A2118] font-semibold"}>{tv.titulo}</span>
+                    {tv.estado === "Cerrado" && <Chip tone="neutral">Cerrada</Chip>}
+                  </button>
+                  <IconBtn label="Desvincular" danger onClick={() => desvincularTarea(tv.id)}><X size={14} /></IconBtn>
+                </div>
               ))}
             </div>
           )}
