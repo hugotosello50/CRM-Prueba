@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.4.2";
+const APP_VERSION = "1.4.3";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -806,7 +806,6 @@ function BackHeader({ title, onClose }) {
 // ---------------------------------------------------------------------------
 function AgendaView({ core, setCore, acciones, setAcciones, onOpen }) {
   const t = todayISO();
-  const [showNuevoHilo, setShowNuevoHilo] = useState(false);
 
   const reprogramar = (id, nuevaFecha) => {
     setAcciones((prev) => prev.map((a) => (a.id === id ? { ...a, fechaProgramada: nuevaFecha } : a)));
@@ -814,22 +813,7 @@ function AgendaView({ core, setCore, acciones, setAcciones, onOpen }) {
 
   return (
     <div>
-      <div className="flex justify-end mb-3">
-        <button onClick={() => setShowNuevoHilo(true)} className="bg-[#E8871E] text-[#2A2118] rounded-sm px-3.5 py-2 font-bold text-sm flex items-center gap-1.5">
-          <Plus size={16} /> Nuevo hilo
-        </button>
-      </div>
       <KanbanView core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onOpen={onOpen} onReprogramar={reprogramar} t={t} soloTipo="cliente" />
-      {showNuevoHilo && (
-        <Modal title="Nuevo hilo" onClose={() => setShowNuevoHilo(false)}>
-          <NuevoHiloDesdeSeguimientoForm
-            core={core}
-            setCore={setCore}
-            onCreated={(hiloId) => { setShowNuevoHilo(false); onOpen("hilo", hiloId); }}
-            onCancelar={() => setShowNuevoHilo(false)}
-          />
-        </Modal>
-      )}
     </div>
   );
 }
@@ -1575,6 +1559,7 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, onReprograma
   const [bucket, setBucket] = useState("todas");
   const [orden, setOrden] = useState("asc");
   const [agruparPersona, setAgruparPersona] = useState(false);
+  const [showNuevoHilo, setShowNuevoHilo] = useState(false);
   const tabsRef = useRef(null);
   const hoverRef = useRef(undefined);
 
@@ -1733,17 +1718,26 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, onReprograma
       <div className="border-t border-[#E4DECF] my-3" />
 
       <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
-        <label className="h-8 flex items-center gap-1.5 text-[11px] font-bold text-[#6B6352]">
-          <input type="checkbox" checked={agruparPersona} onChange={(e) => setAgruparPersona(e.target.checked)} />
-          Agrupar por persona
-        </label>
         <button
-          onClick={() => setOrden((o) => (o === "asc" ? "desc" : "asc"))}
-          style={{ backgroundColor: core.tema.botonInactivo, color: "#2A2118" }}
+          onClick={() => setShowNuevoHilo(true)}
+          style={{ backgroundColor: "#E8871E", color: "#2A2118" }}
           className="h-8 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide px-2.5 rounded-sm"
         >
-          {orden === "asc" ? <><ArrowDownAZ size={12} /> Más antiguas primero</> : <><ArrowUpAZ size={12} /> Más recientes primero</>}
+          <Plus size={14} /> Nuevo hilo
         </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <label className="h-8 flex items-center gap-1.5 text-[11px] font-bold text-[#6B6352]">
+            <input type="checkbox" checked={agruparPersona} onChange={(e) => setAgruparPersona(e.target.checked)} />
+            Agrupar por persona
+          </label>
+          <button
+            onClick={() => setOrden((o) => (o === "asc" ? "desc" : "asc"))}
+            style={{ backgroundColor: core.tema.botonInactivo, color: "#2A2118" }}
+            className="h-8 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide px-2.5 rounded-sm"
+          >
+            {orden === "asc" ? <><ArrowDownAZ size={12} /> Más antiguas primero</> : <><ArrowUpAZ size={12} /> Más recientes primero</>}
+          </button>
+        </div>
       </div>
 
       <div className="border-t border-[#E4DECF] mb-3" />
@@ -1785,6 +1779,17 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, onReprograma
             ))}
           </div>
         </div>
+      )}
+
+      {showNuevoHilo && (
+        <Modal title="Nuevo hilo" onClose={() => setShowNuevoHilo(false)}>
+          <NuevoHiloDesdeSeguimientoForm
+            core={core}
+            setCore={setCore}
+            onCreated={(hiloId) => { setShowNuevoHilo(false); onOpen("hilo", hiloId); }}
+            onCancelar={() => setShowNuevoHilo(false)}
+          />
+        </Modal>
       )}
     </div>
   );
