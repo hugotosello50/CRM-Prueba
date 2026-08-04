@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.4.0";
+const APP_VERSION = "1.4.1";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -1836,7 +1836,7 @@ function HiloSinAccionCard({ hilo, core, setCore, acciones, setAcciones, onOpen 
 }
 
 function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, onOpen, onReprogramar, t, onIniciarDrag, arrastrando }) {
-  const [vista, setVista] = useState("resumido"); // 'resumido' | 'completo'
+  const [verResumen, setVerResumen] = useState(false);
   const [showAvanzar, setShowAvanzar] = useState(false);
 
   const primary = accionesBucket[0];
@@ -1916,23 +1916,17 @@ function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, 
       {hilo && (
         <div className="flex items-center justify-between gap-2 mt-2 pt-2 border-t border-[#EFEBE0]">
           <PrimaryBtn onClick={() => setShowAvanzar(true)}>Avanzar hilo</PrimaryBtn>
-          <div className="flex gap-1 shrink-0">
-            <button
-              onClick={() => setVista("resumido")}
-              style={vista === "resumido" ? { backgroundColor: core.tema.botonActivo, color: "#FFFFFF" } : { backgroundColor: core.tema.botonInactivo, color: "#2A2118" }}
-              className="text-[10px] font-bold uppercase tracking-wide px-2 py-1.5 rounded-sm"
-            >Resumido</button>
-            <button
-              onClick={() => setVista("completo")}
-              style={vista === "completo" ? { backgroundColor: core.tema.botonActivo, color: "#FFFFFF" } : { backgroundColor: core.tema.botonInactivo, color: "#2A2118" }}
-              className="text-[10px] font-bold uppercase tracking-wide px-2 py-1.5 rounded-sm"
-            >Completo</button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="text-[10px] font-bold uppercase tracking-wide text-[#A69C88]">Ver hilo</span>
+            <button onClick={() => setVerResumen((v) => !v)} className="text-xs font-bold text-[#B0452E]">Resumido</button>
+            <span className="text-[#D8D2C4] text-xs">·</span>
+            <button onClick={() => onOpen("hilo", hilo.id)} className="text-xs font-bold text-[#B0452E]">Completo</button>
           </div>
         </div>
       )}
 
-      {/* Bloque 3: historial completo */}
-      {vista === "completo" && hilo && (
+      {/* Bloque 3: historial (resumen en la tarjeta) */}
+      {verResumen && hilo && (
         <div className="mt-2 pt-2 border-t border-[#EFEBE0]">
           <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352] mb-1.5">Historial</p>
           {historialCompleto.length === 0 ? (
@@ -1947,7 +1941,6 @@ function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, 
               ))}
             </div>
           )}
-          <button onClick={() => onOpen("hilo", hilo.id)} className="text-xs font-bold text-[#6B6352]">Ver hilo completo</button>
         </div>
       )}
 
