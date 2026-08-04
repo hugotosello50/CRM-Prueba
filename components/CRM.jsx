@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.6.1";
+const APP_VERSION = "1.6.2";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -3013,10 +3013,9 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
             <Pencil size={12} /> Editar título
           </button>
         </div>
-      </div>
 
       {hilo.tipo === "cliente" && (
-        <div className="border border-[#E4DECF] rounded-sm p-3 mb-3 bg-white">
+        <div className="border-t border-[#E4DECF] mt-3 pt-3">
           <div className="flex items-center justify-between mb-2">
             <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Personas vinculadas</p>
             <button onClick={() => setShowAgregarPersona(true)} className="text-xs font-bold text-[#B0452E]">+ Agregar persona</button>
@@ -3069,7 +3068,7 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
       )}
 
       {hilo.tipo === "tarea" && (
-        <div className="border border-[#E4DECF] rounded-sm p-3 mb-3 bg-white">
+        <div className="border-t border-[#E4DECF] mt-3 pt-3">
           <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352] mb-2">Vínculo con un cliente (opcional)</p>
           {hiloRelacionado ? (
             <div className="flex items-center justify-between gap-2">
@@ -3086,7 +3085,7 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
       )}
 
       {hilo.tipo === "cliente" && (
-        <div className="border border-[#E4DECF] rounded-sm p-3 mb-3 bg-white">
+        <div className="border-t border-[#E4DECF] mt-3 pt-3">
           <div className="flex items-center justify-between mb-2">
             <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Tareas vinculadas</p>
             <button onClick={() => setShowNuevaTareaVinculada(true)} className="text-xs font-bold text-[#B0452E]">+ Nueva tarea vinculada</button>
@@ -3105,6 +3104,7 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
           )}
         </div>
       )}
+      </div>
 
       <div className="border border-[#E4DECF] rounded-sm p-3 mb-3" style={{ backgroundColor: "#F2F8F3" }}>
         <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352] mb-2">Próxima acción</p>
