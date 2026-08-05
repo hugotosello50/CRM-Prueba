@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.10.1";
+const APP_VERSION = "1.11.0";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -61,6 +61,12 @@ const seedCore = () => ({
   ],
   empresaObra: [{ id: uid("eo"), empresaId: "E001", obraId: "O001" }],
   personaObra: [],
+  hiloEmpresa: [
+    { id: uid("he"), hiloId: "H001", empresaId: "E001" },
+    { id: uid("he"), hiloId: "H002", empresaId: "E001" },
+    { id: uid("he"), hiloId: "H003", empresaId: "E001" },
+    { id: uid("he"), hiloId: "H004", empresaId: "E002" },
+  ],
   entidadEtiqueta: [
     { id: uid("et"), etiquetaId: "ET01", entidadTipo: "Empresa", entidadId: "E001" },
     { id: uid("et"), etiquetaId: "ET03", entidadTipo: "Empresa", entidadId: "E001" },
@@ -79,11 +85,11 @@ const seedCore = () => ({
     { id: "T3", nombre: "Hecho", orden: 2 },
   ],
   hilos: [
-    { id: "H001", participantes: [{ id: "part1", personaId: "P001", desde: addDaysISO(todayISO(), -15), hasta: null, principal: true }], empresaId: "E001", obraId: "", titulo: "Presupuesto cables solares", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -15), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" },
-    { id: "H002", participantes: [{ id: "part2", personaId: "P001", desde: addDaysISO(todayISO(), -20), hasta: null, principal: true }], empresaId: "E001", obraId: "O001", titulo: "Avance obra Anatonia Village", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -20), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" },
-    { id: "H003", participantes: [{ id: "part3", personaId: "P002", desde: addDaysISO(todayISO(), -6), hasta: null, principal: true }], empresaId: "E001", obraId: "", titulo: "Datos de facturación", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -6), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" },
-    { id: "H004", participantes: [{ id: "part4", personaId: "P003", desde: addDaysISO(todayISO(), -10), hasta: null, principal: true }], empresaId: "E002", obraId: "", titulo: "Propuesta anual", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -10), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" },
-    { id: "H005", participantes: [], empresaId: "", obraId: "", titulo: "Comprar resma de hojas", estado: "Activo", fechaCreacion: todayISO(), tipo: "tarea", columnaTareaId: "T1", hiloRelacionadoId: null, notaCierre: "" },
+    { id: "H001", participantes: [{ id: "part1", personaId: "P001", desde: addDaysISO(todayISO(), -15), hasta: null, principal: true }], obraId: "", titulo: "Presupuesto cables solares", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -15), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" },
+    { id: "H002", participantes: [{ id: "part2", personaId: "P001", desde: addDaysISO(todayISO(), -20), hasta: null, principal: true }], obraId: "O001", titulo: "Avance obra Anatonia Village", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -20), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" },
+    { id: "H003", participantes: [{ id: "part3", personaId: "P002", desde: addDaysISO(todayISO(), -6), hasta: null, principal: true }], obraId: "", titulo: "Datos de facturación", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -6), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" },
+    { id: "H004", participantes: [{ id: "part4", personaId: "P003", desde: addDaysISO(todayISO(), -10), hasta: null, principal: true }], obraId: "", titulo: "Propuesta anual", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -10), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" },
+    { id: "H005", participantes: [], obraId: "", titulo: "Comprar resma de hojas", estado: "Activo", fechaCreacion: todayISO(), tipo: "tarea", columnaTareaId: "T1", hiloRelacionadoId: null, notaCierre: "" },
   ],
 });
 
@@ -126,7 +132,9 @@ function normalizeCore(c) {
     return { ...rest, cargoId: match ? match.id : out.cargos[out.cargos.length - 1].id };
   });
   if (!Array.isArray(out.personaObra)) out.personaObra = [];
+  if (!Array.isArray(out.hiloEmpresa)) out.hiloEmpresa = [];
   if (!Array.isArray(out.hilos)) out.hilos = [];
+  const hiloEmpresaMigrada = [];
   out.hilos = out.hilos.map((h) => {
     const base = { tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "", ...h };
     if (!Array.isArray(base.participantes)) {
@@ -134,8 +142,15 @@ function normalizeCore(c) {
         ? [{ id: uid("part"), personaId: base.personaId, desde: base.fechaCreacion || todayISO(), hasta: null, principal: true }]
         : [];
     }
-    return base;
+    // dato viejo: tenía "empresaId" como campo único -> se migra a la relación hiloEmpresa (varias empresas por hilo)
+    if (base.empresaId) {
+      const yaExiste = out.hiloEmpresa.some((r) => r.hiloId === base.id && r.empresaId === base.empresaId);
+      if (!yaExiste) hiloEmpresaMigrada.push({ id: uid("he"), hiloId: base.id, empresaId: base.empresaId });
+    }
+    const { empresaId, ...rest } = base;
+    return rest;
   });
+  out.hiloEmpresa = [...out.hiloEmpresa, ...hiloEmpresaMigrada];
   out.parametros = { umbralDiaLleno: 8, diasHabiles: [1, 2, 3, 4, 5], fechasNoHabiles: [], diasUrgente: 3, diasProximos: 7, googleContactsLabel: "CRM", tituloApp: "Seguimiento comercial", nombreSinColumnaSeguimientos: "Sin columna", nombreSinColumnaTareas: "Sin columna", ...(out.parametros || {}) };
   out.tema = { ...{ botonActivo: "#1B4D2E", botonInactivo: "#D9F0DE", tarjeta: "#FFFFFF", linea: "#E4DECF", fondo: "#F7F5F0", ink: "#2A2118", mutedBase: "#6B6352" }, ...(out.tema || {}) };
   if (!Array.isArray(out.kanbanColumnas)) out.kanbanColumnas = seed.kanbanColumnas;
@@ -251,11 +266,18 @@ function personaPrincipalDeHilo(hilo, core) {
   const personas = personasActivasDeHilo(hilo, core);
   return personas[0] || null;
 }
+// Un hilo puede estar vinculado a varias empresas (vía la relación hiloEmpresa).
+function empresasDeHilo(hilo, core) {
+  return (core.hiloEmpresa || [])
+    .filter((r) => r.hiloId === hilo.id)
+    .map((r) => core.empresas.find((e) => e.id === r.empresaId))
+    .filter(Boolean);
+}
 function etiquetaVinculoHilo(hilo, core) {
   const personas = personasActivasDeHilo(hilo, core);
   if (personas.length > 0) return personas.map((p) => p.nombre).join(", ");
-  const empresa = core.empresas.find((e) => e.id === hilo.empresaId);
-  if (empresa) return empresa.denominacion;
+  const empresas = empresasDeHilo(hilo, core);
+  if (empresas.length > 0) return empresas.map((e) => e.denominacion).join(", ");
   const obra = core.obras.find((o) => o.id === hilo.obraId);
   if (obra) return obra.nombre;
   return hilo.titulo;
@@ -915,7 +937,15 @@ function AgendaView({ core, setCore, acciones, setAcciones, onOpen }) {
 function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empresaFijaId, obraFijaId, onCreated, onCancelar }) {
   const [titulo, setTitulo] = useState("");
   const [personaId, setPersonaId] = useState("");
-  const [empresaId, setEmpresaId] = useState(empresaFijaId || "");
+  const [empresaIds, setEmpresaIds] = useState(() => {
+    const base = empresaFijaId ? [empresaFijaId] : [];
+    if (obraFijaId) {
+      const dueña = core.empresaObra.find((r) => r.obraId === obraFijaId)?.empresaId;
+      if (dueña && !base.includes(dueña)) base.push(dueña);
+    }
+    return base;
+  });
+  const [empresaParaAgregar, setEmpresaParaAgregar] = useState("");
   const [obraId, setObraId] = useState(obraFijaId || "");
   const [showVincularEmpresa, setShowVincularEmpresa] = useState(false);
   const [showVincularObra, setShowVincularObra] = useState(false);
@@ -944,10 +974,23 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
     return relEmpresas.map((r) => core.empresas.find((e) => e.id === r.empresaId)).filter(Boolean);
   }, [personaFija, core.personaEmpresa, core.empresas]);
 
-  const obrasDeLaEmpresa = useMemo(() => {
-    if (!empresaId) return [];
-    return core.empresaObra.filter((r) => r.empresaId === empresaId).map((r) => core.obras.find((o) => o.id === r.obraId)).filter(Boolean);
-  }, [empresaId, core.empresaObra, core.obras]);
+  const obrasDeLasEmpresas = useMemo(() => {
+    if (empresaIds.length === 0) return [];
+    return core.empresaObra.filter((r) => empresaIds.includes(r.empresaId)).map((r) => core.obras.find((o) => o.id === r.obraId)).filter(Boolean);
+  }, [empresaIds, core.empresaObra, core.obras]);
+
+  const agregarEmpresa = (empresaId) => {
+    if (!empresaId) return;
+    setEmpresaIds((ids) => (ids.includes(empresaId) ? ids : [...ids, empresaId]));
+  };
+  const quitarEmpresa = (empresaId) => setEmpresaIds((ids) => ids.filter((x) => x !== empresaId));
+  const elegirObra = (nuevoObraId) => {
+    setObraId(nuevoObraId);
+    if (nuevoObraId) {
+      const dueña = core.empresaObra.find((r) => r.obraId === nuevoObraId)?.empresaId;
+      if (dueña) agregarEmpresa(dueña);
+    }
+  };
 
   useEffect(() => {
     if (showPrimerContacto && programarProxima && modoFecha === "periodo") {
@@ -957,15 +1000,16 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
   }, [showPrimerContacto, programarProxima, modoFecha, cantidad, unidad]); // eslint-disable-line
 
   const especificaInhabil = showPrimerContacto && programarProxima && modoFecha === "especifica" && esFechaInhabil(fechaEspecifica, core.parametros);
-  const faltaVinculo = !personaFija && !empresaFijaId && !obraFijaId && !personaId && !empresaId && !obraId;
+  const faltaVinculo = !personaFija && !empresaFijaId && !obraFijaId && !personaId && empresaIds.length === 0 && !obraId;
 
   const crear = () => {
     if (!titulo.trim() || faltaVinculo) return;
     const hoy = todayISO();
     const personaIdFinal = personaFija ? personaFija.id : personaId;
     const participantes = personaIdFinal ? [{ id: uid("part"), personaId: personaIdFinal, desde: hoy, hasta: null, principal: true }] : [];
-    const nuevoHilo = { id: uid("H"), participantes, empresaId: empresaId || "", obraId: obraId || "", titulo: titulo.trim(), estado: "Activo", fechaCreacion: hoy, tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" };
-    setCore((prev) => ({ ...prev, hilos: [nuevoHilo, ...prev.hilos] }));
+    const nuevoHilo = { id: uid("H"), participantes, obraId: obraId || "", titulo: titulo.trim(), estado: "Activo", fechaCreacion: hoy, tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" };
+    const nuevasRelacionesEmpresa = empresaIds.map((eid) => ({ id: uid("he"), hiloId: nuevoHilo.id, empresaId: eid }));
+    setCore((prev) => ({ ...prev, hilos: [nuevoHilo, ...prev.hilos], hiloEmpresa: [...(prev.hiloEmpresa || []), ...nuevasRelacionesEmpresa] }));
 
     if (showPrimerContacto && setAcciones) {
       setAcciones((prev) => {
@@ -1006,22 +1050,45 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
       )}
 
       {!empresaFijaId && (
-        <Field label="Empresa">
-          {personaFija ? (
-            empresasDeLaPersona.length === 0 ? (
-              <p className="text-sm text-[#A69C88] mb-1.5">Este contacto no tiene empresas vinculadas todavía.</p>
-            ) : (
-              <select className={inputCls} value={empresaId} onChange={(e) => { setEmpresaId(e.target.value); setObraId(""); }}>
-                <option value="">— sin empresa —</option>
-                {empresasDeLaPersona.map((e) => <option key={e.id} value={e.id}>{e.denominacion}</option>)}
-              </select>
-            )
-          ) : (
-            <select className={inputCls} value={empresaId} onChange={(e) => { setEmpresaId(e.target.value); setObraId(""); }}>
-              <option value="">— ninguna —</option>
-              {core.empresas.map((e) => <option key={e.id} value={e.id}>{e.denominacion}</option>)}
-            </select>
+        <Field label="Empresa(s)">
+          {empresaIds.length > 0 && (
+            <div className="space-y-1 mb-2">
+              {empresaIds.map((eid) => {
+                const e = core.empresas.find((ee) => ee.id === eid);
+                if (!e) return null;
+                return (
+                  <div key={eid} className="flex items-center justify-between gap-2 bg-[#F7F5F0] border border-[#E4DECF] rounded-sm px-2.5 py-1.5 text-sm">
+                    <span className="font-semibold text-[#2A2118]">{e.denominacion}</span>
+                    <button type="button" onClick={() => quitarEmpresa(eid)} className="text-[#B0452E]"><X size={14} /></button>
+                  </div>
+                );
+              })}
+            </div>
           )}
+          {(() => {
+            const opciones = (personaFija ? empresasDeLaPersona : core.empresas).filter((e) => !empresaIds.includes(e.id));
+            if (opciones.length === 0) {
+              return empresaIds.length === 0 && personaFija ? (
+                <p className="text-sm text-[#A69C88] mb-1.5">Este contacto no tiene empresas vinculadas todavía.</p>
+              ) : null;
+            }
+            return (
+              <div className="flex gap-2">
+                <select className={inputCls} value={empresaParaAgregar} onChange={(e) => setEmpresaParaAgregar(e.target.value)}>
+                  <option value="">— elegir —</option>
+                  {opciones.map((e) => <option key={e.id} value={e.id}>{e.denominacion}</option>)}
+                </select>
+                <button
+                  type="button"
+                  disabled={!empresaParaAgregar}
+                  onClick={() => { agregarEmpresa(empresaParaAgregar); setEmpresaParaAgregar(""); }}
+                  className="shrink-0 border border-[#E4DECF] rounded-sm px-3 text-sm font-bold text-[#2A2118] disabled:text-[#C9C1AE] disabled:cursor-not-allowed"
+                >
+                  + Agregar
+                </button>
+              </div>
+            );
+          })()}
           {personaFija && (
             <button type="button" onClick={() => setShowVincularEmpresa(true)} className="text-xs font-bold text-[#B0452E] mt-1.5">+ Vincular otra empresa a este contacto</button>
           )}
@@ -1031,16 +1098,16 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
       {!obraFijaId && (
         <Field label="Obra">
           {personaFija ? (
-            obrasDeLaEmpresa.length === 0 ? (
-              <p className="text-sm text-[#A69C88] mb-1.5">{empresaId ? "Esta empresa no tiene obras vinculadas." : "Elegí primero una empresa para poder sumar una obra."}</p>
+            obrasDeLasEmpresas.length === 0 ? (
+              <p className="text-sm text-[#A69C88] mb-1.5">{empresaIds.length > 0 ? "Estas empresas no tienen obras vinculadas." : "Elegí primero una empresa para poder sumar una obra."}</p>
             ) : (
-              <select className={inputCls} value={obraId} onChange={(e) => setObraId(e.target.value)}>
+              <select className={inputCls} value={obraId} onChange={(e) => elegirObra(e.target.value)}>
                 <option value="">— sin obra —</option>
-                {obrasDeLaEmpresa.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                {obrasDeLasEmpresas.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
               </select>
             )
           ) : (
-            <select className={inputCls} value={obraId} onChange={(e) => setObraId(e.target.value)}>
+            <select className={inputCls} value={obraId} onChange={(e) => elegirObra(e.target.value)}>
               <option value="">— ninguna —</option>
               {core.obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
             </select>
@@ -1048,11 +1115,11 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
           {personaFija && (
             <button
               type="button"
-              disabled={!empresaId}
+              disabled={empresaIds.length === 0}
               onClick={() => setShowVincularObra(true)}
-              className={`text-xs font-bold mt-1.5 ${empresaId ? "text-[#B0452E]" : "text-[#C9C1AE] cursor-not-allowed"}`}
+              className={`text-xs font-bold mt-1.5 ${empresaIds.length > 0 ? "text-[#B0452E]" : "text-[#C9C1AE] cursor-not-allowed"}`}
             >
-              + Vincular obra a esta empresa
+              + Vincular obra a una empresa
             </button>
           )}
         </Field>
@@ -1198,8 +1265,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
           onClose={() => setShowVincularEmpresa(false)}
           onSave={(rel) => {
             setCore((prev) => ({ ...prev, personaEmpresa: [...prev.personaEmpresa, { ...rel, personaId: personaFija.id, id: uid("pe") }] }));
-            setEmpresaId(rel.empresaId);
-            setObraId("");
+            agregarEmpresa(rel.empresaId);
             setShowVincularEmpresa(false);
           }}
         />
@@ -1208,7 +1274,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
         <VincularObraForm
           core={core}
           setCore={setCore}
-          empresaId={empresaId}
+          empresaId={empresaIds[empresaIds.length - 1]}
           onClose={() => setShowVincularObra(false)}
           onLinked={(newObraId) => { setObraId(newObraId); setShowVincularObra(false); }}
         />
@@ -1301,7 +1367,7 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
   const crearTareaRapida = () => {
     if (!tituloNuevo.trim()) return;
     const hoy = todayISO();
-    const nuevoHilo = { id: uid("H"), personaId: null, empresaId: "", obraId: "", titulo: tituloNuevo.trim(), estado: "Activo", fechaCreacion: hoy, tipo: "tarea", columnaTareaId: columnaActiva, hiloRelacionadoId: null, notaCierre: "" };
+    const nuevoHilo = { id: uid("H"), personaId: null, obraId: "", titulo: tituloNuevo.trim(), estado: "Activo", fechaCreacion: hoy, tipo: "tarea", columnaTareaId: columnaActiva, hiloRelacionadoId: null, notaCierre: "" };
     setCore((prev) => ({ ...prev, hilos: [nuevoHilo, ...prev.hilos] }));
     if (fechaNueva) {
       setAcciones((prev) => {
@@ -2199,7 +2265,7 @@ function HiloSinAccionCard({ hilo, core, setCore, acciones, setAcciones, onOpen 
   const esTarea = hilo.tipo === "tarea";
   const persona = personaPrincipalDeHilo(hilo, core);
   const personasDelHilo = personasActivasDeHilo(hilo, core);
-  const empresa = core.empresas.find((e) => e.id === hilo.empresaId);
+  const empresas = empresasDeHilo(hilo, core);
   const obra = core.obras.find((o) => o.id === hilo.obraId);
   const accionesDelHilo = acciones.filter((a) => a.hiloId === hilo.id);
   const historialCompleto = accionesDelHilo.filter((a) => a.estado === "Realizada").sort(compararRecientePrimero);
@@ -2220,10 +2286,10 @@ function HiloSinAccionCard({ hilo, core, setCore, acciones, setAcciones, onOpen 
         </div>
         <button onClick={() => (esTarea || !persona ? onOpen("hilo", hilo.id) : onOpen("persona", persona.id))} className="text-left min-w-0 flex-1">
           <p className="text-base font-extrabold text-[#2A2118] truncate">{nombrePrincipal}</p>
-          {(empresa || obra) && (
+          {(empresas.length > 0 || obra) && (
             <p className="text-sm mt-0.5 truncate">
-              {empresa && <span className="font-bold text-[#2A2118]">{empresa.denominacion}</span>}
-              {empresa && obra && <span className="text-[#8A8272]"> · </span>}
+              {empresas.length > 0 && <span className="font-bold text-[#2A2118]">{empresas.map((e) => e.denominacion).join(", ")}</span>}
+              {empresas.length > 0 && obra && <span className="text-[#8A8272]"> · </span>}
               {obra && <span className="text-[#6B6352]">{obra.nombre}</span>}
             </p>
           )}
@@ -2292,7 +2358,7 @@ function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, 
   const esTarea = hilo?.tipo === "tarea";
   const persona = hilo ? personaPrincipalDeHilo(hilo, core) : null;
   const personasDelHilo = hilo ? personasActivasDeHilo(hilo, core) : [];
-  const empresa = hilo ? core.empresas.find((e) => e.id === hilo.empresaId) : null;
+  const empresas = hilo ? empresasDeHilo(hilo, core) : [];
   const obra = hilo ? core.obras.find((o) => o.id === hilo.obraId) : null;
 
   const accionesDelHilo = hilo ? acciones.filter((a) => a.hiloId === hilo.id) : [];
@@ -2324,10 +2390,10 @@ function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, 
         )}
         <button onClick={() => (esTarea || !persona ? onOpen("hilo", hilo.id) : onOpen("persona", persona.id))} className="text-left min-w-0 flex-1">
           <p className="text-base font-extrabold text-[#2A2118] truncate">{nombrePrincipal}</p>
-          {(empresa || obra) && (
+          {(empresas.length > 0 || obra) && (
             <p className="text-sm mt-0.5 truncate">
-              {empresa && <span className="font-bold text-[#2A2118]">{empresa.denominacion}</span>}
-              {empresa && obra && <span className="text-[#8A8272]"> · </span>}
+              {empresas.length > 0 && <span className="font-bold text-[#2A2118]">{empresas.map((e) => e.denominacion).join(", ")}</span>}
+              {empresas.length > 0 && obra && <span className="text-[#8A8272]"> · </span>}
               {obra && <span className="text-[#6B6352]">{obra.nombre}</span>}
             </p>
           )}
@@ -2683,7 +2749,15 @@ function PersonaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
     }
     if (vincularObra) {
       if (modoObra === "existente" && obraId) {
-        setCore((prev) => ({ ...prev, personaObra: [...(prev.personaObra || []), { id: uid("po"), personaId, obraId }] }));
+        const dueña = core.empresaObra.find((r) => r.obraId === obraId)?.empresaId;
+        setCore((prev) => {
+          const yaVinculadaEmpresa = dueña && prev.personaEmpresa.some((r) => r.personaId === personaId && r.empresaId === dueña);
+          return {
+            ...prev,
+            personaObra: [...(prev.personaObra || []), { id: uid("po"), personaId, obraId }],
+            personaEmpresa: dueña && !yaVinculadaEmpresa ? [...prev.personaEmpresa, { id: uid("pe"), personaId, empresaId: dueña }] : prev.personaEmpresa,
+          };
+        });
       } else if (modoObra === "nueva" && obraNueva.trim()) {
         const nueva = { id: uid("O"), nombre: obraNueva.trim(), descripcion: "", metros2: 0, direccion: "", ciudad: "" };
         setCore((prev) => ({ ...prev, obras: [nueva, ...prev.obras], personaObra: [...(prev.personaObra || []), { id: uid("po"), personaId, obraId: nueva.id }] }));
@@ -2927,7 +3001,7 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
 }
 
 function HiloRow({ hilo, core, acciones, onOpen }) {
-  const empresa = core.empresas.find((e) => e.id === hilo.empresaId);
+  const empresas = empresasDeHilo(hilo, core);
   const obra = core.obras.find((o) => o.id === hilo.obraId);
   const accionesDelHilo = acciones.filter((a) => a.hiloId === hilo.id);
   const pendiente = accionesDelHilo.find((a) => a.estado === "Pendiente");
@@ -2938,7 +3012,7 @@ function HiloRow({ hilo, core, acciones, onOpen }) {
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <p className="text-[15px] font-semibold text-[#2A2118] truncate">{hilo.titulo}</p>
-          <p className="text-xs text-[#8A8272] mt-0.5">{[empresa?.denominacion, obra?.nombre].filter(Boolean).join(" · ") || "Sin empresa/obra"}</p>
+          <p className="text-xs text-[#8A8272] mt-0.5">{[empresas.map((e) => e.denominacion).join(", "), obra?.nombre].filter(Boolean).join(" · ") || "Sin empresa/obra"}</p>
         </div>
         <Chip tone={hilo.estado === "Activo" ? "green" : "neutral"}>{hilo.estado}</Chip>
       </div>
@@ -3124,7 +3198,15 @@ function VincularObraAPersonaForm({ core, setCore, personaId, onClose, onLinked 
   const submit = () => {
     if (modo === "existente") {
       if (!obraId) return;
-      setCore((prev) => ({ ...prev, personaObra: [...(prev.personaObra || []), { id: uid("po"), personaId, obraId }] }));
+      setCore((prev) => {
+        const dueña = core.empresaObra.find((r) => r.obraId === obraId)?.empresaId;
+        const yaVinculadaEmpresa = dueña && prev.personaEmpresa.some((r) => r.personaId === personaId && r.empresaId === dueña);
+        return {
+          ...prev,
+          personaObra: [...(prev.personaObra || []), { id: uid("po"), personaId, obraId }],
+          personaEmpresa: dueña && !yaVinculadaEmpresa ? [...prev.personaEmpresa, { id: uid("pe"), personaId, empresaId: dueña }] : prev.personaEmpresa,
+        };
+      });
       onLinked(obraId);
     } else {
       if (!nombreNueva.trim()) return;
@@ -3240,14 +3322,15 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
   const [showFechaTarea, setShowFechaTarea] = useState(false);
   const [showAgregarPersona, setShowAgregarPersona] = useState(false);
   const [verHistorialPersonas, setVerHistorialPersonas] = useState(false);
-  const [showEditarEmpresaObra, setShowEditarEmpresaObra] = useState(false);
+  const [showVincularEmpresaHilo, setShowVincularEmpresaHilo] = useState(false);
+  const [showEditarObraHilo, setShowEditarObraHilo] = useState(false);
 
   if (!hilo) return <div><BackHeader onClose={onClose} /><p className="text-sm text-[#8A8272]">Este hilo ya no existe.</p></div>;
 
   const esTarea = hilo.tipo === "tarea";
   const personasDelHilo = personasActivasDeHilo(hilo, core);
   const persona = personasDelHilo[0] || null;
-  const empresa = core.empresas.find((e) => e.id === hilo.empresaId);
+  const empresas = empresasDeHilo(hilo, core);
   const obra = core.obras.find((o) => o.id === hilo.obraId);
   const hiloRelacionado = hilo.hiloRelacionadoId ? core.hilos.find((h) => h.id === hilo.hiloRelacionadoId) : null;
   const personaRelacionada = hiloRelacionado ? personaPrincipalDeHilo(hiloRelacionado, core) : null;
@@ -3272,6 +3355,10 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
   const desvincularTarea = (tareaId) => setCore((prev) => ({
     ...prev,
     hilos: prev.hilos.map((h) => (h.id === tareaId ? { ...h, hiloRelacionadoId: null } : h)),
+  }));
+  const quitarEmpresaDelHilo = (empresaId) => setCore((prev) => ({
+    ...prev,
+    hiloEmpresa: (prev.hiloEmpresa || []).filter((r) => !(r.hiloId === id && r.empresaId === empresaId)),
   }));
   const agregarPersona = (personaId, comoPrincipal) => setCore((prev) => ({
     ...prev,
@@ -3326,7 +3413,7 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
               {" "}<WhatsAppLink persona={persona} size={13} />
             </>
           )}
-          {(empresa || obra) && <> · {[empresa?.denominacion, obra?.nombre].filter(Boolean).join(" · ")}</>}
+          {(empresas.length > 0 || obra) && <> · {[empresas.map((e) => e.denominacion).join(", "), obra?.nombre].filter(Boolean).join(" · ")}</>}
         </p>
         <p className="text-xs text-[#A69C88] mt-1">
           {accionesDelHilo.length} acci{accionesDelHilo.length === 1 ? "ón" : "ones"} en este hilo
@@ -3347,17 +3434,32 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
       {hilo.tipo === "cliente" && (
         <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Empresa y obra</p>
-            <button onClick={() => setShowEditarEmpresaObra(true)} className="text-xs font-bold text-[#B0452E] flex items-center gap-1"><Pencil size={12} /> Editar</button>
+            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Empresas vinculadas</p>
+            <button onClick={() => setShowVincularEmpresaHilo(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>
           </div>
-          {empresa || obra ? (
-            <p className="text-sm text-[#2A2118]">
-              {empresa && <button onClick={() => onOpen("empresa", empresa.id)} className="font-semibold underline underline-offset-2">{empresa.denominacion}</button>}
-              {empresa && obra && " · "}
-              {obra && <button onClick={() => onOpen("obra", obra.id)} className="font-semibold underline underline-offset-2">{obra.nombre}</button>}
-            </p>
+          {empresas.length === 0 ? (
+            <p className="text-sm text-[#A69C88]">Sin empresas vinculadas.</p>
           ) : (
-            <p className="text-sm text-[#A69C88]">Sin empresa ni obra vinculada.</p>
+            <div className="space-y-1.5">
+              {empresas.map((emp) => (
+                <div key={emp.id} className="flex items-center justify-between gap-2 text-sm">
+                  <button onClick={() => onOpen("empresa", emp.id)} className="text-left flex-1 min-w-0">
+                    <span className="font-semibold text-[#2A2118]">{emp.denominacion}</span>
+                  </button>
+                  <IconBtn label="Quitar vínculo" danger onClick={() => quitarEmpresaDelHilo(emp.id)}><X size={14} /></IconBtn>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="flex items-center justify-between mt-3 mb-2">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Obra</p>
+            <button onClick={() => setShowEditarObraHilo(true)} className="text-xs font-bold text-[#B0452E] flex items-center gap-1"><Pencil size={12} /> {obra ? "Editar" : "Vincular"}</button>
+          </div>
+          {obra ? (
+            <button onClick={() => onOpen("obra", obra.id)} className="text-sm font-semibold text-[#2A2118] underline underline-offset-2">{obra.nombre}</button>
+          ) : (
+            <p className="text-sm text-[#A69C88]">Sin obra vinculada.</p>
           )}
         </div>
       )}
@@ -3527,12 +3629,21 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
           <EditarTituloHiloForm hilo={hilo} onSave={(nuevoTitulo) => { setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === id ? { ...h, titulo: nuevoTitulo } : h)) })); setShowEditarTitulo(false); }} />
         </Modal>
       )}
-      {showEditarEmpresaObra && (
-        <EditarEmpresaObraHiloForm
+      {showVincularEmpresaHilo && (
+        <VincularEmpresaAHiloForm
+          core={core}
+          setCore={setCore}
+          hiloId={id}
+          onClose={() => setShowVincularEmpresaHilo(false)}
+          onLinked={() => setShowVincularEmpresaHilo(false)}
+        />
+      )}
+      {showEditarObraHilo && (
+        <EditarObraHiloForm
           core={core}
           setCore={setCore}
           hilo={hilo}
-          onClose={() => setShowEditarEmpresaObra(false)}
+          onClose={() => setShowEditarObraHilo(false)}
         />
       )}
       {showVincularCliente && (
@@ -3626,74 +3737,100 @@ function EditarTituloHiloForm({ hilo, onSave }) {
   );
 }
 
-// Cambia la empresa y/o la obra vinculadas a un hilo de cliente ya creado.
-function EditarEmpresaObraHiloForm({ core, setCore, hilo, onClose }) {
-  const [modoEmpresa, setModoEmpresa] = useState("existente"); // 'existente' | 'nueva'
-  const [empresaId, setEmpresaId] = useState(hilo.empresaId || "");
-  const [empresaNueva, setEmpresaNueva] = useState("");
+// Vincula una empresa más (existente o nueva) a un hilo de cliente ya creado.
+// Un hilo puede tener varias empresas vinculadas a la vez.
+function VincularEmpresaAHiloForm({ core, setCore, hiloId, onClose, onLinked }) {
+  const [modo, setModo] = useState("existente"); // 'existente' | 'nueva'
+  const yaVinculadas = new Set((core.hiloEmpresa || []).filter((r) => r.hiloId === hiloId).map((r) => r.empresaId));
+  const disponibles = core.empresas.filter((e) => !yaVinculadas.has(e.id));
+  const [empresaId, setEmpresaId] = useState(disponibles[0]?.id || "");
+  const [nombreNueva, setNombreNueva] = useState("");
 
-  const [modoObra, setModoObra] = useState("existente"); // 'existente' | 'nueva'
+  const submit = () => {
+    if (modo === "existente") {
+      if (!empresaId) return;
+      setCore((prev) => ({ ...prev, hiloEmpresa: [...(prev.hiloEmpresa || []), { id: uid("he"), hiloId, empresaId }] }));
+      onLinked(empresaId);
+    } else {
+      if (!nombreNueva.trim()) return;
+      const nueva = { id: uid("E"), denominacion: nombreNueva.trim(), direccion: "", ciudad: "" };
+      setCore((prev) => ({ ...prev, empresas: [nueva, ...prev.empresas], hiloEmpresa: [...(prev.hiloEmpresa || []), { id: uid("he"), hiloId, empresaId: nueva.id }] }));
+      onLinked(nueva.id);
+    }
+  };
+
+  return (
+    <Modal title="Vincular una empresa" onClose={onClose}>
+      <div className="flex gap-2 mb-3">
+        <button type="button" onClick={() => setModo("existente")} style={{ backgroundColor: modo === "existente" ? "#2A2F36" : "#E7E2D8", color: modo === "existente" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-2 rounded-sm text-sm font-bold">Empresa existente</button>
+        <button type="button" onClick={() => setModo("nueva")} style={{ backgroundColor: modo === "nueva" ? "#2A2F36" : "#E7E2D8", color: modo === "nueva" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-2 rounded-sm text-sm font-bold">Agregar empresa</button>
+      </div>
+      {modo === "existente" ? (
+        disponibles.length === 0 ? (
+          <p className="text-sm text-[#A69C88] mb-3">No hay más empresas disponibles para vincular — probá creando una nueva.</p>
+        ) : (
+          <Field label="Empresa">
+            <select className={inputCls} value={empresaId} onChange={(e) => setEmpresaId(e.target.value)}>
+              {disponibles.map((e) => <option key={e.id} value={e.id}>{e.denominacion}</option>)}
+            </select>
+          </Field>
+        )
+      ) : (
+        <Field label="Denominación *"><input className={inputCls} value={nombreNueva} onChange={(e) => setNombreNueva(e.target.value)} /></Field>
+      )}
+      <PrimaryBtn full onClick={submit}>Vincular</PrimaryBtn>
+    </Modal>
+  );
+}
+
+// Cambia (o quita) la obra vinculada a un hilo. Si la obra elegida tiene una empresa dueña
+// conocida (vía empresaObra), esa empresa se agrega automáticamente a las del hilo — sin
+// desvincular las que ya estaban.
+function EditarObraHiloForm({ core, setCore, hilo, onClose }) {
+  const [modo, setModo] = useState("existente"); // 'existente' | 'nueva'
   const [obraId, setObraId] = useState(hilo.obraId || "");
   const [obraNueva, setObraNueva] = useState("");
 
   const submit = () => {
-    let empresaIdFinal = modoEmpresa === "nueva" ? "" : empresaId;
-    let obraIdFinal = modoObra === "nueva" ? "" : obraId;
-    let empresasNuevas = [];
-    let obrasNuevas = [];
-
-    if (modoEmpresa === "nueva" && empresaNueva.trim()) {
-      const nueva = { id: uid("E"), denominacion: empresaNueva.trim(), direccion: "", ciudad: "" };
-      empresasNuevas = [nueva];
-      empresaIdFinal = nueva.id;
-    }
-    if (modoObra === "nueva" && obraNueva.trim()) {
+    if (modo === "existente") {
+      const empresaDueña = obraId ? core.empresaObra.find((r) => r.obraId === obraId)?.empresaId : null;
+      setCore((prev) => {
+        const yaVinculada = empresaDueña && (prev.hiloEmpresa || []).some((r) => r.hiloId === hilo.id && r.empresaId === empresaDueña);
+        return {
+          ...prev,
+          hilos: prev.hilos.map((h) => (h.id === hilo.id ? { ...h, obraId } : h)),
+          hiloEmpresa: empresaDueña && !yaVinculada ? [...(prev.hiloEmpresa || []), { id: uid("he"), hiloId: hilo.id, empresaId: empresaDueña }] : prev.hiloEmpresa,
+        };
+      });
+      onClose();
+    } else {
+      if (!obraNueva.trim()) return;
       const nueva = { id: uid("O"), nombre: obraNueva.trim(), descripcion: "", metros2: 0, direccion: "", ciudad: "" };
-      obrasNuevas = [nueva];
-      obraIdFinal = nueva.id;
+      setCore((prev) => ({
+        ...prev,
+        obras: [nueva, ...prev.obras],
+        hilos: prev.hilos.map((h) => (h.id === hilo.id ? { ...h, obraId: nueva.id } : h)),
+      }));
+      onClose();
     }
-
-    setCore((prev) => ({
-      ...prev,
-      empresas: [...empresasNuevas, ...prev.empresas],
-      obras: [...obrasNuevas, ...prev.obras],
-      hilos: prev.hilos.map((h) => (h.id === hilo.id ? { ...h, empresaId: empresaIdFinal, obraId: obraIdFinal } : h)),
-    }));
-    onClose();
   };
 
   return (
-    <Modal title="Empresa y obra del hilo" onClose={onClose}>
-      <Field label="Empresa">
-        <div className="flex gap-2 mb-2">
-          <button type="button" onClick={() => setModoEmpresa("existente")} style={{ backgroundColor: modoEmpresa === "existente" ? "#2A2F36" : "#E7E2D8", color: modoEmpresa === "existente" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-1.5 rounded-sm text-xs font-bold">Existente</button>
-          <button type="button" onClick={() => setModoEmpresa("nueva")} style={{ backgroundColor: modoEmpresa === "nueva" ? "#2A2F36" : "#E7E2D8", color: modoEmpresa === "nueva" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-1.5 rounded-sm text-xs font-bold">Nueva</button>
-        </div>
-        {modoEmpresa === "existente" ? (
-          <select className={inputCls} value={empresaId} onChange={(e) => setEmpresaId(e.target.value)}>
-            <option value="">— sin empresa —</option>
-            {core.empresas.map((e) => <option key={e.id} value={e.id}>{e.denominacion}</option>)}
-          </select>
-        ) : (
-          <input className={inputCls} placeholder="Denominación" value={empresaNueva} onChange={(e) => setEmpresaNueva(e.target.value)} />
-        )}
-      </Field>
-
-      <Field label="Obra">
-        <div className="flex gap-2 mb-2">
-          <button type="button" onClick={() => setModoObra("existente")} style={{ backgroundColor: modoObra === "existente" ? "#2A2F36" : "#E7E2D8", color: modoObra === "existente" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-1.5 rounded-sm text-xs font-bold">Existente</button>
-          <button type="button" onClick={() => setModoObra("nueva")} style={{ backgroundColor: modoObra === "nueva" ? "#2A2F36" : "#E7E2D8", color: modoObra === "nueva" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-1.5 rounded-sm text-xs font-bold">Nueva</button>
-        </div>
-        {modoObra === "existente" ? (
+    <Modal title="Obra del hilo" onClose={onClose}>
+      <div className="flex gap-2 mb-3">
+        <button type="button" onClick={() => setModo("existente")} style={{ backgroundColor: modo === "existente" ? "#2A2F36" : "#E7E2D8", color: modo === "existente" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-2 rounded-sm text-sm font-bold">Obra existente</button>
+        <button type="button" onClick={() => setModo("nueva")} style={{ backgroundColor: modo === "nueva" ? "#2A2F36" : "#E7E2D8", color: modo === "nueva" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-2 rounded-sm text-sm font-bold">Agregar obra</button>
+      </div>
+      {modo === "existente" ? (
+        <Field label="Obra">
           <select className={inputCls} value={obraId} onChange={(e) => setObraId(e.target.value)}>
             <option value="">— sin obra —</option>
             {core.obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
           </select>
-        ) : (
-          <input className={inputCls} placeholder="Nombre de la obra" value={obraNueva} onChange={(e) => setObraNueva(e.target.value)} />
-        )}
-      </Field>
-
+        </Field>
+      ) : (
+        <Field label="Nombre de la obra *"><input className={inputCls} value={obraNueva} onChange={(e) => setObraNueva(e.target.value)} /></Field>
+      )}
       <PrimaryBtn full onClick={submit}>Guardar</PrimaryBtn>
     </Modal>
   );
@@ -3728,7 +3865,7 @@ function AgregarTareaAlHiloForm({ core, hiloClienteId, personasDelHilo, onVincul
   const crear = () => {
     if (!titulo.trim()) return;
     const nuevoHilo = {
-      id: uid("H"), participantes: [], empresaId: "", obraId: "", titulo: titulo.trim(),
+      id: uid("H"), participantes: [], obraId: "", titulo: titulo.trim(),
       estado: "Activo", fechaCreacion: todayISO(), tipo: "tarea",
       columnaTareaId: columnaId || null, hiloRelacionadoId: hiloClienteId, notaCierre: "",
     };
@@ -4252,6 +4389,7 @@ function EmpresasView({ core, setCore, onOpen }) {
     empresas: prev.empresas.filter((e) => e.id !== id),
     personaEmpresa: prev.personaEmpresa.filter((r) => r.empresaId !== id),
     empresaObra: prev.empresaObra.filter((r) => r.empresaId !== id),
+    hiloEmpresa: (prev.hiloEmpresa || []).filter((r) => r.empresaId !== id),
     entidadEtiqueta: prev.entidadEtiqueta.filter((r) => !(r.entidadTipo === "Empresa" && r.entidadId === id)),
   }));
 
@@ -4395,8 +4533,9 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
 
   const personas = core.personaEmpresa.filter((r) => r.empresaId === id);
   const obras = core.empresaObra.filter((r) => r.empresaId === id);
-  const hilosDeEmpresa = core.hilos.filter((h) => h.empresaId === id).map((h) => h.id);
-  const hilosDeEstaEmpresa = core.hilos.filter((h) => h.empresaId === id && h.estado === "Activo");
+  const hilosIdsDeEmpresa = new Set((core.hiloEmpresa || []).filter((r) => r.empresaId === id).map((r) => r.hiloId));
+  const hilosDeEmpresa = core.hilos.filter((h) => hilosIdsDeEmpresa.has(h.id)).map((h) => h.id);
+  const hilosDeEstaEmpresa = core.hilos.filter((h) => hilosIdsDeEmpresa.has(h.id) && h.estado === "Activo");
   const accCount = acciones.filter((a) => hilosDeEmpresa.includes(a.hiloId)).length;
 
   const updateRel = (relId, cambios) => setCore((prev) => ({ ...prev, personaEmpresa: prev.personaEmpresa.map((r) => (r.id === relId ? { ...r, ...cambios } : r)) }));
@@ -4558,6 +4697,7 @@ function ObrasView({ core, setCore, onOpen }) {
     ...prev,
     obras: prev.obras.filter((o) => o.id !== id),
     empresaObra: prev.empresaObra.filter((r) => r.obraId !== id),
+    personaObra: (prev.personaObra || []).filter((r) => r.obraId !== id),
     entidadEtiqueta: prev.entidadEtiqueta.filter((r) => !(r.entidadTipo === "Obra" && r.entidadId === id)),
   }));
 
@@ -5107,10 +5247,13 @@ function InformeHilosPorEmpresa({ core, acciones }) {
   const hilosFiltrados = core.hilos.filter((h) => estadoFiltro === "Todos" || h.estado === estadoFiltro);
   const porEmpresa = {};
   for (const h of hilosFiltrados) {
-    const key = h.empresaId || "__sin_empresa__";
-    if (!porEmpresa[key]) porEmpresa[key] = { hilos: 0, acciones: 0 };
-    porEmpresa[key].hilos += 1;
-    porEmpresa[key].acciones += acciones.filter((a) => a.hiloId === h.id).length;
+    const empresas = empresasDeHilo(h, core);
+    const keys = empresas.length > 0 ? empresas.map((e) => e.id) : ["__sin_empresa__"];
+    for (const key of keys) {
+      if (!porEmpresa[key]) porEmpresa[key] = { hilos: 0, acciones: 0 };
+      porEmpresa[key].hilos += 1;
+      porEmpresa[key].acciones += acciones.filter((a) => a.hiloId === h.id).length;
+    }
   }
   const rows = Object.entries(porEmpresa)
     .map(([empresaId, datos]) => {
@@ -5342,6 +5485,7 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
       personaEmpresa: [],
       empresaObra: [],
       personaObra: [],
+      hiloEmpresa: [],
       entidadEtiqueta: [],
     }));
     setAcciones([]);
