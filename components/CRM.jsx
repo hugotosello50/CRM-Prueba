@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.6.4";
+const APP_VERSION = "1.7.0";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -66,7 +66,7 @@ const seedCore = () => ({
     { id: uid("et"), etiquetaId: "ET02", entidadTipo: "Obra", entidadId: "O001" },
   ],
   parametros: { umbralDiaLleno: 8, diasHabiles: [1, 2, 3, 4, 5], fechasNoHabiles: [], diasUrgente: 3, diasProximos: 7, googleContactsLabel: "CRM", tituloApp: "Seguimiento comercial", nombreSinColumnaSeguimientos: "Sin columna", nombreSinColumnaTareas: "Sin columna" },
-  tema: { botonActivo: "#1B4D2E", botonInactivo: "#D9F0DE", tarjeta: "#FFFFFF", linea: "#E4DECF" },
+  tema: { botonActivo: "#1B4D2E", botonInactivo: "#D9F0DE", tarjeta: "#FFFFFF", linea: "#E4DECF", fondo: "#F7F5F0", ink: "#2A2118", mutedBase: "#6B6352" },
   kanbanColumnas: [
     { id: "K1", nombre: "Por hacer", orden: 0 },
     { id: "K2", nombre: "En curso", orden: 1 },
@@ -135,7 +135,7 @@ function normalizeCore(c) {
     return base;
   });
   out.parametros = { umbralDiaLleno: 8, diasHabiles: [1, 2, 3, 4, 5], fechasNoHabiles: [], diasUrgente: 3, diasProximos: 7, googleContactsLabel: "CRM", tituloApp: "Seguimiento comercial", nombreSinColumnaSeguimientos: "Sin columna", nombreSinColumnaTareas: "Sin columna", ...(out.parametros || {}) };
-  out.tema = { ...{ botonActivo: "#1B4D2E", botonInactivo: "#D9F0DE", tarjeta: "#FFFFFF", linea: "#E4DECF" }, ...(out.tema || {}) };
+  out.tema = { ...{ botonActivo: "#1B4D2E", botonInactivo: "#D9F0DE", tarjeta: "#FFFFFF", linea: "#E4DECF", fondo: "#F7F5F0", ink: "#2A2118", mutedBase: "#6B6352" }, ...(out.tema || {}) };
   if (!Array.isArray(out.kanbanColumnas)) out.kanbanColumnas = seed.kanbanColumnas;
   if (!Array.isArray(out.kanbanColumnasTareas)) out.kanbanColumnasTareas = seed.kanbanColumnasTareas;
   return out;
@@ -378,11 +378,21 @@ function Field({ label, children }) {
 
 const inputCls = "w-full bg-white border border-[#D8D2C4] rounded-sm px-3 py-2 text-sm text-[#2A2118] placeholder-[#A69C88] focus:outline-none focus:ring-2 focus:ring-[#E8871E] focus:border-transparent";
 
+// Elige texto claro u oscuro según qué tan clara sea la variante de fondo (usado sobre
+// core.tema.botonActivo, que cambia mucho de tono entre paletas).
+function contrastText(hex) {
+  const c = (hex || "").replace("#", "");
+  if (c.length !== 6) return "#2A2118";
+  const r = parseInt(c.slice(0, 2), 16), g = parseInt(c.slice(2, 4), 16), b = parseInt(c.slice(4, 6), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.55 ? "#2A2118" : "#FFFFFF";
+}
+
 function Modal({ title, onClose, children }) {
   return (
     <div style={{ backgroundColor: "#1C1914" }} className="fixed inset-0 flex items-start sm:items-center justify-center z-50 p-0 sm:p-4 overflow-y-auto">
-      <div style={{ backgroundColor: "#F7F5F0" }} className="w-full sm:max-w-md sm:rounded-sm rounded-t-lg flex flex-col max-h-full sm:max-h-[85vh] my-0 sm:my-auto">
-        <div style={{ backgroundColor: "#F7F5F0" }} className="flex items-center justify-between px-4 py-3 border-b border-[#E4DECF] z-10 shrink-0">
+      <div className="bg-[#F7F5F0] w-full sm:max-w-md sm:rounded-sm rounded-t-lg flex flex-col max-h-full sm:max-h-[85vh] my-0 sm:my-auto">
+        <div className="bg-[#F7F5F0] flex items-center justify-between px-4 py-3 border-b border-[#E4DECF] z-10 shrink-0">
           <h3 className="font-extrabold text-[#2A2118]">{title}</h3>
           <button onClick={onClose} aria-label="Cerrar"><X size={20} className="text-[#8A8272]" /></button>
         </div>
@@ -676,8 +686,17 @@ export default function CRM({ userId, onLogout }) {
     <div className="relative min-h-screen bg-[#F7F5F0] flex justify-center">
       <style>{`
         .bg-white { background-color: ${core.tema.tarjeta} !important; }
+        .bg-\\[\\#F7F5F0\\] { background-color: ${core.tema.fondo} !important; }
         .border-\\[\\#E4DECF\\] { border-color: ${core.tema.linea} !important; }
         .border-\\[\\#EFEBE0\\] { border-color: ${core.tema.linea} !important; }
+        .border-\\[\\#D8D2C4\\] { border-color: ${core.tema.linea} !important; }
+        .text-\\[\\#2A2118\\] { color: ${core.tema.ink} !important; }
+        .text-\\[\\#6B6352\\] { color: ${core.tema.mutedBase} !important; }
+        .text-\\[\\#8A8272\\] { color: ${core.tema.mutedBase} !important; }
+        .text-\\[\\#A69C88\\] { color: ${core.tema.mutedBase} !important; }
+        .text-\\[\\#C9C1AE\\] { color: ${core.tema.mutedBase} !important; }
+        .text-\\[\\#D8D2C4\\] { color: ${core.tema.mutedBase} !important; }
+        .placeholder-\\[\\#A69C88\\]::placeholder { color: ${core.tema.mutedBase} !important; }
       `}</style>
       <div className="w-full max-w-md px-3 pt-5 pb-6 flex flex-col min-h-screen">
         <header className="mb-4 px-1 flex items-start justify-between gap-2">
@@ -693,8 +712,8 @@ export default function CRM({ userId, onLogout }) {
               aria-label="Buscar"
               style={
                 tab === "buscar" && !detail
-                  ? { backgroundColor: core.tema.botonActivo, color: "#FFFFFF" }
-                  : { backgroundColor: core.tema.botonInactivo, color: "#2A2118" }
+                  ? { backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }
+                  : { backgroundColor: core.tema.botonInactivo, color: core.tema.ink }
               }
               className="flex items-center justify-center w-10 h-10 rounded-sm"
             >
@@ -703,7 +722,7 @@ export default function CRM({ userId, onLogout }) {
             <button
               onClick={() => setShowMenu(true)}
               aria-label="Menú"
-              style={{ backgroundColor: core.tema.botonInactivo, color: "#2A2118" }}
+              style={{ backgroundColor: core.tema.botonInactivo, color: core.tema.ink }}
               className="flex items-center justify-center w-10 h-10 rounded-sm"
             >
               <Menu size={17} />
@@ -719,7 +738,7 @@ export default function CRM({ userId, onLogout }) {
               <button
                 key={n.id}
                 onClick={() => { setTab(n.id); setDetail(null); }}
-                style={active ? { backgroundColor: core.tema.botonActivo, color: "#FFFFFF" } : { backgroundColor: core.tema.botonInactivo, color: "#2A2118" }}
+                style={active ? { backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) } : { backgroundColor: core.tema.botonInactivo, color: core.tema.ink }}
                 className="shrink-0 h-8 flex items-center gap-1.5 px-2 rounded-sm text-[11px] font-bold transition-colors"
               >
                 <Icon size={13} /> {n.label}
@@ -763,7 +782,7 @@ export default function CRM({ userId, onLogout }) {
                   <button
                     key={item.id}
                     onClick={() => { setTab(item.id); setDetail(null); setShowMenu(false); }}
-                    style={active ? { backgroundColor: core.tema.botonActivo, color: "#FFFFFF" } : { color: "#2A2118" }}
+                    style={active ? { backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) } : { color: core.tema.ink }}
                     className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-sm text-sm font-semibold"
                   >
                     <Icon size={16} className={active ? "" : "text-[#8A8272]"} /> {item.label}
@@ -775,7 +794,7 @@ export default function CRM({ userId, onLogout }) {
             <div className="space-y-1">
               <button
                 onClick={() => { setTab("config"); setDetail(null); setShowMenu(false); }}
-                style={tab === "config" && !detail ? { backgroundColor: core.tema.botonActivo, color: "#FFFFFF" } : { color: "#2A2118" }}
+                style={tab === "config" && !detail ? { backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) } : { color: core.tema.ink }}
                 className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-sm text-sm font-semibold"
               >
                 <Settings size={16} className={tab === "config" && !detail ? "" : "text-[#8A8272]"} /> Configuración
@@ -1304,7 +1323,7 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
           <button
             onClick={() => setMostrarFecha((v) => !v)}
             aria-label="Fecha y hora"
-            style={mostrarFecha ? { backgroundColor: core.tema.botonActivo, color: "#FFFFFF" } : { backgroundColor: core.tema.botonInactivo, color: "#2A2118" }}
+            style={mostrarFecha ? { backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) } : { backgroundColor: core.tema.botonInactivo, color: core.tema.ink }}
             className="shrink-0 w-10 h-10 rounded-sm flex items-center justify-center"
           >
             <CalendarClock size={17} />
@@ -1607,8 +1626,8 @@ function CalendarioView({ core, setCore, acciones, setAcciones, onOpen, t }) {
   return (
     <div>
       <div className="flex gap-1.5 mb-3">
-        <button onClick={() => setModo("mes")} style={modo === "mes" ? { backgroundColor: core.tema.botonActivo, color: "#FFFFFF" } : { backgroundColor: core.tema.botonInactivo, color: "#2A2118" }} className="flex-1 h-8 text-[11px] font-bold uppercase tracking-wide rounded-sm">Mensual</button>
-        <button onClick={() => setModo("semana")} style={modo === "semana" ? { backgroundColor: core.tema.botonActivo, color: "#FFFFFF" } : { backgroundColor: core.tema.botonInactivo, color: "#2A2118" }} className="flex-1 h-8 text-[11px] font-bold uppercase tracking-wide rounded-sm">Semanal</button>
+        <button onClick={() => setModo("mes")} style={modo === "mes" ? { backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) } : { backgroundColor: core.tema.botonInactivo, color: core.tema.ink }} className="flex-1 h-8 text-[11px] font-bold uppercase tracking-wide rounded-sm">Mensual</button>
+        <button onClick={() => setModo("semana")} style={modo === "semana" ? { backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) } : { backgroundColor: core.tema.botonInactivo, color: core.tema.ink }} className="flex-1 h-8 text-[11px] font-bold uppercase tracking-wide rounded-sm">Semanal</button>
       </div>
 
       <div className="flex items-center justify-between mb-2">
@@ -2045,7 +2064,7 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, onReprograma
           <button
             key={key}
             onClick={() => setBucket(key)}
-            style={bucket === key ? { backgroundColor: core.tema.botonActivo, color: "#FFFFFF" } : { backgroundColor: core.tema.botonInactivo, color: "#2A2118" }}
+            style={bucket === key ? { backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) } : { backgroundColor: core.tema.botonInactivo, color: core.tema.ink }}
             className="h-8 flex items-center justify-center gap-1 text-[10px] font-bold uppercase tracking-wide rounded-sm transition-colors"
           >
             {label}
@@ -2069,7 +2088,7 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, onReprograma
             <button
               key={key}
               onClick={() => setEstadoFiltro(key)}
-              style={estadoFiltro === key ? { backgroundColor: core.tema.botonActivo, color: "#FFFFFF" } : { backgroundColor: "#FFFFFF", color: "#6B6352" }}
+              style={estadoFiltro === key ? { backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) } : { backgroundColor: core.tema.tarjeta, color: core.tema.mutedBase }}
               className="h-8 flex items-center text-[10px] font-bold uppercase tracking-wide px-2"
             >
               {label}
@@ -2083,7 +2102,7 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, onReprograma
         <button
           onClick={() => setOrden((o) => (o === "asc" ? "desc" : "asc"))}
           aria-label={orden === "asc" ? "Más antiguas primero" : "Más recientes primero"}
-          style={{ backgroundColor: core.tema.botonInactivo, color: "#2A2118" }}
+          style={{ backgroundColor: core.tema.botonInactivo, color: core.tema.ink }}
           className="h-8 w-8 flex items-center justify-center rounded-sm shrink-0"
         >
           {orden === "asc" ? <ArrowDownAZ size={14} /> : <ArrowUpAZ size={14} />}
@@ -4910,7 +4929,23 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
   const setTituloApp = (v) => setCore((prev) => ({ ...prev, parametros: { ...prev.parametros, tituloApp: v } }));
 
   const setTemaColor = (clave, valor) => setCore((prev) => ({ ...prev, tema: { ...prev.tema, [clave]: valor } }));
-  const restablecerTema = () => setCore((prev) => ({ ...prev, tema: { botonActivo: "#1B4D2E", botonInactivo: "#D9F0DE", tarjeta: "#FFFFFF", linea: "#E4DECF" } }));
+  const restablecerTema = () => setCore((prev) => ({ ...prev, tema: { botonActivo: "#1B4D2E", botonInactivo: "#D9F0DE", tarjeta: "#FFFFFF", linea: "#E4DECF", fondo: "#F7F5F0", ink: "#2A2118", mutedBase: "#6B6352" } }));
+
+  const PALETAS = [
+    {
+      id: "panel-obra-oscuro", nombre: "Panel de obra (oscuro)",
+      tema: { botonActivo: "#5FB8C4", botonInactivo: "#232C37", tarjeta: "#1E262F", linea: "#303B47", fondo: "#171D24", ink: "#E7ECF2", mutedBase: "#8E9AA8" },
+    },
+    {
+      id: "panel-obra-claro", nombre: "Panel de obra (claro)",
+      tema: { botonActivo: "#1F7A86", botonInactivo: "#F3F5F6", tarjeta: "#FFFFFF", linea: "#D8DEE4", fondo: "#FFFFFF", ink: "#1B2430", mutedBase: "#5B6674" },
+    },
+    {
+      id: "ficha-viva", nombre: "Ficha viva",
+      tema: { botonActivo: "#3B5B8C", botonInactivo: "#EFE6D4", tarjeta: "#FBF8F1", linea: "#D9CBAF", fondo: "#F4EEE1", ink: "#2B2420", mutedBase: "#736555" },
+    },
+  ];
+  const aplicarPaleta = (tema) => setCore((prev) => ({ ...prev, tema }));
 
   const toggleDiaHabil = (num) => setCore((prev) => {
     const actuales = prev.parametros.diasHabiles || [1, 2, 3, 4, 5];
@@ -5034,6 +5069,27 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
       {section === "apariencia" && (
         <div className="space-y-3">
           <div className="bg-white border border-[#E4DECF] rounded-sm p-4">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352] mb-3">Paletas</p>
+            <div className="space-y-2">
+              {PALETAS.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => aplicarPaleta(p.tema)}
+                  className="w-full flex items-center gap-2.5 border border-[#E4DECF] rounded-sm p-2.5 text-left"
+                  style={{ backgroundColor: p.tema.fondo }}
+                >
+                  <span className="flex gap-1 shrink-0">
+                    <span className="w-4 h-4 rounded-full border border-black/10" style={{ backgroundColor: p.tema.botonActivo }} />
+                    <span className="w-4 h-4 rounded-full border border-black/10" style={{ backgroundColor: p.tema.tarjeta }} />
+                  </span>
+                  <span className="text-sm font-bold" style={{ color: p.tema.ink }}>{p.nombre}</span>
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-[#A69C88] mt-2">Elegí una para aplicar todos sus colores de una — después podés seguir ajustándolos a mano abajo.</p>
+          </div>
+
+          <div className="bg-white border border-[#E4DECF] rounded-sm p-4">
             <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352] mb-3">Botones</p>
             <div className="flex items-center justify-between mb-3">
               <label className="text-sm text-[#2A2118]">Botón activo (seleccionado)</label>
@@ -5045,13 +5101,13 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
             </div>
             <div className="flex gap-2 mt-3">
               <button
-                style={{ backgroundColor: core.tema.botonActivo, color: "#FFFFFF" }}
+                style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}
                 className="flex-1 py-2 rounded-sm text-xs font-bold uppercase tracking-wide"
               >
                 Vista previa activo
               </button>
               <button
-                style={{ backgroundColor: core.tema.botonInactivo, color: "#2A2118" }}
+                style={{ backgroundColor: core.tema.botonInactivo, color: core.tema.ink }}
                 className="flex-1 py-2 rounded-sm text-xs font-bold uppercase tracking-wide"
               >
                 Vista previa inactivo
@@ -5060,10 +5116,26 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
           </div>
 
           <div className="bg-white border border-[#E4DECF] rounded-sm p-4">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352] mb-3">Tarjetas</p>
+            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352] mb-3">Fondo y tarjetas</p>
+            <div className="flex items-center justify-between mb-3">
+              <label className="text-sm text-[#2A2118]">Fondo de la página</label>
+              <input type="color" value={core.tema.fondo} onChange={(e) => setTemaColor("fondo", e.target.value)} className="w-10 h-8 rounded-sm border border-[#E4DECF] cursor-pointer" />
+            </div>
             <div className="flex items-center justify-between">
               <label className="text-sm text-[#2A2118]">Fondo de las tarjetas</label>
               <input type="color" value={core.tema.tarjeta} onChange={(e) => setTemaColor("tarjeta", e.target.value)} className="w-10 h-8 rounded-sm border border-[#E4DECF] cursor-pointer" />
+            </div>
+          </div>
+
+          <div className="bg-white border border-[#E4DECF] rounded-sm p-4">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352] mb-3">Texto</p>
+            <div className="flex items-center justify-between mb-3">
+              <label className="text-sm text-[#2A2118]">Texto principal</label>
+              <input type="color" value={core.tema.ink} onChange={(e) => setTemaColor("ink", e.target.value)} className="w-10 h-8 rounded-sm border border-[#E4DECF] cursor-pointer" />
+            </div>
+            <div className="flex items-center justify-between">
+              <label className="text-sm text-[#2A2118]">Texto secundario</label>
+              <input type="color" value={core.tema.mutedBase} onChange={(e) => setTemaColor("mutedBase", e.target.value)} className="w-10 h-8 rounded-sm border border-[#E4DECF] cursor-pointer" />
             </div>
           </div>
 
@@ -5077,7 +5149,7 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
 
           <button onClick={restablecerTema} className="text-xs font-bold uppercase tracking-wide text-[#B0452E]">Restablecer colores originales</button>
 
-          <p className="text-xs text-[#A69C88]">Esto cambia el color de los botones principales, el fondo de las tarjetas y las líneas divisorias en toda la app. Los bordes de urgencia de Seguimientos (rojo/amarillo/verde) y los colores de prioridad no se ven afectados — esos siguen su propia lógica.</p>
+          <p className="text-xs text-[#A69C88]">Esto cambia el fondo, el texto, los botones principales, las tarjetas y las líneas divisorias en toda la app. Los bordes de urgencia de Seguimientos (rojo/amarillo/verde) y los colores de prioridad no se ven afectados — esos siguen su propia lógica.</p>
         </div>
       )}
 
