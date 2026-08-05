@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.9.5";
+const APP_VERSION = "1.9.6";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -2351,32 +2351,34 @@ function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, 
       )}
 
       {hilo && (
-        <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-dashed border-[#E4DECF] flex-wrap">
+        <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-dashed border-[#E4DECF] flex-nowrap">
           {tareasVinculadas > 0 && (
-            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#6B6352] bg-[#F7F5F0] border border-[#E4DECF] rounded-sm px-2 py-1">
+            <span className="shrink-0 inline-flex items-center gap-1 text-[11px] font-bold text-[#6B6352] bg-[#F7F5F0] border border-[#E4DECF] rounded-sm px-2 py-1">
               <ListChecks size={11} /> {tareasVinculadas} tarea{tareasVinculadas === 1 ? "" : "s"}
             </span>
           )}
-          {personasDelHilo.length > 1 && (
-            <span className="flex items-center">
-              {personasDelHilo.map((p) => (
-                <span
-                  key={p.id}
-                  className="w-5 h-5 rounded-full bg-[#F1DFB9] text-[#5C3F18] text-[9px] font-extrabold flex items-center justify-center border-2 -ml-1.5 first:ml-0"
-                  style={{ borderColor: core.tema.tarjeta }}
-                >
-                  {getIniciales(p.nombre)}
-                </span>
-              ))}
+          <div className="flex items-center gap-1.5 ml-auto min-w-0">
+            {personasDelHilo.length > 1 && (
+              <span className="shrink-0 flex items-center">
+                {personasDelHilo.map((p) => (
+                  <span
+                    key={p.id}
+                    className="w-5 h-5 rounded-full bg-[#F1DFB9] text-[#5C3F18] text-[9px] font-extrabold flex items-center justify-center border-2 -ml-1.5 first:ml-0"
+                    style={{ borderColor: core.tema.tarjeta }}
+                  >
+                    {getIniciales(p.nombre)}
+                  </span>
+                ))}
+              </span>
+            )}
+            {tipoPrimary && <span className="min-w-0 flex-1 truncate text-right text-xs font-mono text-[#6B6352]">{tipoPrimary.nombre}</span>}
+            <span className="shrink-0 text-[11px] font-bold font-mono px-2 py-1 rounded-sm bg-[#F1DFB9] text-[#5C3F18]">
+              {fmtDate(masUrgente.fechaProgramada)}
             </span>
-          )}
-          {tipoPrimary && <span className="text-xs font-mono text-[#6B6352] whitespace-nowrap">{tipoPrimary.nombre}</span>}
-          <span className="text-[11px] font-bold font-mono px-2 py-1 rounded-sm bg-[#F1DFB9] text-[#5C3F18]">
-            Próx. {fmtDate(masUrgente.fechaProgramada)}
-          </span>
-          <IconBtn label="Reprogramar" onClick={() => setShowReprogramar(true)}><Pencil size={13} /></IconBtn>
-          {primary.recurrente && <Repeat size={12} className="text-[#8A8272] shrink-0" />}
-          {primary.prioridad && <Chip tone={prioTone}>{primary.prioridad}</Chip>}
+            <span className="shrink-0"><IconBtn label="Reprogramar" onClick={() => setShowReprogramar(true)}><Pencil size={13} /></IconBtn></span>
+            {primary.recurrente && <Repeat size={12} className="shrink-0 text-[#8A8272]" />}
+            {primary.prioridad && <span className="shrink-0"><Chip tone={prioTone}>{primary.prioridad.charAt(0)}</Chip></span>}
+          </div>
         </div>
       )}
 
