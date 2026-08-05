@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.9.8";
+const APP_VERSION = "1.10.0";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -60,6 +60,7 @@ const seedCore = () => ({
     { id: uid("pe"), personaId: "P003", empresaId: "E002", cargoId: "C01", principal: true },
   ],
   empresaObra: [{ id: uid("eo"), empresaId: "E001", obraId: "O001" }],
+  personaObra: [],
   entidadEtiqueta: [
     { id: uid("et"), etiquetaId: "ET01", entidadTipo: "Empresa", entidadId: "E001" },
     { id: uid("et"), etiquetaId: "ET03", entidadTipo: "Empresa", entidadId: "E001" },
@@ -124,6 +125,7 @@ function normalizeCore(c) {
     const { cargo, ...rest } = r;
     return { ...rest, cargoId: match ? match.id : out.cargos[out.cargos.length - 1].id };
   });
+  if (!Array.isArray(out.personaObra)) out.personaObra = [];
   if (!Array.isArray(out.hilos)) out.hilos = [];
   out.hilos = out.hilos.map((h) => {
     const base = { tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "", ...h };
@@ -2565,6 +2567,7 @@ function PersonasView({ core, setCore, onOpen }) {
       ...prev,
       personas: prev.personas.filter((p) => p.id !== id),
       personaEmpresa: prev.personaEmpresa.filter((r) => r.personaId !== id),
+      personaObra: (prev.personaObra || []).filter((r) => r.personaId !== id),
       entidadEtiqueta: prev.entidadEtiqueta.filter((r) => !(r.entidadTipo === "Persona" && r.entidadId === id)),
     }));
   };
@@ -2639,7 +2642,7 @@ function PersonasView({ core, setCore, onOpen }) {
         </div>
       )}
 
-      {modal !== null && <PersonaForm initial={modal} onSave={savePersona} onDelete={modal.id ? () => { deletePersona(modal.id); setModal(null); } : null} onClose={() => setModal(null)} />}
+      {modal !== null && <PersonaForm initial={modal} core={core} setCore={setCore} onSave={savePersona} onDelete={modal.id ? () => { deletePersona(modal.id); setModal(null); } : null} onClose={() => setModal(null)} />}
       {deletingId && (
         <Modal title="¿Eliminar esta persona?" onClose={() => setDeletingId(null)}>
           <p className="text-sm text-[#2A2118] mb-4">Se borra la persona, sus vínculos con empresas, sus etiquetas y no se toca su historial de acciones (queda huérfano, referenciado por un id inexistente). No se puede deshacer.</p>
@@ -2653,16 +2656,45 @@ function PersonasView({ core, setCore, onOpen }) {
   );
 }
 
-function PersonaForm({ initial, onSave, onDelete, onClose }) {
+function PersonaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
   const [nombre, setNombre] = useState(initial.nombre || "");
   const [whatsapp, setWhatsapp] = useState(initial.whatsapp || "");
   const [direccion, setDireccion] = useState(initial.direccion || "");
   const [ciudad, setCiudad] = useState(initial.ciudad || "");
   const [notas, setNotas] = useState(initial.notas || "");
 
+  const [vincularEmpresa, setVincularEmpresa] = useState(false);
+  const [modoEmpresa, setModoEmpresa] = useState("existente"); // 'existente' | 'nueva'
+  const [empresaId, setEmpresaId] = useState(core.empresas[0]?.id || "");
+  const [empresaNueva, setEmpresaNueva] = useState("");
+
+  const [vincularObra, setVincularObra] = useState(false);
+  const [modoObra, setModoObra] = useState("existente"); // 'existente' | 'nueva'
+  const [obraId, setObraId] = useState(core.obras[0]?.id || "");
+  const [obraNueva, setObraNueva] = useState("");
+
   const submit = () => {
     if (!nombre.trim()) return;
-    onSave({ id: initial.id || uid("P"), nombre: nombre.trim(), whatsapp, direccion, ciudad, notas });
+    const personaId = initial.id || uid("P");
+
+    if (vincularEmpresa) {
+      if (modoEmpresa === "existente" && empresaId) {
+        setCore((prev) => ({ ...prev, personaEmpresa: [...prev.personaEmpresa, { id: uid("pe"), personaId, empresaId }] }));
+      } else if (modoEmpresa === "nueva" && empresaNueva.trim()) {
+        const nueva = { id: uid("E"), denominacion: empresaNueva.trim(), direccion: "", ciudad: "" };
+        setCore((prev) => ({ ...prev, empresas: [nueva, ...prev.empresas], personaEmpresa: [...prev.personaEmpresa, { id: uid("pe"), personaId, empresaId: nueva.id }] }));
+      }
+    }
+    if (vincularObra) {
+      if (modoObra === "existente" && obraId) {
+        setCore((prev) => ({ ...prev, personaObra: [...(prev.personaObra || []), { id: uid("po"), personaId, obraId }] }));
+      } else if (modoObra === "nueva" && obraNueva.trim()) {
+        const nueva = { id: uid("O"), nombre: obraNueva.trim(), descripcion: "", metros2: 0, direccion: "", ciudad: "" };
+        setCore((prev) => ({ ...prev, obras: [nueva, ...prev.obras], personaObra: [...(prev.personaObra || []), { id: uid("po"), personaId, obraId: nueva.id }] }));
+      }
+    }
+
+    onSave({ id: personaId, nombre: nombre.trim(), whatsapp, direccion, ciudad, notas });
   };
 
   return (
@@ -2672,6 +2704,61 @@ function PersonaForm({ initial, onSave, onDelete, onClose }) {
       <Field label="Dirección"><input className={inputCls} value={direccion} onChange={(e) => setDireccion(e.target.value)} /></Field>
       <Field label="Ciudad"><input className={inputCls} value={ciudad} onChange={(e) => setCiudad(e.target.value)} /></Field>
       <Field label="Notas generales"><textarea className={inputCls} rows={2} value={notas} onChange={(e) => setNotas(e.target.value)} /></Field>
+
+      <div className="border-t border-dashed border-[#E4DECF] mt-1 mb-3 pt-3">
+        <label className="flex items-center gap-2 mb-2 text-sm font-semibold text-[#2A2118]">
+          <input type="checkbox" checked={vincularEmpresa} onChange={(e) => setVincularEmpresa(e.target.checked)} /> Vincular con una empresa
+        </label>
+        {vincularEmpresa && (
+          <div className="mb-1">
+            <div className="flex gap-2 mb-2">
+              <button type="button" onClick={() => setModoEmpresa("existente")} style={{ backgroundColor: modoEmpresa === "existente" ? "#2A2F36" : "#E7E2D8", color: modoEmpresa === "existente" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-1.5 rounded-sm text-xs font-bold">Empresa existente</button>
+              <button type="button" onClick={() => setModoEmpresa("nueva")} style={{ backgroundColor: modoEmpresa === "nueva" ? "#2A2F36" : "#E7E2D8", color: modoEmpresa === "nueva" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-1.5 rounded-sm text-xs font-bold">Agregar empresa</button>
+            </div>
+            {modoEmpresa === "existente" ? (
+              core.empresas.length === 0 ? (
+                <p className="text-xs text-[#A69C88] mb-2">No hay empresas cargadas — probá creando una nueva.</p>
+              ) : (
+                <Field label="Empresa">
+                  <select className={inputCls} value={empresaId} onChange={(e) => setEmpresaId(e.target.value)}>
+                    {core.empresas.map((e) => <option key={e.id} value={e.id}>{e.denominacion}</option>)}
+                  </select>
+                </Field>
+              )
+            ) : (
+              <Field label="Denominación"><input className={inputCls} value={empresaNueva} onChange={(e) => setEmpresaNueva(e.target.value)} /></Field>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="border-t border-dashed border-[#E4DECF] mb-3 pt-3">
+        <label className="flex items-center gap-2 mb-2 text-sm font-semibold text-[#2A2118]">
+          <input type="checkbox" checked={vincularObra} onChange={(e) => setVincularObra(e.target.checked)} /> Vincular con una obra
+        </label>
+        {vincularObra && (
+          <div className="mb-1">
+            <div className="flex gap-2 mb-2">
+              <button type="button" onClick={() => setModoObra("existente")} style={{ backgroundColor: modoObra === "existente" ? "#2A2F36" : "#E7E2D8", color: modoObra === "existente" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-1.5 rounded-sm text-xs font-bold">Obra existente</button>
+              <button type="button" onClick={() => setModoObra("nueva")} style={{ backgroundColor: modoObra === "nueva" ? "#2A2F36" : "#E7E2D8", color: modoObra === "nueva" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-1.5 rounded-sm text-xs font-bold">Agregar obra</button>
+            </div>
+            {modoObra === "existente" ? (
+              core.obras.length === 0 ? (
+                <p className="text-xs text-[#A69C88] mb-2">No hay obras cargadas — probá creando una nueva.</p>
+              ) : (
+                <Field label="Obra">
+                  <select className={inputCls} value={obraId} onChange={(e) => setObraId(e.target.value)}>
+                    {core.obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                  </select>
+                </Field>
+              )
+            ) : (
+              <Field label="Nombre de la obra"><input className={inputCls} value={obraNueva} onChange={(e) => setObraNueva(e.target.value)} /></Field>
+            )}
+          </div>
+        )}
+      </div>
+
       <div className="flex gap-2 mt-2">
         <PrimaryBtn onClick={submit} full>Guardar</PrimaryBtn>
         {onDelete && <button onClick={onDelete} className="shrink-0 border border-[#E4DECF] rounded-sm px-3 text-[#B0452E]"><Trash2 size={16} /></button>}
@@ -2684,12 +2771,14 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
   const persona = core.personas.find((p) => p.id === id);
   const [showRel, setShowRel] = useState(false);
   const [editRel, setEditRel] = useState(null);
+  const [showRelObra, setShowRelObra] = useState(false);
   const [showNuevoHilo, setShowNuevoHilo] = useState(false);
   const [verCerrados, setVerCerrados] = useState(false);
 
   if (!persona) return <div><BackHeader onClose={onClose} /><p className="text-sm text-[#8A8272]">Esta persona ya no existe.</p></div>;
 
   const relEmpresas = core.personaEmpresa.filter((r) => r.personaId === id);
+  const relObras = (core.personaObra || []).filter((r) => r.personaId === id);
 
   const hilosDePersona = core.hilos.filter((h) => participantesActivos(h).some((p) => p.personaId === id));
   const hilosActivos = hilosDePersona.filter((h) => h.estado === "Activo");
@@ -2697,6 +2786,7 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
 
   const removeRel = (relId) => setCore((prev) => ({ ...prev, personaEmpresa: prev.personaEmpresa.filter((r) => r.id !== relId) }));
   const updateRel = (relId, cambios) => setCore((prev) => ({ ...prev, personaEmpresa: prev.personaEmpresa.map((r) => (r.id === relId ? { ...r, ...cambios } : r)) }));
+  const removeRelObra = (relId) => setCore((prev) => ({ ...prev, personaObra: (prev.personaObra || []).filter((r) => r.id !== relId) }));
 
   return (
     <div>
@@ -2738,6 +2828,31 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
                     </button>
                     <IconBtn label="Editar cargo" onClick={() => setEditRel(r)}><Pencil size={14} /></IconBtn>
                     <IconBtn label="Quitar vínculo" danger onClick={() => removeRel(r.id)}><X size={14} /></IconBtn>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Obras vinculadas</p>
+            <button onClick={() => setShowRelObra(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>
+          </div>
+          {relObras.length === 0 ? (
+            <p className="text-sm text-[#A69C88]">Sin obras vinculadas.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {relObras.map((r) => {
+                const obra = core.obras.find((o) => o.id === r.obraId);
+                if (!obra) return null;
+                return (
+                  <div key={r.id} className="flex items-center justify-between gap-2 text-sm">
+                    <button onClick={() => onOpen("obra", obra.id)} className="text-left flex-1 min-w-0">
+                      <span className="font-semibold text-[#2A2118]">{obra.nombre}</span>
+                    </button>
+                    <IconBtn label="Quitar vínculo" danger onClick={() => removeRelObra(r.id)}><X size={14} /></IconBtn>
                   </div>
                 );
               })}
@@ -2787,6 +2902,15 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
           relacion={editRel}
           onClose={() => setEditRel(null)}
           onSave={(cambios) => { updateRel(editRel.id, cambios); setEditRel(null); }}
+        />
+      )}
+      {showRelObra && (
+        <VincularObraAPersonaForm
+          core={core}
+          setCore={setCore}
+          personaId={id}
+          onClose={() => setShowRelObra(false)}
+          onLinked={() => setShowRelObra(false)}
         />
       )}
       {showNuevoHilo && (
@@ -2991,6 +3115,67 @@ function VincularEmpresaForm({ core, setCore, onClose, onSave }) {
   );
 }
 
+// Vincula una obra (existente o nueva) directamente a una persona.
+function VincularObraAPersonaForm({ core, setCore, personaId, onClose, onLinked }) {
+  const [modo, setModo] = useState("existente"); // 'existente' | 'nueva'
+  const yaVinculadas = new Set((core.personaObra || []).filter((r) => r.personaId === personaId).map((r) => r.obraId));
+  const disponibles = core.obras.filter((o) => !yaVinculadas.has(o.id));
+  const [obraId, setObraId] = useState(disponibles[0]?.id || "");
+  const [nombreNueva, setNombreNueva] = useState("");
+  const [descripcionNueva, setDescripcionNueva] = useState("");
+  const [ciudadNueva, setCiudadNueva] = useState("");
+
+  const submit = () => {
+    if (modo === "existente") {
+      if (!obraId) return;
+      setCore((prev) => ({ ...prev, personaObra: [...(prev.personaObra || []), { id: uid("po"), personaId, obraId }] }));
+      onLinked(obraId);
+    } else {
+      if (!nombreNueva.trim()) return;
+      const nueva = { id: uid("O"), nombre: nombreNueva.trim(), descripcion: descripcionNueva, metros2: 0, direccion: "", ciudad: ciudadNueva };
+      setCore((prev) => ({ ...prev, obras: [nueva, ...prev.obras], personaObra: [...(prev.personaObra || []), { id: uid("po"), personaId, obraId: nueva.id }] }));
+      onLinked(nueva.id);
+    }
+  };
+
+  return (
+    <Modal title="Vincular a una obra" onClose={onClose}>
+      <div className="flex gap-2 mb-3">
+        <button
+          type="button"
+          onClick={() => setModo("existente")}
+          style={{ backgroundColor: modo === "existente" ? "#2A2F36" : "#E7E2D8", color: modo === "existente" ? "#FFFFFF" : "#6B6352" }}
+          className="flex-1 py-2 rounded-sm text-sm font-bold"
+        >Obra existente</button>
+        <button
+          type="button"
+          onClick={() => setModo("nueva")}
+          style={{ backgroundColor: modo === "nueva" ? "#2A2F36" : "#E7E2D8", color: modo === "nueva" ? "#FFFFFF" : "#6B6352" }}
+          className="flex-1 py-2 rounded-sm text-sm font-bold"
+        >Agregar obra</button>
+      </div>
+      {modo === "existente" ? (
+        disponibles.length === 0 ? (
+          <p className="text-sm text-[#A69C88] mb-3">No hay más obras disponibles para vincular — probá creando una nueva.</p>
+        ) : (
+          <Field label="Obra">
+            <select className={inputCls} value={obraId} onChange={(e) => setObraId(e.target.value)}>
+              {disponibles.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+            </select>
+          </Field>
+        )
+      ) : (
+        <>
+          <Field label="Nombre de la obra *"><input className={inputCls} value={nombreNueva} onChange={(e) => setNombreNueva(e.target.value)} /></Field>
+          <Field label="Descripción"><input className={inputCls} value={descripcionNueva} onChange={(e) => setDescripcionNueva(e.target.value)} /></Field>
+          <Field label="Ciudad"><input className={inputCls} value={ciudadNueva} onChange={(e) => setCiudadNueva(e.target.value)} /></Field>
+        </>
+      )}
+      <PrimaryBtn full onClick={submit}>Vincular</PrimaryBtn>
+    </Modal>
+  );
+}
+
 // Agrega una persona (existente o nueva) como participante de un hilo ya creado.
 function AgregarPersonaAlHiloForm({ core, setCore, hilo, personasDelHilo, agregarPersona, onClose }) {
   const [modo, setModo] = useState("existente"); // 'existente' | 'nueva'
@@ -3059,6 +3244,7 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
   const [showFechaTarea, setShowFechaTarea] = useState(false);
   const [showAgregarPersona, setShowAgregarPersona] = useState(false);
   const [verHistorialPersonas, setVerHistorialPersonas] = useState(false);
+  const [showEditarEmpresaObra, setShowEditarEmpresaObra] = useState(false);
 
   if (!hilo) return <div><BackHeader onClose={onClose} /><p className="text-sm text-[#8A8272]">Este hilo ya no existe.</p></div>;
 
@@ -3161,6 +3347,24 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
             <Pencil size={12} /> Editar título
           </button>
         </div>
+
+      {hilo.tipo === "cliente" && (
+        <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Empresa y obra</p>
+            <button onClick={() => setShowEditarEmpresaObra(true)} className="text-xs font-bold text-[#B0452E] flex items-center gap-1"><Pencil size={12} /> Editar</button>
+          </div>
+          {empresa || obra ? (
+            <p className="text-sm text-[#2A2118]">
+              {empresa && <button onClick={() => onOpen("empresa", empresa.id)} className="font-semibold underline underline-offset-2">{empresa.denominacion}</button>}
+              {empresa && obra && " · "}
+              {obra && <button onClick={() => onOpen("obra", obra.id)} className="font-semibold underline underline-offset-2">{obra.nombre}</button>}
+            </p>
+          ) : (
+            <p className="text-sm text-[#A69C88]">Sin empresa ni obra vinculada.</p>
+          )}
+        </div>
+      )}
 
       {hilo.tipo === "cliente" && (
         <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
@@ -3327,6 +3531,14 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
           <EditarTituloHiloForm hilo={hilo} onSave={(nuevoTitulo) => { setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === id ? { ...h, titulo: nuevoTitulo } : h)) })); setShowEditarTitulo(false); }} />
         </Modal>
       )}
+      {showEditarEmpresaObra && (
+        <EditarEmpresaObraHiloForm
+          core={core}
+          setCore={setCore}
+          hilo={hilo}
+          onClose={() => setShowEditarEmpresaObra(false)}
+        />
+      )}
       {showVincularCliente && (
         <Modal title="Vincular a un hilo de cliente" onClose={() => setShowVincularCliente(false)}>
           {core.hilos.filter((h) => h.tipo === "cliente" && h.estado === "Activo").length === 0 ? (
@@ -3415,6 +3627,79 @@ function EditarTituloHiloForm({ hilo, onSave }) {
       <Field label="Título"><input className={inputCls} value={titulo} onChange={(e) => setTitulo(e.target.value)} /></Field>
       <PrimaryBtn full onClick={() => titulo.trim() && onSave(titulo.trim())}>Guardar</PrimaryBtn>
     </div>
+  );
+}
+
+// Cambia la empresa y/o la obra vinculadas a un hilo de cliente ya creado.
+function EditarEmpresaObraHiloForm({ core, setCore, hilo, onClose }) {
+  const [modoEmpresa, setModoEmpresa] = useState("existente"); // 'existente' | 'nueva'
+  const [empresaId, setEmpresaId] = useState(hilo.empresaId || "");
+  const [empresaNueva, setEmpresaNueva] = useState("");
+
+  const [modoObra, setModoObra] = useState("existente"); // 'existente' | 'nueva'
+  const [obraId, setObraId] = useState(hilo.obraId || "");
+  const [obraNueva, setObraNueva] = useState("");
+
+  const submit = () => {
+    let empresaIdFinal = modoEmpresa === "nueva" ? "" : empresaId;
+    let obraIdFinal = modoObra === "nueva" ? "" : obraId;
+    let empresasNuevas = [];
+    let obrasNuevas = [];
+
+    if (modoEmpresa === "nueva" && empresaNueva.trim()) {
+      const nueva = { id: uid("E"), denominacion: empresaNueva.trim(), direccion: "", ciudad: "" };
+      empresasNuevas = [nueva];
+      empresaIdFinal = nueva.id;
+    }
+    if (modoObra === "nueva" && obraNueva.trim()) {
+      const nueva = { id: uid("O"), nombre: obraNueva.trim(), descripcion: "", metros2: 0, direccion: "", ciudad: "" };
+      obrasNuevas = [nueva];
+      obraIdFinal = nueva.id;
+    }
+
+    setCore((prev) => ({
+      ...prev,
+      empresas: [...empresasNuevas, ...prev.empresas],
+      obras: [...obrasNuevas, ...prev.obras],
+      hilos: prev.hilos.map((h) => (h.id === hilo.id ? { ...h, empresaId: empresaIdFinal, obraId: obraIdFinal } : h)),
+    }));
+    onClose();
+  };
+
+  return (
+    <Modal title="Empresa y obra del hilo" onClose={onClose}>
+      <Field label="Empresa">
+        <div className="flex gap-2 mb-2">
+          <button type="button" onClick={() => setModoEmpresa("existente")} style={{ backgroundColor: modoEmpresa === "existente" ? "#2A2F36" : "#E7E2D8", color: modoEmpresa === "existente" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-1.5 rounded-sm text-xs font-bold">Existente</button>
+          <button type="button" onClick={() => setModoEmpresa("nueva")} style={{ backgroundColor: modoEmpresa === "nueva" ? "#2A2F36" : "#E7E2D8", color: modoEmpresa === "nueva" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-1.5 rounded-sm text-xs font-bold">Nueva</button>
+        </div>
+        {modoEmpresa === "existente" ? (
+          <select className={inputCls} value={empresaId} onChange={(e) => setEmpresaId(e.target.value)}>
+            <option value="">— sin empresa —</option>
+            {core.empresas.map((e) => <option key={e.id} value={e.id}>{e.denominacion}</option>)}
+          </select>
+        ) : (
+          <input className={inputCls} placeholder="Denominación" value={empresaNueva} onChange={(e) => setEmpresaNueva(e.target.value)} />
+        )}
+      </Field>
+
+      <Field label="Obra">
+        <div className="flex gap-2 mb-2">
+          <button type="button" onClick={() => setModoObra("existente")} style={{ backgroundColor: modoObra === "existente" ? "#2A2F36" : "#E7E2D8", color: modoObra === "existente" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-1.5 rounded-sm text-xs font-bold">Existente</button>
+          <button type="button" onClick={() => setModoObra("nueva")} style={{ backgroundColor: modoObra === "nueva" ? "#2A2F36" : "#E7E2D8", color: modoObra === "nueva" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-1.5 rounded-sm text-xs font-bold">Nueva</button>
+        </div>
+        {modoObra === "existente" ? (
+          <select className={inputCls} value={obraId} onChange={(e) => setObraId(e.target.value)}>
+            <option value="">— sin obra —</option>
+            {core.obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+          </select>
+        ) : (
+          <input className={inputCls} placeholder="Nombre de la obra" value={obraNueva} onChange={(e) => setObraNueva(e.target.value)} />
+        )}
+      </Field>
+
+      <PrimaryBtn full onClick={submit}>Guardar</PrimaryBtn>
+    </Modal>
   );
 }
 
@@ -5060,6 +5345,7 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
       hilos: [],
       personaEmpresa: [],
       empresaObra: [],
+      personaObra: [],
       entidadEtiqueta: [],
     }));
     setAcciones([]);
