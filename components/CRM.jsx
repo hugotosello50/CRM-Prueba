@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.13.0";
+const APP_VERSION = "1.14.0";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -4471,6 +4471,7 @@ function EmpresasView({ core, setCore, onOpen }) {
   const [modal, setModal] = useState(null);
   const [q, setQ] = useState("");
   const [deletingId, setDeletingId] = useState(null);
+  const [showImportar, setShowImportar] = useState(false);
   const list = core.empresas.filter((e) => e.denominacion.toLowerCase().includes(q.toLowerCase()));
 
   const save = (data, vinculoPersona) => {
@@ -4508,6 +4509,7 @@ function EmpresasView({ core, setCore, onOpen }) {
           <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#A69C88]" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar empresa..." className={`${inputCls} pl-8`} />
         </div>
+        <button onClick={() => setShowImportar(true)} aria-label="Importar desde Excel" className="shrink-0 border border-[#E4DECF] rounded-sm px-3.5 py-2 font-bold text-[#6B6352]"><FileSpreadsheet size={18} /></button>
         <button onClick={() => setModal({})} className="shrink-0 bg-[#E8871E] text-[#2A2118] rounded-sm px-3.5 py-2 font-bold"><Plus size={18} /></button>
       </div>
 
@@ -4549,6 +4551,7 @@ function EmpresasView({ core, setCore, onOpen }) {
           </div>
         </Modal>
       )}
+      {showImportar && <ImportarEmpresasForm core={core} setCore={setCore} onClose={() => setShowImportar(false)} />}
     </div>
   );
 }
@@ -4627,6 +4630,97 @@ function EmpresaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
         <PrimaryBtn onClick={submit} full>Guardar</PrimaryBtn>
         {onDelete && <button onClick={onDelete} className="shrink-0 border border-[#E4DECF] rounded-sm px-3 text-[#B0452E]"><Trash2 size={16} /></button>}
       </div>
+    </Modal>
+  );
+}
+
+// Quita tildes y pasa a minúscula, para comparar texto ingresado a mano sin que un acento cambie el resultado.
+function normalizarTexto(s) {
+  return (s || "").toString().trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+
+// Carga masiva de empresas desde un Excel: se descarga una plantilla con los encabezados
+// esperados, se completa una fila por empresa y se vuelve a subir. Denominación es la única
+// columna obligatoria; empresas cuya denominación ya existe se omiten (no se duplican).
+function ImportarEmpresasForm({ core, setCore, onClose }) {
+  const [resultado, setResultado] = useState(null); // { agregadas, existentes } | { error }
+  const inputRef = useRef(null);
+
+  const descargarPlantilla = () => {
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([
+      ["Denominación", "Dirección", "Ciudad"],
+      ["Constructora Ejemplo S.A.", "Av. Siempre Viva 123", "Córdoba"],
+    ]);
+    XLSX.utils.book_append_sheet(wb, ws, "Empresas");
+    XLSX.writeFile(wb, "plantilla_empresas.xlsx");
+  };
+
+  const onFile = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const data = new Uint8Array(evt.target.result);
+        const wb = XLSX.read(data, { type: "array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const filas = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+        if (filas.length === 0) { setResultado({ error: "El archivo está vacío." }); return; }
+
+        const encabezado = filas[0].map(normalizarTexto);
+        const idxDenom = encabezado.findIndex((h) => h.includes("denominacion"));
+        if (idxDenom === -1) { setResultado({ error: 'No encontré la columna "Denominación" — usá la plantilla sin cambiar los encabezados.' }); return; }
+        const idxDireccion = encabezado.findIndex((h) => h.includes("direccion"));
+        const idxCiudad = encabezado.findIndex((h) => h.includes("ciudad"));
+
+        const yaExistentes = new Set(core.empresas.map((emp) => normalizarTexto(emp.denominacion)));
+        const nuevas = [];
+        let existentes = 0;
+        for (const fila of filas.slice(1)) {
+          const denominacion = (fila[idxDenom] ?? "").toString().trim();
+          if (!denominacion) continue;
+          const clave = normalizarTexto(denominacion);
+          if (yaExistentes.has(clave)) { existentes++; continue; }
+          yaExistentes.add(clave);
+          nuevas.push({
+            id: uid("E"),
+            denominacion,
+            direccion: idxDireccion !== -1 ? (fila[idxDireccion] ?? "").toString().trim() : "",
+            ciudad: idxCiudad !== -1 ? (fila[idxCiudad] ?? "").toString().trim() : "",
+          });
+        }
+        if (nuevas.length > 0) setCore((prev) => ({ ...prev, empresas: [...nuevas, ...prev.empresas] }));
+        setResultado({ agregadas: nuevas.length, existentes });
+      } catch {
+        setResultado({ error: "No pude leer el archivo. Verificá que sea un .xlsx válido, basado en la plantilla." });
+      } finally {
+        e.target.value = "";
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  return (
+    <Modal title="Importar empresas desde Excel" onClose={onClose}>
+      <p className="text-sm text-[#6B6352] mb-3">Descargá la plantilla, completá una fila por empresa — la Denominación es obligatoria — y subí acá el mismo archivo completado.</p>
+      <button type="button" onClick={descargarPlantilla} className="w-full flex items-center justify-center gap-2 border border-[#E4DECF] rounded-sm py-2.5 font-bold text-sm text-[#2A2118] mb-3">
+        <Download size={16} /> Descargar plantilla
+      </button>
+      <button type="button" onClick={() => inputRef.current?.click()} className="w-full flex items-center justify-center gap-2 rounded-sm py-2.5 font-bold text-sm bg-[#E8871E] text-[#2A2118] mb-3">
+        <FileSpreadsheet size={16} /> Elegir archivo completado
+      </button>
+      <input ref={inputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={onFile} />
+
+      {resultado?.error && (
+        <p className="text-sm text-[#B0452E] bg-[#FBEEE7] border border-[#E8871E] rounded-sm p-2.5">{resultado.error}</p>
+      )}
+      {resultado && !resultado.error && (
+        <p className="text-sm text-[#2A2118] bg-[#F7F5F0] border border-[#E4DECF] rounded-sm p-2.5">
+          Se agregar{resultado.agregadas === 1 ? "ó" : "on"} <b>{resultado.agregadas}</b> empresa{resultado.agregadas === 1 ? "" : "s"} nueva{resultado.agregadas === 1 ? "" : "s"}.
+          {resultado.existentes > 0 && <> {resultado.existentes} ya exist{resultado.existentes === 1 ? "ía" : "ían"} (misma denominación) y se omit{resultado.existentes === 1 ? "ió" : "ieron"}.</>}
+        </p>
+      )}
     </Modal>
   );
 }
