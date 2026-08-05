@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback, useRef, Fragment } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef, Fragment, Component } from "react";
 import * as XLSX from "xlsx";
 import {
   Plus, X, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Search, Settings, Users, Building2,
@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.12.1";
+const APP_VERSION = "1.13.0";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -730,6 +730,7 @@ export default function CRM({ userId, onLogout }) {
   ];
 
   return (
+    <ErrorBoundary onReset={() => window.location.reload()}>
     <div className="relative min-h-screen bg-[#F7F5F0] flex justify-center">
       <style>{`
         .bg-white { background-color: ${core.tema.tarjeta} !important; }
@@ -796,9 +797,11 @@ export default function CRM({ userId, onLogout }) {
 
         <main className="flex-1">
           {detail ? (
-            <DetailRouter detail={detail} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onClose={closeDetail} onOpen={openDetail} />
+            <ErrorBoundary key={`${detail.type}-${detail.id}`} onReset={closeDetail}>
+              <DetailRouter detail={detail} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onClose={closeDetail} onOpen={openDetail} />
+            </ErrorBoundary>
           ) : (
-            <>
+            <ErrorBoundary key={tab} onReset={() => setTab("agenda")}>
               {tab === "agenda" && <AgendaView core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onOpen={openDetail} />}
               {tab === "tareas" && <TareasView core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onOpen={openDetail} />}
               {tab === "calendario" && <CalendarioView core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onOpen={openDetail} t={todayISO()} />}
@@ -812,7 +815,7 @@ export default function CRM({ userId, onLogout }) {
               {tab === "informes" && <InformesView core={core} acciones={acciones} />}
               {tab === "buscar" && <BuscarView core={core} search={search} setSearch={setSearch} onOpen={openDetail} />}
               {tab === "config" && <ConfigView core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} />}
-            </>
+            </ErrorBoundary>
           )}
         </main>
       </div>
@@ -863,6 +866,7 @@ export default function CRM({ userId, onLogout }) {
         <ResumenHoyModal core={core} acciones={acciones} onOpen={openDetail} onClose={() => setShowResumenHoy(false)} />
       )}
     </div>
+    </ErrorBoundary>
   );
 }
 
@@ -907,6 +911,45 @@ function ResumenHoyModal({ core, acciones, onOpen, onClose }) {
       </div>
     </Modal>
   );
+}
+
+// Atrapa errores de JavaScript que rompen el render y, en vez de dejar la pantalla en
+// blanco en silencio, muestra el mensaje y el detalle técnico — para poder mandar una
+// captura de pantalla y diagnosticar sin acceso a la consola del navegador.
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+  componentDidCatch(error, info) {
+    console.error("Error atrapado:", error, info);
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="bg-white border border-[#B0452E] rounded-sm p-4">
+          <p className="text-sm font-extrabold text-[#B0452E] mb-1.5">Se produjo un error</p>
+          <p className="text-xs text-[#6B6352] mb-3">Sacá una captura de esta pantalla completa y mandámela — con eso alcanza para arreglarlo.</p>
+          <pre className="text-[11px] leading-snug bg-[#F7F5F0] border border-[#E4DECF] rounded-sm p-2.5 whitespace-pre-wrap break-words text-[#2A2118] mb-3 max-h-64 overflow-auto">
+            {String(this.state.error?.message || this.state.error)}
+            {this.state.error?.stack ? `\n\n${this.state.error.stack}` : ""}
+          </pre>
+          {this.props.onReset && (
+            <button
+              onClick={() => { this.setState({ error: null }); this.props.onReset(); }}
+              className="w-full rounded-sm py-2.5 font-bold text-sm bg-[#E8871E] text-[#2A2118]"
+            >
+              Volver
+            </button>
+          )}
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 function DetailRouter({ detail, core, setCore, acciones, setAcciones, onClose, onOpen }) {
