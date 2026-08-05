@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.11.0";
+const APP_VERSION = "1.12.0";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -67,6 +67,7 @@ const seedCore = () => ({
     { id: uid("he"), hiloId: "H003", empresaId: "E001" },
     { id: uid("he"), hiloId: "H004", empresaId: "E002" },
   ],
+  hiloObra: [{ id: uid("ho"), hiloId: "H002", obraId: "O001" }],
   entidadEtiqueta: [
     { id: uid("et"), etiquetaId: "ET01", entidadTipo: "Empresa", entidadId: "E001" },
     { id: uid("et"), etiquetaId: "ET03", entidadTipo: "Empresa", entidadId: "E001" },
@@ -85,11 +86,11 @@ const seedCore = () => ({
     { id: "T3", nombre: "Hecho", orden: 2 },
   ],
   hilos: [
-    { id: "H001", participantes: [{ id: "part1", personaId: "P001", desde: addDaysISO(todayISO(), -15), hasta: null, principal: true }], obraId: "", titulo: "Presupuesto cables solares", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -15), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" },
-    { id: "H002", participantes: [{ id: "part2", personaId: "P001", desde: addDaysISO(todayISO(), -20), hasta: null, principal: true }], obraId: "O001", titulo: "Avance obra Anatonia Village", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -20), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" },
-    { id: "H003", participantes: [{ id: "part3", personaId: "P002", desde: addDaysISO(todayISO(), -6), hasta: null, principal: true }], obraId: "", titulo: "Datos de facturación", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -6), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" },
-    { id: "H004", participantes: [{ id: "part4", personaId: "P003", desde: addDaysISO(todayISO(), -10), hasta: null, principal: true }], obraId: "", titulo: "Propuesta anual", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -10), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" },
-    { id: "H005", participantes: [], obraId: "", titulo: "Comprar resma de hojas", estado: "Activo", fechaCreacion: todayISO(), tipo: "tarea", columnaTareaId: "T1", hiloRelacionadoId: null, notaCierre: "" },
+    { id: "H001", participantes: [{ id: "part1", personaId: "P001", desde: addDaysISO(todayISO(), -15), hasta: null, principal: true }], titulo: "Presupuesto cables solares", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -15), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" },
+    { id: "H002", participantes: [{ id: "part2", personaId: "P001", desde: addDaysISO(todayISO(), -20), hasta: null, principal: true }], titulo: "Avance obra Anatonia Village", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -20), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" },
+    { id: "H003", participantes: [{ id: "part3", personaId: "P002", desde: addDaysISO(todayISO(), -6), hasta: null, principal: true }], titulo: "Datos de facturación", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -6), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" },
+    { id: "H004", participantes: [{ id: "part4", personaId: "P003", desde: addDaysISO(todayISO(), -10), hasta: null, principal: true }], titulo: "Propuesta anual", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -10), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" },
+    { id: "H005", participantes: [], titulo: "Comprar resma de hojas", estado: "Activo", fechaCreacion: todayISO(), tipo: "tarea", columnaTareaId: "T1", hiloRelacionadoId: null, notaCierre: "" },
   ],
 });
 
@@ -133,8 +134,10 @@ function normalizeCore(c) {
   });
   if (!Array.isArray(out.personaObra)) out.personaObra = [];
   if (!Array.isArray(out.hiloEmpresa)) out.hiloEmpresa = [];
+  if (!Array.isArray(out.hiloObra)) out.hiloObra = [];
   if (!Array.isArray(out.hilos)) out.hilos = [];
   const hiloEmpresaMigrada = [];
+  const hiloObraMigrada = [];
   out.hilos = out.hilos.map((h) => {
     const base = { tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "", ...h };
     if (!Array.isArray(base.participantes)) {
@@ -147,10 +150,16 @@ function normalizeCore(c) {
       const yaExiste = out.hiloEmpresa.some((r) => r.hiloId === base.id && r.empresaId === base.empresaId);
       if (!yaExiste) hiloEmpresaMigrada.push({ id: uid("he"), hiloId: base.id, empresaId: base.empresaId });
     }
-    const { empresaId, ...rest } = base;
+    // dato viejo: tenía "obraId" como campo único -> se migra a la relación hiloObra (varias obras por hilo)
+    if (base.obraId) {
+      const yaExiste = out.hiloObra.some((r) => r.hiloId === base.id && r.obraId === base.obraId);
+      if (!yaExiste) hiloObraMigrada.push({ id: uid("ho"), hiloId: base.id, obraId: base.obraId });
+    }
+    const { empresaId, obraId, ...rest } = base;
     return rest;
   });
   out.hiloEmpresa = [...out.hiloEmpresa, ...hiloEmpresaMigrada];
+  out.hiloObra = [...out.hiloObra, ...hiloObraMigrada];
   out.parametros = { umbralDiaLleno: 8, diasHabiles: [1, 2, 3, 4, 5], fechasNoHabiles: [], diasUrgente: 3, diasProximos: 7, googleContactsLabel: "CRM", tituloApp: "Seguimiento comercial", nombreSinColumnaSeguimientos: "Sin columna", nombreSinColumnaTareas: "Sin columna", ...(out.parametros || {}) };
   out.tema = { ...{ botonActivo: "#1B4D2E", botonInactivo: "#D9F0DE", tarjeta: "#FFFFFF", linea: "#E4DECF", fondo: "#F7F5F0", ink: "#2A2118", mutedBase: "#6B6352" }, ...(out.tema || {}) };
   if (!Array.isArray(out.kanbanColumnas)) out.kanbanColumnas = seed.kanbanColumnas;
@@ -273,13 +282,20 @@ function empresasDeHilo(hilo, core) {
     .map((r) => core.empresas.find((e) => e.id === r.empresaId))
     .filter(Boolean);
 }
+// Un hilo puede estar vinculado a varias obras (vía la relación hiloObra).
+function obrasDeHilo(hilo, core) {
+  return (core.hiloObra || [])
+    .filter((r) => r.hiloId === hilo.id)
+    .map((r) => core.obras.find((o) => o.id === r.obraId))
+    .filter(Boolean);
+}
 function etiquetaVinculoHilo(hilo, core) {
   const personas = personasActivasDeHilo(hilo, core);
   if (personas.length > 0) return personas.map((p) => p.nombre).join(", ");
   const empresas = empresasDeHilo(hilo, core);
   if (empresas.length > 0) return empresas.map((e) => e.denominacion).join(", ");
-  const obra = core.obras.find((o) => o.id === hilo.obraId);
-  if (obra) return obra.nombre;
+  const obras = obrasDeHilo(hilo, core);
+  if (obras.length > 0) return obras.map((o) => o.nombre).join(", ");
   return hilo.titulo;
 }
 function getIniciales(nombre) {
@@ -946,7 +962,8 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
     return base;
   });
   const [empresaParaAgregar, setEmpresaParaAgregar] = useState("");
-  const [obraId, setObraId] = useState(obraFijaId || "");
+  const [obraIds, setObraIds] = useState(obraFijaId ? [obraFijaId] : []);
+  const [obraParaAgregar, setObraParaAgregar] = useState("");
   const [showVincularEmpresa, setShowVincularEmpresa] = useState(false);
   const [showVincularObra, setShowVincularObra] = useState(false);
   const [showPrimerContacto, setShowPrimerContacto] = useState(false);
@@ -984,13 +1001,13 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
     setEmpresaIds((ids) => (ids.includes(empresaId) ? ids : [...ids, empresaId]));
   };
   const quitarEmpresa = (empresaId) => setEmpresaIds((ids) => ids.filter((x) => x !== empresaId));
-  const elegirObra = (nuevoObraId) => {
-    setObraId(nuevoObraId);
-    if (nuevoObraId) {
-      const dueña = core.empresaObra.find((r) => r.obraId === nuevoObraId)?.empresaId;
-      if (dueña) agregarEmpresa(dueña);
-    }
+  const agregarObra = (nuevoObraId) => {
+    if (!nuevoObraId) return;
+    setObraIds((ids) => (ids.includes(nuevoObraId) ? ids : [...ids, nuevoObraId]));
+    const dueña = core.empresaObra.find((r) => r.obraId === nuevoObraId)?.empresaId;
+    if (dueña) agregarEmpresa(dueña);
   };
+  const quitarObra = (obraId) => setObraIds((ids) => ids.filter((x) => x !== obraId));
 
   useEffect(() => {
     if (showPrimerContacto && programarProxima && modoFecha === "periodo") {
@@ -1000,16 +1017,17 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
   }, [showPrimerContacto, programarProxima, modoFecha, cantidad, unidad]); // eslint-disable-line
 
   const especificaInhabil = showPrimerContacto && programarProxima && modoFecha === "especifica" && esFechaInhabil(fechaEspecifica, core.parametros);
-  const faltaVinculo = !personaFija && !empresaFijaId && !obraFijaId && !personaId && empresaIds.length === 0 && !obraId;
+  const faltaVinculo = !personaFija && !empresaFijaId && !obraFijaId && !personaId && empresaIds.length === 0 && obraIds.length === 0;
 
   const crear = () => {
     if (!titulo.trim() || faltaVinculo) return;
     const hoy = todayISO();
     const personaIdFinal = personaFija ? personaFija.id : personaId;
     const participantes = personaIdFinal ? [{ id: uid("part"), personaId: personaIdFinal, desde: hoy, hasta: null, principal: true }] : [];
-    const nuevoHilo = { id: uid("H"), participantes, obraId: obraId || "", titulo: titulo.trim(), estado: "Activo", fechaCreacion: hoy, tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" };
+    const nuevoHilo = { id: uid("H"), participantes, titulo: titulo.trim(), estado: "Activo", fechaCreacion: hoy, tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" };
     const nuevasRelacionesEmpresa = empresaIds.map((eid) => ({ id: uid("he"), hiloId: nuevoHilo.id, empresaId: eid }));
-    setCore((prev) => ({ ...prev, hilos: [nuevoHilo, ...prev.hilos], hiloEmpresa: [...(prev.hiloEmpresa || []), ...nuevasRelacionesEmpresa] }));
+    const nuevasRelacionesObra = obraIds.map((oid) => ({ id: uid("ho"), hiloId: nuevoHilo.id, obraId: oid }));
+    setCore((prev) => ({ ...prev, hilos: [nuevoHilo, ...prev.hilos], hiloEmpresa: [...(prev.hiloEmpresa || []), ...nuevasRelacionesEmpresa], hiloObra: [...(prev.hiloObra || []), ...nuevasRelacionesObra] }));
 
     if (showPrimerContacto && setAcciones) {
       setAcciones((prev) => {
@@ -1096,22 +1114,45 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
       )}
 
       {!obraFijaId && (
-        <Field label="Obra">
-          {personaFija ? (
-            obrasDeLasEmpresas.length === 0 ? (
-              <p className="text-sm text-[#A69C88] mb-1.5">{empresaIds.length > 0 ? "Estas empresas no tienen obras vinculadas." : "Elegí primero una empresa para poder sumar una obra."}</p>
-            ) : (
-              <select className={inputCls} value={obraId} onChange={(e) => elegirObra(e.target.value)}>
-                <option value="">— sin obra —</option>
-                {obrasDeLasEmpresas.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
-              </select>
-            )
-          ) : (
-            <select className={inputCls} value={obraId} onChange={(e) => elegirObra(e.target.value)}>
-              <option value="">— ninguna —</option>
-              {core.obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
-            </select>
+        <Field label="Obra(s)">
+          {obraIds.length > 0 && (
+            <div className="space-y-1 mb-2">
+              {obraIds.map((oid) => {
+                const o = core.obras.find((oo) => oo.id === oid);
+                if (!o) return null;
+                return (
+                  <div key={oid} className="flex items-center justify-between gap-2 bg-[#F7F5F0] border border-[#E4DECF] rounded-sm px-2.5 py-1.5 text-sm">
+                    <span className="font-semibold text-[#2A2118]">{o.nombre}</span>
+                    <button type="button" onClick={() => quitarObra(oid)} className="text-[#B0452E]"><X size={14} /></button>
+                  </div>
+                );
+              })}
+            </div>
           )}
+          {(() => {
+            const opciones = (personaFija ? obrasDeLasEmpresas : core.obras).filter((o) => !obraIds.includes(o.id));
+            if (opciones.length === 0) {
+              return obraIds.length === 0 && personaFija ? (
+                <p className="text-sm text-[#A69C88] mb-1.5">{empresaIds.length > 0 ? "Estas empresas no tienen obras vinculadas." : "Elegí primero una empresa para poder sumar una obra."}</p>
+              ) : null;
+            }
+            return (
+              <div className="flex gap-2">
+                <select className={inputCls} value={obraParaAgregar} onChange={(e) => setObraParaAgregar(e.target.value)}>
+                  <option value="">— elegir —</option>
+                  {opciones.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                </select>
+                <button
+                  type="button"
+                  disabled={!obraParaAgregar}
+                  onClick={() => { agregarObra(obraParaAgregar); setObraParaAgregar(""); }}
+                  className="shrink-0 border border-[#E4DECF] rounded-sm px-3 text-sm font-bold text-[#2A2118] disabled:text-[#C9C1AE] disabled:cursor-not-allowed"
+                >
+                  + Agregar
+                </button>
+              </div>
+            );
+          })()}
           {personaFija && (
             <button
               type="button"
@@ -1276,7 +1317,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
           setCore={setCore}
           empresaId={empresaIds[empresaIds.length - 1]}
           onClose={() => setShowVincularObra(false)}
-          onLinked={(newObraId) => { setObraId(newObraId); setShowVincularObra(false); }}
+          onLinked={(newObraId) => { agregarObra(newObraId); setShowVincularObra(false); }}
         />
       )}
     </div>
@@ -1367,7 +1408,7 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
   const crearTareaRapida = () => {
     if (!tituloNuevo.trim()) return;
     const hoy = todayISO();
-    const nuevoHilo = { id: uid("H"), personaId: null, obraId: "", titulo: tituloNuevo.trim(), estado: "Activo", fechaCreacion: hoy, tipo: "tarea", columnaTareaId: columnaActiva, hiloRelacionadoId: null, notaCierre: "" };
+    const nuevoHilo = { id: uid("H"), personaId: null, titulo: tituloNuevo.trim(), estado: "Activo", fechaCreacion: hoy, tipo: "tarea", columnaTareaId: columnaActiva, hiloRelacionadoId: null, notaCierre: "" };
     setCore((prev) => ({ ...prev, hilos: [nuevoHilo, ...prev.hilos] }));
     if (fechaNueva) {
       setAcciones((prev) => {
@@ -2266,7 +2307,7 @@ function HiloSinAccionCard({ hilo, core, setCore, acciones, setAcciones, onOpen 
   const persona = personaPrincipalDeHilo(hilo, core);
   const personasDelHilo = personasActivasDeHilo(hilo, core);
   const empresas = empresasDeHilo(hilo, core);
-  const obra = core.obras.find((o) => o.id === hilo.obraId);
+  const obras = obrasDeHilo(hilo, core);
   const accionesDelHilo = acciones.filter((a) => a.hiloId === hilo.id);
   const historialCompleto = accionesDelHilo.filter((a) => a.estado === "Realizada").sort(compararRecientePrimero);
   const ultimaNota = historialCompleto[0]?.notaHecho;
@@ -2286,11 +2327,11 @@ function HiloSinAccionCard({ hilo, core, setCore, acciones, setAcciones, onOpen 
         </div>
         <button onClick={() => (esTarea || !persona ? onOpen("hilo", hilo.id) : onOpen("persona", persona.id))} className="text-left min-w-0 flex-1">
           <p className="text-base font-extrabold text-[#2A2118] truncate">{nombrePrincipal}</p>
-          {(empresas.length > 0 || obra) && (
+          {(empresas.length > 0 || obras.length > 0) && (
             <p className="text-sm mt-0.5 truncate">
               {empresas.length > 0 && <span className="font-bold text-[#2A2118]">{empresas.map((e) => e.denominacion).join(", ")}</span>}
-              {empresas.length > 0 && obra && <span className="text-[#8A8272]"> · </span>}
-              {obra && <span className="text-[#6B6352]">{obra.nombre}</span>}
+              {empresas.length > 0 && obras.length > 0 && <span className="text-[#8A8272]"> · </span>}
+              {obras.length > 0 && <span className="text-[#6B6352]">{obras.map((o) => o.nombre).join(", ")}</span>}
             </p>
           )}
         </button>
@@ -2359,7 +2400,7 @@ function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, 
   const persona = hilo ? personaPrincipalDeHilo(hilo, core) : null;
   const personasDelHilo = hilo ? personasActivasDeHilo(hilo, core) : [];
   const empresas = hilo ? empresasDeHilo(hilo, core) : [];
-  const obra = hilo ? core.obras.find((o) => o.id === hilo.obraId) : null;
+  const obras = hilo ? obrasDeHilo(hilo, core) : [];
 
   const accionesDelHilo = hilo ? acciones.filter((a) => a.hiloId === hilo.id) : [];
   const historialCompleto = accionesDelHilo.filter((a) => a.estado === "Realizada").sort(compararRecientePrimero);
@@ -2390,11 +2431,11 @@ function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, 
         )}
         <button onClick={() => (esTarea || !persona ? onOpen("hilo", hilo.id) : onOpen("persona", persona.id))} className="text-left min-w-0 flex-1">
           <p className="text-base font-extrabold text-[#2A2118] truncate">{nombrePrincipal}</p>
-          {(empresas.length > 0 || obra) && (
+          {(empresas.length > 0 || obras.length > 0) && (
             <p className="text-sm mt-0.5 truncate">
               {empresas.length > 0 && <span className="font-bold text-[#2A2118]">{empresas.map((e) => e.denominacion).join(", ")}</span>}
-              {empresas.length > 0 && obra && <span className="text-[#8A8272]"> · </span>}
-              {obra && <span className="text-[#6B6352]">{obra.nombre}</span>}
+              {empresas.length > 0 && obras.length > 0 && <span className="text-[#8A8272]"> · </span>}
+              {obras.length > 0 && <span className="text-[#6B6352]">{obras.map((o) => o.nombre).join(", ")}</span>}
             </p>
           )}
         </button>
@@ -3002,7 +3043,7 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
 
 function HiloRow({ hilo, core, acciones, onOpen }) {
   const empresas = empresasDeHilo(hilo, core);
-  const obra = core.obras.find((o) => o.id === hilo.obraId);
+  const obras = obrasDeHilo(hilo, core);
   const accionesDelHilo = acciones.filter((a) => a.hiloId === hilo.id);
   const pendiente = accionesDelHilo.find((a) => a.estado === "Pendiente");
   const tipoPendiente = pendiente ? core.tiposAccion.find((t) => t.id === pendiente.tipoAccionId) : null;
@@ -3012,7 +3053,7 @@ function HiloRow({ hilo, core, acciones, onOpen }) {
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <p className="text-[15px] font-semibold text-[#2A2118] truncate">{hilo.titulo}</p>
-          <p className="text-xs text-[#8A8272] mt-0.5">{[empresas.map((e) => e.denominacion).join(", "), obra?.nombre].filter(Boolean).join(" · ") || "Sin empresa/obra"}</p>
+          <p className="text-xs text-[#8A8272] mt-0.5">{[empresas.map((e) => e.denominacion).join(", "), obras.map((o) => o.nombre).join(", ")].filter(Boolean).join(" · ") || "Sin empresa/obra"}</p>
         </div>
         <Chip tone={hilo.estado === "Activo" ? "green" : "neutral"}>{hilo.estado}</Chip>
       </div>
@@ -3323,7 +3364,7 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
   const [showAgregarPersona, setShowAgregarPersona] = useState(false);
   const [verHistorialPersonas, setVerHistorialPersonas] = useState(false);
   const [showVincularEmpresaHilo, setShowVincularEmpresaHilo] = useState(false);
-  const [showEditarObraHilo, setShowEditarObraHilo] = useState(false);
+  const [showVincularObraHilo, setShowVincularObraHilo] = useState(false);
 
   if (!hilo) return <div><BackHeader onClose={onClose} /><p className="text-sm text-[#8A8272]">Este hilo ya no existe.</p></div>;
 
@@ -3331,7 +3372,7 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
   const personasDelHilo = personasActivasDeHilo(hilo, core);
   const persona = personasDelHilo[0] || null;
   const empresas = empresasDeHilo(hilo, core);
-  const obra = core.obras.find((o) => o.id === hilo.obraId);
+  const obras = obrasDeHilo(hilo, core);
   const hiloRelacionado = hilo.hiloRelacionadoId ? core.hilos.find((h) => h.id === hilo.hiloRelacionadoId) : null;
   const personaRelacionada = hiloRelacionado ? personaPrincipalDeHilo(hiloRelacionado, core) : null;
   const tareasVinculadas = core.hilos.filter((h) => h.tipo === "tarea" && h.hiloRelacionadoId === id);
@@ -3359,6 +3400,10 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
   const quitarEmpresaDelHilo = (empresaId) => setCore((prev) => ({
     ...prev,
     hiloEmpresa: (prev.hiloEmpresa || []).filter((r) => !(r.hiloId === id && r.empresaId === empresaId)),
+  }));
+  const quitarObraDelHilo = (obraId) => setCore((prev) => ({
+    ...prev,
+    hiloObra: (prev.hiloObra || []).filter((r) => !(r.hiloId === id && r.obraId === obraId)),
   }));
   const agregarPersona = (personaId, comoPrincipal) => setCore((prev) => ({
     ...prev,
@@ -3453,13 +3498,22 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
           )}
 
           <div className="flex items-center justify-between mt-3 mb-2">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Obra</p>
-            <button onClick={() => setShowEditarObraHilo(true)} className="text-xs font-bold text-[#B0452E] flex items-center gap-1"><Pencil size={12} /> {obra ? "Editar" : "Vincular"}</button>
+            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Obras vinculadas</p>
+            <button onClick={() => setShowVincularObraHilo(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>
           </div>
-          {obra ? (
-            <button onClick={() => onOpen("obra", obra.id)} className="text-sm font-semibold text-[#2A2118] underline underline-offset-2">{obra.nombre}</button>
+          {obras.length === 0 ? (
+            <p className="text-sm text-[#A69C88]">Sin obras vinculadas.</p>
           ) : (
-            <p className="text-sm text-[#A69C88]">Sin obra vinculada.</p>
+            <div className="space-y-1.5">
+              {obras.map((o) => (
+                <div key={o.id} className="flex items-center justify-between gap-2 text-sm">
+                  <button onClick={() => onOpen("obra", o.id)} className="text-left flex-1 min-w-0">
+                    <span className="font-semibold text-[#2A2118]">{o.nombre}</span>
+                  </button>
+                  <IconBtn label="Quitar vínculo" danger onClick={() => quitarObraDelHilo(o.id)}><X size={14} /></IconBtn>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       )}
@@ -3638,12 +3692,13 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
           onLinked={() => setShowVincularEmpresaHilo(false)}
         />
       )}
-      {showEditarObraHilo && (
-        <EditarObraHiloForm
+      {showVincularObraHilo && (
+        <VincularObraAHiloForm
           core={core}
           setCore={setCore}
-          hilo={hilo}
-          onClose={() => setShowEditarObraHilo(false)}
+          hiloId={id}
+          onClose={() => setShowVincularObraHilo(false)}
+          onLinked={() => setShowVincularObraHilo(false)}
         />
       )}
       {showVincularCliente && (
@@ -3786,52 +3841,62 @@ function VincularEmpresaAHiloForm({ core, setCore, hiloId, onClose, onLinked }) 
 // Cambia (o quita) la obra vinculada a un hilo. Si la obra elegida tiene una empresa dueña
 // conocida (vía empresaObra), esa empresa se agrega automáticamente a las del hilo — sin
 // desvincular las que ya estaban.
-function EditarObraHiloForm({ core, setCore, hilo, onClose }) {
+// Vincula una obra más (existente o nueva) a un hilo de cliente ya creado. Un hilo puede
+// tener varias obras vinculadas a la vez. Si la obra elegida tiene una empresa dueña
+// conocida (vía empresaObra), esa empresa se agrega automáticamente a las del hilo — sin
+// desvincular las que ya estaban.
+function VincularObraAHiloForm({ core, setCore, hiloId, onClose, onLinked }) {
   const [modo, setModo] = useState("existente"); // 'existente' | 'nueva'
-  const [obraId, setObraId] = useState(hilo.obraId || "");
+  const yaVinculadas = new Set((core.hiloObra || []).filter((r) => r.hiloId === hiloId).map((r) => r.obraId));
+  const disponibles = core.obras.filter((o) => !yaVinculadas.has(o.id));
+  const [obraId, setObraId] = useState(disponibles[0]?.id || "");
   const [obraNueva, setObraNueva] = useState("");
 
   const submit = () => {
     if (modo === "existente") {
-      const empresaDueña = obraId ? core.empresaObra.find((r) => r.obraId === obraId)?.empresaId : null;
+      if (!obraId) return;
+      const empresaDueña = core.empresaObra.find((r) => r.obraId === obraId)?.empresaId;
       setCore((prev) => {
-        const yaVinculada = empresaDueña && (prev.hiloEmpresa || []).some((r) => r.hiloId === hilo.id && r.empresaId === empresaDueña);
+        const yaVinculadaEmpresa = empresaDueña && (prev.hiloEmpresa || []).some((r) => r.hiloId === hiloId && r.empresaId === empresaDueña);
         return {
           ...prev,
-          hilos: prev.hilos.map((h) => (h.id === hilo.id ? { ...h, obraId } : h)),
-          hiloEmpresa: empresaDueña && !yaVinculada ? [...(prev.hiloEmpresa || []), { id: uid("he"), hiloId: hilo.id, empresaId: empresaDueña }] : prev.hiloEmpresa,
+          hiloObra: [...(prev.hiloObra || []), { id: uid("ho"), hiloId, obraId }],
+          hiloEmpresa: empresaDueña && !yaVinculadaEmpresa ? [...(prev.hiloEmpresa || []), { id: uid("he"), hiloId, empresaId: empresaDueña }] : prev.hiloEmpresa,
         };
       });
-      onClose();
+      onLinked(obraId);
     } else {
       if (!obraNueva.trim()) return;
       const nueva = { id: uid("O"), nombre: obraNueva.trim(), descripcion: "", metros2: 0, direccion: "", ciudad: "" };
       setCore((prev) => ({
         ...prev,
         obras: [nueva, ...prev.obras],
-        hilos: prev.hilos.map((h) => (h.id === hilo.id ? { ...h, obraId: nueva.id } : h)),
+        hiloObra: [...(prev.hiloObra || []), { id: uid("ho"), hiloId, obraId: nueva.id }],
       }));
-      onClose();
+      onLinked(nueva.id);
     }
   };
 
   return (
-    <Modal title="Obra del hilo" onClose={onClose}>
+    <Modal title="Vincular una obra" onClose={onClose}>
       <div className="flex gap-2 mb-3">
         <button type="button" onClick={() => setModo("existente")} style={{ backgroundColor: modo === "existente" ? "#2A2F36" : "#E7E2D8", color: modo === "existente" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-2 rounded-sm text-sm font-bold">Obra existente</button>
         <button type="button" onClick={() => setModo("nueva")} style={{ backgroundColor: modo === "nueva" ? "#2A2F36" : "#E7E2D8", color: modo === "nueva" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-2 rounded-sm text-sm font-bold">Agregar obra</button>
       </div>
       {modo === "existente" ? (
-        <Field label="Obra">
-          <select className={inputCls} value={obraId} onChange={(e) => setObraId(e.target.value)}>
-            <option value="">— sin obra —</option>
-            {core.obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
-          </select>
-        </Field>
+        disponibles.length === 0 ? (
+          <p className="text-sm text-[#A69C88] mb-3">No hay más obras disponibles para vincular — probá creando una nueva.</p>
+        ) : (
+          <Field label="Obra">
+            <select className={inputCls} value={obraId} onChange={(e) => setObraId(e.target.value)}>
+              {disponibles.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+            </select>
+          </Field>
+        )
       ) : (
         <Field label="Nombre de la obra *"><input className={inputCls} value={obraNueva} onChange={(e) => setObraNueva(e.target.value)} /></Field>
       )}
-      <PrimaryBtn full onClick={submit}>Guardar</PrimaryBtn>
+      <PrimaryBtn full onClick={submit}>Vincular</PrimaryBtn>
     </Modal>
   );
 }
@@ -3865,7 +3930,7 @@ function AgregarTareaAlHiloForm({ core, hiloClienteId, personasDelHilo, onVincul
   const crear = () => {
     if (!titulo.trim()) return;
     const nuevoHilo = {
-      id: uid("H"), participantes: [], obraId: "", titulo: titulo.trim(),
+      id: uid("H"), participantes: [], titulo: titulo.trim(),
       estado: "Activo", fechaCreacion: todayISO(), tipo: "tarea",
       columnaTareaId: columnaId || null, hiloRelacionadoId: hiloClienteId, notaCierre: "",
     };
@@ -4698,6 +4763,7 @@ function ObrasView({ core, setCore, onOpen }) {
     obras: prev.obras.filter((o) => o.id !== id),
     empresaObra: prev.empresaObra.filter((r) => r.obraId !== id),
     personaObra: (prev.personaObra || []).filter((r) => r.obraId !== id),
+    hiloObra: (prev.hiloObra || []).filter((r) => r.obraId !== id),
     entidadEtiqueta: prev.entidadEtiqueta.filter((r) => !(r.entidadTipo === "Obra" && r.entidadId === id)),
   }));
 
@@ -4826,7 +4892,8 @@ function ObraDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
   const [showEmpresaLink, setShowEmpresaLink] = useState(false);
   if (!obra) return <div><BackHeader onClose={onClose} /><p className="text-sm text-[#8A8272]">Esta obra ya no existe.</p></div>;
   const empresas = core.empresaObra.filter((r) => r.obraId === id);
-  const hilosDeEstaObra = core.hilos.filter((h) => h.obraId === id && h.estado === "Activo");
+  const hilosIdsDeEstaObra = new Set((core.hiloObra || []).filter((r) => r.obraId === id).map((r) => r.hiloId));
+  const hilosDeEstaObra = core.hilos.filter((h) => hilosIdsDeEstaObra.has(h.id) && h.estado === "Activo");
   return (
     <div>
       <BackHeader onClose={onClose} />
@@ -5486,6 +5553,7 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
       empresaObra: [],
       personaObra: [],
       hiloEmpresa: [],
+      hiloObra: [],
       entidadEtiqueta: [],
     }));
     setAcciones([]);
