@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.8.0";
+const APP_VERSION = "1.9.0";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -2598,7 +2598,12 @@ function PersonasView({ core, setCore, onOpen }) {
             return (
               <div key={p.id} className="w-full bg-white border border-[#E4DECF] rounded-sm p-3 flex items-center gap-3">
                 <button onClick={() => onOpen("persona", p.id)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
-                  <div className="w-9 h-9 rounded-sm bg-[#2A2F36] text-[#F2F0E9] flex items-center justify-center font-bold text-sm shrink-0">{p.nombre.charAt(0)}</div>
+                  <div
+                    className="w-9 h-9 rounded-full flex items-center justify-center font-extrabold text-xs shrink-0"
+                    style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}
+                  >
+                    {getIniciales(p.nombre)}
+                  </div>
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold text-[#2A2118] truncate">{p.nombre}</p>
                     <p className="text-xs text-[#8A8272] truncate">{empresas.length ? empresas.join(", ") : "Sin empresa vinculada"}</p>
@@ -2677,42 +2682,48 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
     <div>
       <BackHeader onClose={onClose} />
       <div className="bg-white border border-[#E4DECF] rounded-sm p-4 mb-3">
-        <div className="flex items-start justify-between gap-2">
-          <div>
+        <div className="flex items-start gap-2.5">
+          <div
+            className="shrink-0 w-11 h-11 rounded-full flex items-center justify-center text-sm font-extrabold"
+            style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}
+          >
+            {getIniciales(persona.nombre)}
+          </div>
+          <div className="min-w-0 flex-1">
             <h2 className="text-lg font-extrabold text-[#2A2118] flex items-center gap-2">{persona.nombre} <WhatsAppLink persona={persona} size={18} /></h2>
             <p className="text-xs text-[#8A8272]">{persona.ciudad}{persona.direccion ? ` · ${persona.direccion}` : ""}</p>
           </div>
         </div>
         {persona.notas && <p className="text-sm text-[#6B6352] mt-2 italic">"{persona.notas}"</p>}
         <TagsSection core={core} setCore={setCore} entidadTipo="Persona" entidadId={id} />
-      </div>
 
-      <div className="bg-white border border-[#E4DECF] rounded-sm p-3 mb-3">
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Empresas vinculadas</p>
-          <button onClick={() => setShowRel(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>
-        </div>
-        {relEmpresas.length === 0 ? (
-          <p className="text-sm text-[#A69C88]">Sin empresas vinculadas.</p>
-        ) : (
-          <div className="space-y-1.5">
-            {relEmpresas.map((r) => {
-              const emp = core.empresas.find((e) => e.id === r.empresaId);
-              if (!emp) return null;
-              return (
-                <div key={r.id} className="flex items-center justify-between gap-2 text-sm">
-                  <button onClick={() => onOpen("empresa", emp.id)} className="text-left flex-1 min-w-0">
-                    <span className="font-semibold text-[#2A2118]">{emp.denominacion}</span>
-                    <span className="text-[#8A8272]"> · {(core.cargos || []).find((c) => c.id === r.cargoId)?.nombre || "sin cargo"}</span>
-                    {r.principal && <span className="ml-1"><Star size={11} className="inline text-[#E8871E]" /></span>}
-                  </button>
-                  <IconBtn label="Editar cargo" onClick={() => setEditRel(r)}><Pencil size={14} /></IconBtn>
-                  <IconBtn label="Quitar vínculo" danger onClick={() => removeRel(r.id)}><X size={14} /></IconBtn>
-                </div>
-              );
-            })}
+        <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Empresas vinculadas</p>
+            <button onClick={() => setShowRel(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>
           </div>
-        )}
+          {relEmpresas.length === 0 ? (
+            <p className="text-sm text-[#A69C88]">Sin empresas vinculadas.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {relEmpresas.map((r) => {
+                const emp = core.empresas.find((e) => e.id === r.empresaId);
+                if (!emp) return null;
+                return (
+                  <div key={r.id} className="flex items-center justify-between gap-2 text-sm">
+                    <button onClick={() => onOpen("empresa", emp.id)} className="text-left flex-1 min-w-0">
+                      <span className="font-semibold text-[#2A2118]">{emp.denominacion}</span>
+                      <span className="text-[#8A8272]"> · {(core.cargos || []).find((c) => c.id === r.cargoId)?.nombre || "sin cargo"}</span>
+                      {r.principal && <span className="ml-1"><Star size={11} className="inline text-[#E8871E]" /></span>}
+                    </button>
+                    <IconBtn label="Editar cargo" onClick={() => setEditRel(r)}><Pencil size={14} /></IconBtn>
+                    <IconBtn label="Quitar vínculo" danger onClick={() => removeRel(r.id)}><X size={14} /></IconBtn>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="flex items-center justify-between mb-2">
@@ -3074,14 +3085,30 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
   const deleteAccion = (accId) => setAcciones((prev) => prev.filter((a) => a.id !== accId));
   const reprogramar = (nuevaFecha) => { if (pendienteActual) updateAccion(pendienteActual.id, { fechaProgramada: nuevaFecha }); setShowReprogramar(false); };
 
+  const colorSolapa = !pendienteActual
+    ? "#C9C1AE"
+    : diasEntre(todayISO(), pendienteActual.fechaProgramada) < 0
+    ? "#B0452E"
+    : diasEntre(todayISO(), pendienteActual.fechaProgramada) <= (core.parametros.diasUrgente ?? 3)
+    ? "#E8871E"
+    : "#3F6B4A";
+  const nombrePrincipalHilo = esTarea ? hilo.titulo : (personasDelHilo.length > 0 ? personasDelHilo.map((p) => p.nombre).join(", ") : etiquetaVinculoHilo(hilo, core));
+
   return (
     <div>
       <BackHeader onClose={onClose} />
-      <div className="border border-[#E4DECF] rounded-sm p-4 mb-3" style={{ backgroundColor: "#E4F0E7" }}>
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex items-start gap-2 flex-1">
+      <div className="bg-white border border-[#E4DECF] rounded-sm p-4 mb-3 relative">
+        <span className="absolute -top-px left-4 w-10 h-1.5" style={{ backgroundColor: colorSolapa, clipPath: "polygon(8% 0, 92% 0, 100% 100%, 0% 100%)" }} />
+        <div className="flex items-start justify-between gap-2 mt-1">
+          <div className="flex items-start gap-2.5 flex-1 min-w-0">
             <CasillaFinalizar hilo={hilo} acciones={accionesDelHilo} setCore={setCore} size={22} />
-            <h2 className="text-lg font-extrabold text-[#2A2118] flex-1">{hilo.titulo}</h2>
+            <div
+              className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-sm font-extrabold"
+              style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}
+            >
+              {esTarea ? <ListChecks size={17} /> : getIniciales(nombrePrincipalHilo)}
+            </div>
+            <h2 className="text-lg font-extrabold text-[#2A2118] flex-1 min-w-0">{hilo.titulo}</h2>
           </div>
           <Chip tone={hilo.estado === "Activo" ? "green" : "neutral"}>{hilo.estado}</Chip>
         </div>
@@ -3116,7 +3143,7 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
         </div>
 
       {hilo.tipo === "cliente" && (
-        <div className="border-t border-[#E4DECF] mt-3 pt-3">
+        <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
           <div className="flex items-center justify-between mb-2">
             <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Personas vinculadas</p>
             <button onClick={() => setShowAgregarPersona(true)} className="text-xs font-bold text-[#B0452E]">+ Agregar persona</button>
@@ -3169,7 +3196,7 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
       )}
 
       {hilo.tipo === "tarea" && (
-        <div className="border-t border-[#E4DECF] mt-3 pt-3">
+        <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
           <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352] mb-2">Vínculo con un cliente (opcional)</p>
           {hiloRelacionado ? (
             <div className="flex items-center justify-between gap-2">
@@ -3186,7 +3213,7 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
       )}
 
       {hilo.tipo === "cliente" && (
-        <div className="border-t border-[#E4DECF] mt-3 pt-3">
+        <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
           <div className="flex items-center justify-between mb-2">
             <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Tareas vinculadas</p>
             <button onClick={() => setShowAgregarTarea(true)} className="text-xs font-bold text-[#B0452E]">+ Agregar tarea</button>
@@ -3210,7 +3237,7 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
       )}
       </div>
 
-      <div className="border border-[#E4DECF] rounded-sm p-3 mb-3" style={{ backgroundColor: "#F2F8F3" }}>
+      <div className="bg-white border border-[#E4DECF] rounded-sm p-3 mb-3">
         <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352] mb-2">Próxima acción</p>
         {pendienteActual ? (
           <>
@@ -3946,7 +3973,7 @@ function EmpresasView({ core, setCore, onOpen }) {
             return (
               <div key={e.id} className="w-full bg-white border border-[#E4DECF] rounded-sm p-3 flex items-center gap-3">
                 <button onClick={() => onOpen("empresa", e.id)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
-                  <div className="w-9 h-9 rounded-sm bg-[#E7E2D8] text-[#6B6352] flex items-center justify-center shrink-0"><Building2 size={16} /></div>
+                  <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}><Building2 size={16} /></div>
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold text-[#2A2118] truncate">{e.denominacion}</p>
                     {nPersonas > 0 ? (
@@ -4078,76 +4105,83 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
     <div>
       <BackHeader onClose={onClose} />
       <div className="bg-white border border-[#E4DECF] rounded-sm p-4 mb-3">
-        <h2 className="text-lg font-extrabold text-[#2A2118]">{empresa.denominacion}</h2>
-        {(empresa.direccion || empresa.ciudad) && <p className="text-xs text-[#8A8272] mt-0.5">{[empresa.direccion, empresa.ciudad].filter(Boolean).join(" · ")}</p>}
+        <div className="flex items-start gap-2.5">
+          <div className="shrink-0 w-11 h-11 rounded-full flex items-center justify-center" style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}>
+            <Building2 size={19} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-lg font-extrabold text-[#2A2118]">{empresa.denominacion}</h2>
+            {(empresa.direccion || empresa.ciudad) && <p className="text-xs text-[#8A8272] mt-0.5">{[empresa.direccion, empresa.ciudad].filter(Boolean).join(" · ")}</p>}
+          </div>
+        </div>
         <TagsSection core={core} setCore={setCore} entidadTipo="Empresa" entidadId={id} />
         <p className="text-xs text-[#8A8272] mt-3">{accCount} acción{accCount !== 1 ? "es" : ""} registrada{accCount !== 1 ? "s" : ""} en total</p>
-      </div>
 
-      <div className="bg-white border border-[#E4DECF] rounded-sm p-3 mb-3">
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Personas de contacto</p>
-          <button onClick={() => setShowPersonaLink(true)} className="text-xs font-bold text-[#B0452E]">+ Agregar</button>
-        </div>
-        {personas.length === 0 ? <Chip tone="amber">A definir</Chip> : (
-          <div className="space-y-1.5">
-            {personas.map((r) => {
-              const p = core.personas.find((pp) => pp.id === r.personaId);
-              if (!p) return null;
-              return (
-                <div key={r.id} className="flex items-center justify-between text-sm">
-                  <button onClick={() => onOpen("persona", p.id)} className="text-left flex-1 min-w-0">
-                    <span className="font-semibold text-[#2A2118]">{p.nombre}</span>
-                    <span className="text-[#8A8272]"> · {(core.cargos || []).find((c) => c.id === r.cargoId)?.nombre || "sin cargo"}</span>
-                    {r.principal && <Star size={11} className="inline text-[#E8871E] ml-1" />}
-                  </button>
-                  <WhatsAppLink persona={p} size={15} />
-                  <IconBtn label="Editar cargo" onClick={() => setEditRel(r)}><Pencil size={14} /></IconBtn>
-                </div>
-              );
-            })}
+        <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Personas de contacto</p>
+            <button onClick={() => setShowPersonaLink(true)} className="text-xs font-bold text-[#B0452E]">+ Agregar</button>
           </div>
-        )}
-      </div>
+          {personas.length === 0 ? <Chip tone="amber">A definir</Chip> : (
+            <div className="space-y-1.5">
+              {personas.map((r) => {
+                const p = core.personas.find((pp) => pp.id === r.personaId);
+                if (!p) return null;
+                return (
+                  <div key={r.id} className="flex items-center justify-between text-sm">
+                    <button onClick={() => onOpen("persona", p.id)} className="text-left flex-1 min-w-0">
+                      <span className="font-semibold text-[#2A2118]">{p.nombre}</span>
+                      <span className="text-[#8A8272]"> · {(core.cargos || []).find((c) => c.id === r.cargoId)?.nombre || "sin cargo"}</span>
+                      {r.principal && <Star size={11} className="inline text-[#E8871E] ml-1" />}
+                    </button>
+                    <WhatsAppLink persona={p} size={15} />
+                    <IconBtn label="Editar cargo" onClick={() => setEditRel(r)}><Pencil size={14} /></IconBtn>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
-      <div className="bg-white border border-[#E4DECF] rounded-sm p-3 mb-3">
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Hilos de esta empresa</p>
-          <button onClick={() => setShowNuevoHiloEmpresa(true)} className="text-xs font-bold text-[#B0452E]">+ Nuevo hilo</button>
-        </div>
-        {hilosDeEstaEmpresa.length === 0 ? (
-          <p className="text-sm text-[#A69C88]">Sin hilos todavía. Podés arrancar uno acá aunque todavía no tengas el contacto.</p>
-        ) : (
-          <div className="space-y-1.5">
-            {hilosDeEstaEmpresa.map((h) => (
-              <button key={h.id} onClick={() => onOpen("hilo", h.id)} className="w-full text-left text-sm flex items-center justify-between">
-                <span className="font-semibold text-[#2A2118]">{h.titulo}</span>
-                <span className="text-xs text-[#8A8272]">{etiquetaVinculoHilo(h, core)}</span>
-              </button>
-            ))}
+        <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Hilos de esta empresa</p>
+            <button onClick={() => setShowNuevoHiloEmpresa(true)} className="text-xs font-bold text-[#B0452E]">+ Nuevo hilo</button>
           </div>
-        )}
-      </div>
+          {hilosDeEstaEmpresa.length === 0 ? (
+            <p className="text-sm text-[#A69C88]">Sin hilos todavía. Podés arrancar uno acá aunque todavía no tengas el contacto.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {hilosDeEstaEmpresa.map((h) => (
+                <button key={h.id} onClick={() => onOpen("hilo", h.id)} className="w-full text-left text-sm flex items-center justify-between">
+                  <span className="font-semibold text-[#2A2118]">{h.titulo}</span>
+                  <span className="text-xs text-[#8A8272]">{etiquetaVinculoHilo(h, core)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
-      <div className="bg-white border border-[#E4DECF] rounded-sm p-3">
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Obras vinculadas</p>
-          <button onClick={() => setShowObraLink(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>
-        </div>
-        {obras.length === 0 ? <p className="text-sm text-[#A69C88]">Sin obras vinculadas.</p> : (
-          <div className="space-y-1.5">
-            {obras.map((r) => {
-              const o = core.obras.find((oo) => oo.id === r.obraId);
-              if (!o) return null;
-              return (
-                <div key={r.id} className="flex items-center justify-between text-sm">
-                  <button onClick={() => onOpen("obra", o.id)} className="font-semibold text-[#2A2118] text-left">{o.nombre}</button>
-                  <IconBtn danger label="Desvincular" onClick={() => unlinkObra(r.id)}><X size={14} /></IconBtn>
-                </div>
-              );
-            })}
+        <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Obras vinculadas</p>
+            <button onClick={() => setShowObraLink(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>
           </div>
-        )}
+          {obras.length === 0 ? <p className="text-sm text-[#A69C88]">Sin obras vinculadas.</p> : (
+            <div className="space-y-1.5">
+              {obras.map((r) => {
+                const o = core.obras.find((oo) => oo.id === r.obraId);
+                if (!o) return null;
+                return (
+                  <div key={r.id} className="flex items-center justify-between text-sm">
+                    <button onClick={() => onOpen("obra", o.id)} className="font-semibold text-[#2A2118] text-left">{o.nombre}</button>
+                    <IconBtn danger label="Desvincular" onClick={() => unlinkObra(r.id)}><X size={14} /></IconBtn>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
       {showNuevoHiloEmpresa && (
@@ -4240,7 +4274,7 @@ function ObrasView({ core, setCore, onOpen }) {
             return (
               <div key={o.id} className="w-full bg-white border border-[#E4DECF] rounded-sm p-3 flex items-center gap-3">
                 <button onClick={() => onOpen("obra", o.id)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
-                  <div className="w-9 h-9 rounded-sm bg-[#E7E2D8] text-[#6B6352] flex items-center justify-center shrink-0"><HardHat size={16} /></div>
+                  <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}><HardHat size={16} /></div>
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold text-[#2A2118] truncate">{o.nombre}</p>
                     {empresas.length ? (
@@ -4356,43 +4390,52 @@ function ObraDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
     <div>
       <BackHeader onClose={onClose} />
       <div className="bg-white border border-[#E4DECF] rounded-sm p-4 mb-3">
-        <h2 className="text-lg font-extrabold text-[#2A2118]">{obra.nombre}</h2>
-        {obra.descripcion && <p className="text-sm text-[#6B6352] mt-1">{obra.descripcion}</p>}
-        <p className="text-xs text-[#8A8272] mt-1">{obra.metros2 ? `${obra.metros2} m² · ` : ""}{obra.ciudad}{obra.direccion ? ` · ${obra.direccion}` : ""}</p>
+        <div className="flex items-start gap-2.5">
+          <div className="shrink-0 w-11 h-11 rounded-full flex items-center justify-center" style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}>
+            <HardHat size={19} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-lg font-extrabold text-[#2A2118]">{obra.nombre}</h2>
+            {obra.descripcion && <p className="text-sm text-[#6B6352] mt-1">{obra.descripcion}</p>}
+            <p className="text-xs text-[#8A8272] mt-1">{obra.metros2 ? `${obra.metros2} m² · ` : ""}{obra.ciudad}{obra.direccion ? ` · ${obra.direccion}` : ""}</p>
+          </div>
+        </div>
         <TagsSection core={core} setCore={setCore} entidadTipo="Obra" entidadId={id} />
-      </div>
-      <div className="bg-white border border-[#E4DECF] rounded-sm p-3 mb-3">
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Empresas vinculadas</p>
-          <button onClick={() => setShowEmpresaLink(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>
-        </div>
-        {empresas.length === 0 ? <Chip tone="amber">A definir</Chip> : (
-          <div className="space-y-1.5">
-            {empresas.map((r) => {
-              const e = core.empresas.find((ee) => ee.id === r.empresaId);
-              if (!e) return null;
-              return <button key={r.id} onClick={() => onOpen("empresa", e.id)} className="w-full text-left text-sm font-semibold text-[#2A2118]">{e.denominacion}</button>;
-            })}
+
+        <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Empresas vinculadas</p>
+            <button onClick={() => setShowEmpresaLink(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>
           </div>
-        )}
-      </div>
-      <div className="bg-white border border-[#E4DECF] rounded-sm p-3">
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Hilos de esta obra</p>
-          <button onClick={() => setShowNuevoHiloObra(true)} className="text-xs font-bold text-[#B0452E]">+ Nuevo hilo</button>
+          {empresas.length === 0 ? <Chip tone="amber">A definir</Chip> : (
+            <div className="space-y-1.5">
+              {empresas.map((r) => {
+                const e = core.empresas.find((ee) => ee.id === r.empresaId);
+                if (!e) return null;
+                return <button key={r.id} onClick={() => onOpen("empresa", e.id)} className="w-full text-left text-sm font-semibold text-[#2A2118]">{e.denominacion}</button>;
+              })}
+            </div>
+          )}
         </div>
-        {hilosDeEstaObra.length === 0 ? (
-          <p className="text-sm text-[#A69C88]">Sin hilos todavía. Podés arrancar uno acá aunque todavía no sepas la empresa o el contacto.</p>
-        ) : (
-          <div className="space-y-1.5">
-            {hilosDeEstaObra.map((h) => (
-              <button key={h.id} onClick={() => onOpen("hilo", h.id)} className="w-full text-left text-sm flex items-center justify-between">
-                <span className="font-semibold text-[#2A2118]">{h.titulo}</span>
-                <span className="text-xs text-[#8A8272]">{etiquetaVinculoHilo(h, core)}</span>
-              </button>
-            ))}
+
+        <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Hilos de esta obra</p>
+            <button onClick={() => setShowNuevoHiloObra(true)} className="text-xs font-bold text-[#B0452E]">+ Nuevo hilo</button>
           </div>
-        )}
+          {hilosDeEstaObra.length === 0 ? (
+            <p className="text-sm text-[#A69C88]">Sin hilos todavía. Podés arrancar uno acá aunque todavía no sepas la empresa o el contacto.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {hilosDeEstaObra.map((h) => (
+                <button key={h.id} onClick={() => onOpen("hilo", h.id)} className="w-full text-left text-sm flex items-center justify-between">
+                  <span className="font-semibold text-[#2A2118]">{h.titulo}</span>
+                  <span className="text-xs text-[#8A8272]">{etiquetaVinculoHilo(h, core)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
       {showNuevoHiloObra && (
         <Modal title="Nuevo hilo" onClose={() => setShowNuevoHiloObra(false)}>
@@ -4560,13 +4603,15 @@ function InformesView({ core, acciones }) {
       <div className="flex gap-1.5 mb-4">
         <button
           onClick={() => setSubVista("tablero")}
-          className={`flex-1 flex items-center justify-center gap-1.5 text-xs font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-sm ${subVista === "tablero" ? "bg-[#2A2F36] text-[#F2F0E9]" : "bg-white border border-[#E4DECF] text-[#6B6352]"}`}
+          style={subVista === "tablero" ? { backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) } : { backgroundColor: core.tema.tarjeta, color: core.tema.mutedBase }}
+          className="flex-1 flex items-center justify-center gap-1.5 text-xs font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-sm border border-[#E4DECF]"
         >
           <BarChart3 size={13} /> Tablero de control
         </button>
         <button
           onClick={() => setSubVista("informes")}
-          className={`flex-1 flex items-center justify-center gap-1.5 text-xs font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-sm ${subVista === "informes" ? "bg-[#2A2F36] text-[#F2F0E9]" : "bg-white border border-[#E4DECF] text-[#6B6352]"}`}
+          style={subVista === "informes" ? { backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) } : { backgroundColor: core.tema.tarjeta, color: core.tema.mutedBase }}
+          className="flex-1 flex items-center justify-center gap-1.5 text-xs font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-sm border border-[#E4DECF]"
         >
           <FileSpreadsheet size={13} /> Informes
         </button>
@@ -4635,7 +4680,8 @@ function ReportesView({ core, acciones }) {
           <button
             key={key}
             onClick={() => setInforme(key)}
-            className={`shrink-0 text-xs font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-sm ${informe === key ? "bg-[#2A2F36] text-[#F2F0E9]" : "bg-white border border-[#E4DECF] text-[#6B6352]"}`}
+            style={informe === key ? { backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) } : { backgroundColor: core.tema.tarjeta, color: core.tema.mutedBase }}
+            className="shrink-0 text-xs font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-sm border border-[#E4DECF]"
           >
             {label}
           </button>
@@ -5053,7 +5099,12 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
     <div>
       <div className="flex gap-1.5 mb-3">
         {SECTIONS.map(([k, l]) => (
-          <button key={k} onClick={() => setSection(k)} className={`text-xs font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-sm ${section === k ? "bg-[#2A2F36] text-[#F2F0E9]" : "bg-white border border-[#E4DECF] text-[#6B6352]"}`}>{l}</button>
+          <button
+            key={k}
+            onClick={() => setSection(k)}
+            style={section === k ? { backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) } : { backgroundColor: core.tema.tarjeta, color: core.tema.mutedBase }}
+            className="text-xs font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-sm border border-[#E4DECF]"
+          >{l}</button>
         ))}
       </div>
 
