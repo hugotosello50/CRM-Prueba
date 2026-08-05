@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.7.0";
+const APP_VERSION = "1.8.0";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -257,6 +257,12 @@ function etiquetaVinculoHilo(hilo, core) {
   const obra = core.obras.find((o) => o.id === hilo.obraId);
   if (obra) return obra.nombre;
   return hilo.titulo;
+}
+function getIniciales(nombre) {
+  const partes = (nombre || "").trim().split(/\s+/).filter(Boolean);
+  if (partes.length === 0) return "?";
+  if (partes.length === 1) return partes[0].slice(0, 2).toUpperCase();
+  return (partes[0][0] + partes[1][0]).toUpperCase();
 }
 
 function addPeriod(fromISO, value, unit) {
@@ -730,7 +736,7 @@ export default function CRM({ userId, onLogout }) {
           </div>
         </header>
 
-        <nav className="flex gap-1 mb-4 overflow-x-auto no-scrollbar">
+        <nav className="flex gap-1 mb-4">
           {NAV.map((n) => {
             const Icon = n.icon;
             const active = tab === n.id && !detail;
@@ -739,9 +745,9 @@ export default function CRM({ userId, onLogout }) {
                 key={n.id}
                 onClick={() => { setTab(n.id); setDetail(null); }}
                 style={active ? { backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) } : { backgroundColor: core.tema.botonInactivo, color: core.tema.ink }}
-                className="shrink-0 h-8 flex items-center gap-1.5 px-2 rounded-sm text-[11px] font-bold transition-colors"
+                className="flex-1 min-w-0 h-12 flex flex-col items-center justify-center gap-0.5 rounded-sm text-[9px] font-bold transition-colors"
               >
-                <Icon size={13} /> {n.label}
+                <Icon size={15} /> <span className="truncate max-w-full px-0.5">{n.label}</span>
               </button>
             );
           })}
@@ -1452,17 +1458,19 @@ function TareaCard({ hilo, core, setCore, acciones, setAcciones, onOpen, onInici
 
   return (
     <div className="bg-white border border-[#E4DECF] rounded-sm p-3" style={{ opacity: arrastrando ? 0.35 : 1 }}>
-      <div className="flex items-start gap-2">
+      <div className="flex items-start gap-2.5">
         <CasillaFinalizar hilo={hilo} acciones={accionesDelHilo} setCore={setCore} size={18} />
+        <div className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: "#EFE6F7", color: "#6B4FA0" }}>
+          <ListChecks size={14} />
+        </div>
         <button onClick={() => onOpen("hilo", hilo.id)} className="flex-1 min-w-0 text-left">
-          <p className={`text-sm font-semibold ${finalizada ? "line-through text-[#A69C88]" : "text-[#2A2118]"}`}>{hilo.titulo}</p>
+          <p className={`text-sm font-bold ${finalizada ? "line-through text-[#A69C88]" : "text-[#2A2118]"}`}>{hilo.titulo}</p>
           {pendiente && (
-            <p className="text-xs text-[#8A8272] mt-0.5">{tipo?.nombre ? `${tipo.nombre} · ` : ""}{fmtDateHora(pendiente.fechaProgramada, pendiente.horaProgramada)}</p>
+            <p className="text-xs text-[#8A8272] mt-0.5 font-mono">{tipo?.nombre ? `${tipo.nombre} · ` : ""}{fmtDateHora(pendiente.fechaProgramada, pendiente.horaProgramada)}</p>
           )}
-          <p className="text-[9px] font-mono text-[#C9C1AE] mt-0.5">
-            {accionesDelHilo.length > 0 ? `${accionesDelHilo.length} acci${accionesDelHilo.length === 1 ? "ón" : "ones"}` : "Sin acciones todavía"}
-            {hiloRelacionado && ` · Vinculado a: ${personaRelacionada ? personaRelacionada.nombre : hiloRelacionado.titulo}`}
-          </p>
+          {hiloRelacionado && (
+            <p className="text-[11px] text-[#B0452E] font-bold mt-0.5">Vinculada a: {personaRelacionada ? personaRelacionada.nombre : hiloRelacionado.titulo}</p>
+          )}
         </button>
         {setAcciones && (
           <button
@@ -2174,25 +2182,59 @@ function HiloSinAccionCard({ hilo, core, setCore, acciones, setAcciones, onOpen 
   const empresa = core.empresas.find((e) => e.id === hilo.empresaId);
   const obra = core.obras.find((o) => o.id === hilo.obraId);
   const accionesDelHilo = acciones.filter((a) => a.hiloId === hilo.id);
+  const historialCompleto = accionesDelHilo.filter((a) => a.estado === "Realizada").sort(compararRecientePrimero);
+  const ultimaNota = historialCompleto[0]?.notaHecho;
+  const tareasVinculadas = core.hilos.filter((h) => h.tipo === "tarea" && h.hiloRelacionadoId === hilo.id).length;
+  const nombrePrincipal = esTarea ? hilo.titulo : (personasDelHilo.length > 0 ? personasDelHilo.map((p) => p.nombre).join(", ") : etiquetaVinculoHilo(hilo, core));
 
   return (
-    <div className="bg-white border-l-4 border-y-2 border-r-2 border-y-[#8A8272] border-r-[#8A8272] rounded-sm p-3" style={{ borderLeftColor: "#C9C1AE" }}>
-      <div className="flex items-start gap-1.5 min-w-0">
+    <div className="bg-white border border-[#E4DECF] rounded-sm p-3 relative">
+      <span className="absolute -top-px left-4 w-10 h-1.5" style={{ backgroundColor: "#C9C1AE", clipPath: "polygon(8% 0, 92% 0, 100% 100%, 0% 100%)" }} />
+      <div className="flex items-start gap-2.5 min-w-0 mt-1">
         <CasillaFinalizar hilo={hilo} acciones={accionesDelHilo} setCore={setCore} size={18} />
+        <div
+          className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-extrabold"
+          style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}
+        >
+          {esTarea ? <ListChecks size={15} /> : getIniciales(nombrePrincipal)}
+        </div>
         <button onClick={() => (esTarea || !persona ? onOpen("hilo", hilo.id) : onOpen("persona", persona.id))} className="text-left min-w-0 flex-1">
-          <p className="text-[15px] font-semibold text-[#2A2118] truncate">{esTarea ? hilo.titulo : (personasDelHilo.length > 0 ? personasDelHilo.map((p) => p.nombre).join(", ") : etiquetaVinculoHilo(hilo, core))}</p>
+          <p className="text-base font-extrabold text-[#2A2118] truncate">{nombrePrincipal}</p>
           {!esTarea && (
             <p className="text-sm text-[#8A8272] mt-0.5 flex items-center gap-1">
               <GitBranch size={11} className="shrink-0" /> {hilo.titulo}
             </p>
           )}
           {(empresa || obra) && (
-            <p className="text-[11px] text-[#2A2118] mt-0.5 truncate">{[empresa?.denominacion, obra?.nombre].filter(Boolean).join(" · ")}</p>
+            <p className="text-[11px] text-[#2A2118] font-semibold mt-0.5 truncate">{[empresa?.denominacion, obra?.nombre].filter(Boolean).join(" · ")}</p>
           )}
         </button>
         {persona && <WhatsAppLink persona={persona} size={15} />}
       </div>
-      <div className="flex items-center justify-between mt-2 pt-2 border-t border-[#EFEBE0]">
+      {ultimaNota && (
+        <p className="text-xs text-[#6B6352] italic mt-2 pl-2.5 border-l-2 border-[#E4DECF]">"{ultimaNota}"</p>
+      )}
+      <div className="flex items-center gap-2 mt-2 pt-2 border-t border-dashed border-[#E4DECF] flex-wrap">
+        {tareasVinculadas > 0 && (
+          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#6B6352] bg-[#F7F5F0] border border-[#E4DECF] rounded-sm px-2 py-1">
+            <ListChecks size={11} /> {tareasVinculadas} tarea{tareasVinculadas === 1 ? "" : "s"}
+          </span>
+        )}
+        {personasDelHilo.length > 1 && (
+          <span className="flex items-center">
+            {personasDelHilo.map((p) => (
+              <span
+                key={p.id}
+                className="w-5 h-5 rounded-full bg-[#F1DFB9] text-[#5C3F18] text-[9px] font-extrabold flex items-center justify-center border-2 -ml-1.5 first:ml-0"
+                style={{ borderColor: core.tema.tarjeta }}
+              >
+                {getIniciales(p.nombre)}
+              </span>
+            ))}
+          </span>
+        )}
+      </div>
+      <div className="flex items-center justify-between gap-2 mt-2">
         <PrimaryBtn onClick={() => setShowAvanzar(true)}>Avanzar hilo</PrimaryBtn>
         <button onClick={() => onOpen("hilo", hilo.id)} className="text-xs font-bold text-[#6B6352]">Ver hilo completo</button>
       </div>
@@ -2226,42 +2268,48 @@ function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, 
   const accionesDelHilo = hilo ? acciones.filter((a) => a.hiloId === hilo.id) : [];
   const historialCompleto = accionesDelHilo.filter((a) => a.estado === "Realizada").sort(compararRecientePrimero);
 
-  // el color del borde refleja la más urgente de todas las pendientes de este bucket
+  // el color de la solapa refleja la más urgente de todas las pendientes de este bucket
   const masUrgente = accionesBucket.reduce((min, a) => (a.fechaProgramada < min.fechaProgramada ? a : min), primary);
   const diasFaltantes = diasEntre(t, masUrgente.fechaProgramada);
   const diasUrgente = core.parametros.diasUrgente ?? 3;
   const colorBorde = diasFaltantes < 0 ? "#B0452E" : diasFaltantes <= diasUrgente ? "#E8871E" : "#3F6B4A";
+  const ultimaNota = historialCompleto[0]?.notaHecho;
+  const tareasVinculadas = hilo ? core.hilos.filter((h) => h.tipo === "tarea" && h.hiloRelacionadoId === hilo.id).length : 0;
+  const nombrePrincipal = hilo ? (esTarea ? hilo.titulo : (personasDelHilo.length > 0 ? personasDelHilo.map((p) => p.nombre).join(", ") : etiquetaVinculoHilo(hilo, core))) : "";
 
   return (
     <div
-      className="bg-white border-l-4 border-y-2 border-r-2 border-y-[#8A8272] border-r-[#8A8272] rounded-sm p-3"
-      style={{ borderLeftColor: colorBorde, opacity: arrastrando ? 0.35 : 1 }}
+      className="bg-white border border-[#E4DECF] rounded-sm p-3 relative"
+      style={{ opacity: arrastrando ? 0.35 : 1 }}
     >
+      <span className="absolute -top-px left-4 w-10 h-1.5" style={{ backgroundColor: colorBorde, clipPath: "polygon(8% 0, 92% 0, 100% 100%, 0% 100%)" }} />
       {/* Bloque 1: datos fijos del hilo */}
-      <div className="flex items-start gap-1.5 min-w-0">
+      <div className="flex items-start gap-2.5 min-w-0 mt-1">
         {hilo && setCore && <CasillaFinalizar hilo={hilo} acciones={accionesDelHilo} setCore={setCore} size={18} />}
+        {hilo && (
+          <div
+            className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-extrabold"
+            style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}
+          >
+            {esTarea ? <ListChecks size={15} /> : getIniciales(nombrePrincipal)}
+          </div>
+        )}
         <button onClick={() => (esTarea || !persona ? onOpen("hilo", hilo.id) : onOpen("persona", persona.id))} className="text-left min-w-0 flex-1">
-          {esTarea ? (
-            <>
-              <p className="text-[15px] font-semibold text-[#2A2118] truncate flex items-center gap-1"><ListChecks size={13} className="shrink-0" style={{ color: "#6B4FA0" }} /> {hilo.titulo}</p>
-              <p className="text-xs text-[#C9C1AE] mt-0.5">{accionesDelHilo.length} acci{accionesDelHilo.length === 1 ? "ón" : "ones"}</p>
-            </>
-          ) : (
-            <>
-              <p className="text-[15px] font-semibold text-[#2A2118] truncate">{personasDelHilo.length > 0 ? personasDelHilo.map((p) => p.nombre).join(", ") : etiquetaVinculoHilo(hilo, core)}</p>
-              {hilo && (
-                <p className="text-sm text-[#8A8272] mt-0.5 flex items-center gap-1 flex-wrap">
-                  <GitBranch size={11} className="shrink-0" /> {hilo.titulo}
-                  <span className="text-xs text-[#C9C1AE]">
-                    · {accionesDelHilo.length} acci{accionesDelHilo.length === 1 ? "ón" : "ones"}
-                    {(() => { const nt = core.hilos.filter((h) => h.tipo === "tarea" && h.hiloRelacionadoId === hilo.id).length; return nt > 0 ? ` · ${nt} tarea${nt === 1 ? "" : "s"}` : ""; })()}
-                  </span>
-                </p>
-              )}
-              {(empresa || obra) && (
-                <p className="text-[11px] text-[#2A2118] mt-0.5 truncate">{[empresa?.denominacion, obra?.nombre].filter(Boolean).join(" · ")}</p>
-              )}
-            </>
+          <p className="text-base font-extrabold text-[#2A2118] truncate">{nombrePrincipal}</p>
+          {hilo && !esTarea && (
+            <p className="text-sm text-[#8A8272] mt-0.5 flex items-center gap-1 flex-wrap">
+              <GitBranch size={11} className="shrink-0" /> {hilo.titulo}
+              <span className="text-xs text-[#C9C1AE]">
+                · {accionesDelHilo.length} acci{accionesDelHilo.length === 1 ? "ón" : "ones"}
+                {tareasVinculadas > 0 ? ` · ${tareasVinculadas} tarea${tareasVinculadas === 1 ? "" : "s"}` : ""}
+              </span>
+            </p>
+          )}
+          {hilo && esTarea && (
+            <p className="text-xs text-[#C9C1AE] mt-0.5">{accionesDelHilo.length} acci{accionesDelHilo.length === 1 ? "ón" : "ones"}</p>
+          )}
+          {(empresa || obra) && (
+            <p className="text-[11px] text-[#2A2118] font-semibold mt-0.5 truncate">{[empresa?.denominacion, obra?.nombre].filter(Boolean).join(" · ")}</p>
           )}
         </button>
         {persona && <WhatsAppLink persona={persona} size={15} />}
@@ -2278,8 +2326,12 @@ function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, 
         )}
       </div>
 
+      {ultimaNota && (
+        <p className="text-xs text-[#6B6352] italic mt-2 pl-2.5 border-l-2 border-[#E4DECF]">"{ultimaNota}"</p>
+      )}
+
       {/* Bloque 2: acción programada */}
-      <div className="mt-2 space-y-2">
+      <div className="mt-2 pt-2 border-t border-dashed border-[#E4DECF] space-y-2">
         {accionesBucket.map((accion, i) => (
           <AccionPendienteRow key={accion.id} accion={accion} core={core} onReprogramar={onReprogramar} conBorde={i > 0} />
         ))}
@@ -2290,7 +2342,33 @@ function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, 
       )}
 
       {hilo && (
-        <div className="flex items-center justify-between gap-2 mt-2 pt-2 border-t border-[#EFEBE0]">
+        <div className="flex items-center gap-2 mt-2 pt-2 border-t border-dashed border-[#E4DECF] flex-wrap">
+          {tareasVinculadas > 0 && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#6B6352] bg-[#F7F5F0] border border-[#E4DECF] rounded-sm px-2 py-1">
+              <ListChecks size={11} /> {tareasVinculadas} tarea{tareasVinculadas === 1 ? "" : "s"}
+            </span>
+          )}
+          {personasDelHilo.length > 1 && (
+            <span className="flex items-center">
+              {personasDelHilo.map((p) => (
+                <span
+                  key={p.id}
+                  className="w-5 h-5 rounded-full bg-[#F1DFB9] text-[#5C3F18] text-[9px] font-extrabold flex items-center justify-center border-2 -ml-1.5 first:ml-0"
+                  style={{ borderColor: core.tema.tarjeta }}
+                >
+                  {getIniciales(p.nombre)}
+                </span>
+              ))}
+            </span>
+          )}
+          <span className="ml-auto text-[11px] font-bold font-mono px-2 py-1 rounded-sm" style={{ color: colorBorde }}>
+            {fmtDate(masUrgente.fechaProgramada)}
+          </span>
+        </div>
+      )}
+
+      {hilo && (
+        <div className="flex items-center justify-between gap-2 mt-2">
           <PrimaryBtn onClick={() => setShowAvanzar(true)}>Avanzar hilo</PrimaryBtn>
           <div className="flex items-center gap-1.5 shrink-0">
             <span className="text-[10px] font-bold uppercase tracking-wide text-[#A69C88]">Ver hilo</span>
@@ -2303,7 +2381,7 @@ function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, 
 
       {/* Bloque 3: historial (resumen en la tarjeta) */}
       {verResumen && hilo && (
-        <div className="mt-2 pt-2 border-t border-[#EFEBE0]">
+        <div className="mt-2 pt-2 border-t border-dashed border-[#E4DECF]">
           <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352] mb-1.5">Historial</p>
           {historialCompleto.length === 0 ? (
             <p className="text-xs text-[#A69C88] mb-2">Todavía no hay acciones anteriores en este hilo.</p>
