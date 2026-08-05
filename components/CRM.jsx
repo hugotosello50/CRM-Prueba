@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.9.6";
+const APP_VERSION = "1.9.7";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -1859,7 +1859,14 @@ function ExcelTabsBar({ core, tabs, activeId, incluirSinTab, sinColumnaNombre, o
         className="relative shrink-0 h-8 flex items-center gap-1.5 px-3 text-[10px] font-bold uppercase tracking-wide border border-b-0 rounded-t-sm transition-transform"
       >
         {nombre}
-        {contarTab(id) > 0 && <Chip tone="neutral">{contarTab(id)}</Chip>}
+        {contarTab(id) > 0 && (
+          <span
+            className="inline-flex items-center justify-center min-w-[1.15rem] h-[1.15rem] px-1 rounded-full border text-[9px] font-bold leading-none"
+            style={{ borderColor: esHover || esActiva ? "#FFFFFF" : "#2A2118", color: esHover || esActiva ? "#FFFFFF" : "#2A2118" }}
+          >
+            {contarTab(id)}
+          </span>
+        )}
       </button>
     );
   };
