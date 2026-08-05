@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.9.7";
+const APP_VERSION = "1.9.8";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -2076,17 +2076,27 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, onReprograma
       <div className="border-t border-[#E4DECF] my-3" />
 
       <div className="grid grid-cols-4 gap-1 mb-3">
-        {BUCKET_TABS.map(([key, label, count, tone]) => (
-          <button
-            key={key}
-            onClick={() => setBucket(key)}
-            style={bucket === key ? { backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) } : { backgroundColor: core.tema.botonInactivo, color: core.tema.ink }}
-            className="h-8 flex items-center justify-center gap-1 text-[10px] font-bold uppercase tracking-wide rounded-sm transition-colors"
-          >
-            {label}
-            {count > 0 && <Chip tone={bucket === key ? "amber" : tone}>{count}</Chip>}
-          </button>
-        ))}
+        {BUCKET_TABS.map(([key, label, count, tone]) => {
+          const colorTexto = bucket === key ? contrastText(core.tema.botonActivo) : core.tema.ink;
+          return (
+            <button
+              key={key}
+              onClick={() => setBucket(key)}
+              style={bucket === key ? { backgroundColor: core.tema.botonActivo, color: colorTexto } : { backgroundColor: core.tema.botonInactivo, color: colorTexto }}
+              className="h-8 flex items-center justify-center gap-1 text-[10px] font-bold uppercase tracking-wide rounded-sm transition-colors"
+            >
+              {label}
+              {count > 0 && (
+                <span
+                  className="inline-flex items-center justify-center min-w-[1.15rem] h-[1.15rem] px-1 rounded-full border text-[9px] font-bold leading-none"
+                  style={{ borderColor: colorTexto, color: colorTexto }}
+                >
+                  {count}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       <div className="border-t border-[#E4DECF] my-3" />
