@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.9.2";
+const APP_VERSION = "1.9.3";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -2384,9 +2384,12 @@ function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, 
           >
             Ver completo
           </button>
-          <IconBtn label={verResumen ? "Ocultar resumen" : "Ver resumen"} onClick={() => setVerResumen((v) => !v)}>
-            {verResumen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-          </IconBtn>
+          <button
+            onClick={() => setVerResumen((v) => !v)}
+            className="flex items-center gap-1 text-xs font-bold text-[#B0452E]"
+          >
+            Resumido {verResumen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+          </button>
         </div>
       )}
 
@@ -2428,17 +2431,19 @@ function AccionPendienteRow({ accion, core, onReprogramar, conBorde }) {
   const tipo = core.tiposAccion.find((tt) => tt.id === accion.tipoAccionId);
   const prioTone = accion.prioridad === "Alta" ? "red" : accion.prioridad === "Media" ? "amber" : "neutral";
   return (
-    <div className={conBorde ? "pt-2 border-t border-[#EFEBE0] flex items-start justify-between gap-2" : "flex items-start justify-between gap-2"}>
-      <div className="min-w-0 flex-1">
-        {accion.notaPlanificada && <p className="text-xs text-[#6B6352] line-clamp-2">{accion.notaPlanificada}</p>}
+    <div className={conBorde ? "pt-2 border-t border-[#EFEBE0]" : ""}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          {accion.notaPlanificada && <p className="text-xs text-[#6B6352] line-clamp-2">{accion.notaPlanificada}</p>}
+        </div>
+        <div className="shrink-0 flex items-center gap-1.5">
+          <span className="text-xs font-mono text-[#6B6352] whitespace-nowrap">{tipo ? `${tipo.nombre} · ` : ""}{fmtDateHora(accion.fechaProgramada, accion.horaProgramada)}</span>
+          <IconBtn label="Reprogramar" onClick={() => setShowReprogramar(true)}><Pencil size={13} /></IconBtn>
+          {accion.recurrente && <Repeat size={12} className="text-[#8A8272] shrink-0" />}
+          {accion.prioridad && <Chip tone={prioTone}>{accion.prioridad}</Chip>}
+        </div>
       </div>
-      <div className="shrink-0 flex flex-col items-end gap-1">
-        <span className="text-xs font-mono text-[#6B6352]">{tipo ? `${tipo.nombre} · ` : ""}{fmtDateHora(accion.fechaProgramada, accion.horaProgramada)}</span>
-        <span className="text-[9px] font-mono text-[#C9C1AE]">{fmtNumero(accion.numero)}</span>
-        {accion.prioridad && <Chip tone={prioTone}>{accion.prioridad}</Chip>}
-        {accion.recurrente && <Repeat size={12} className="text-[#8A8272]" />}
-        <button onClick={() => setShowReprogramar(true)} className="text-[10px] font-bold uppercase tracking-wide text-[#B0452E] mt-0.5">Reprogramar</button>
-      </div>
+      <p className="text-right text-[9px] font-mono text-[#C9C1AE] mt-0.5">{fmtNumero(accion.numero)}</p>
       {showReprogramar && (
         <ReprogramarModal
           fechaActual={accion.fechaProgramada}
