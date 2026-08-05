@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.9.1";
+const APP_VERSION = "1.9.2";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -2263,6 +2263,7 @@ function HiloSinAccionCard({ hilo, core, setCore, acciones, setAcciones, onOpen 
 
 function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, onOpen, onReprogramar, t, onIniciarDrag, arrastrando }) {
   const [showAvanzar, setShowAvanzar] = useState(false);
+  const [verResumen, setVerResumen] = useState(false);
 
   const primary = accionesBucket[0];
   const hilo = core.hilos.find((h) => h.id === primary.hiloId);
@@ -2383,6 +2384,27 @@ function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, 
           >
             Ver completo
           </button>
+          <IconBtn label={verResumen ? "Ocultar resumen" : "Ver resumen"} onClick={() => setVerResumen((v) => !v)}>
+            {verResumen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+          </IconBtn>
+        </div>
+      )}
+
+      {verResumen && hilo && (
+        <div className="mt-2 pt-2 border-t border-dashed border-[#E4DECF]">
+          <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352] mb-1.5">Historial</p>
+          {historialCompleto.length === 0 ? (
+            <p className="text-xs text-[#A69C88]">Todavía no hay acciones anteriores en este hilo.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {historialCompleto.map((a) => (
+                <div key={a.id} className="text-xs">
+                  <span className="font-mono text-[#8A8272]">{fmtDate(a.fechaRealizada)}</span>{" "}
+                  <span className="text-[#6B6352]">{a.notaHecho || core.tiposAccion.find((tt) => tt.id === a.tipoAccionId)?.nombre}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
