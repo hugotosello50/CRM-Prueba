@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.12.0";
+const APP_VERSION = "1.12.1";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -3458,7 +3458,7 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
               {" "}<WhatsAppLink persona={persona} size={13} />
             </>
           )}
-          {(empresas.length > 0 || obra) && <> · {[empresas.map((e) => e.denominacion).join(", "), obra?.nombre].filter(Boolean).join(" · ")}</>}
+          {(empresas.length > 0 || obras.length > 0) && <> · {[empresas.map((e) => e.denominacion).join(", "), obras.map((o) => o.nombre).join(", ")].filter(Boolean).join(" · ")}</>}
         </p>
         <p className="text-xs text-[#A69C88] mt-1">
           {accionesDelHilo.length} acci{accionesDelHilo.length === 1 ? "ón" : "ones"} en este hilo
