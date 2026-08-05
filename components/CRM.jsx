@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.10.0";
+const APP_VERSION = "1.10.1";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -2303,7 +2303,6 @@ function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, 
   const diasFaltantes = diasEntre(t, masUrgente.fechaProgramada);
   const diasUrgente = core.parametros.diasUrgente ?? 3;
   const colorBorde = diasFaltantes < 0 ? "#B0452E" : diasFaltantes <= diasUrgente ? "#E8871E" : "#3F6B4A";
-  const ultimaNota = historialCompleto[0]?.notaHecho;
   const tareasVinculadas = hilo ? core.hilos.filter((h) => h.tipo === "tarea" && h.hiloRelacionadoId === hilo.id).length : 0;
   const nombrePrincipal = hilo ? (esTarea ? hilo.titulo : (personasDelHilo.length > 0 ? personasDelHilo.map((p) => p.nombre).join(", ") : etiquetaVinculoHilo(hilo, core))) : "";
 
@@ -2312,7 +2311,6 @@ function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, 
       className="bg-white border border-[#E4DECF] rounded-sm p-3 relative"
       style={{ opacity: arrastrando ? 0.35 : 1 }}
     >
-      <span className="absolute -top-px left-4 w-10 h-1.5" style={{ backgroundColor: colorBorde, clipPath: "polygon(8% 0, 92% 0, 100% 100%, 0% 100%)" }} />
       {/* Bloque 1: persona, empresa, obra */}
       <div className="flex items-start gap-2.5 min-w-0 mt-1">
         {hilo && setCore && <CasillaFinalizar hilo={hilo} acciones={accionesDelHilo} setCore={setCore} size={18} />}
@@ -2356,14 +2354,12 @@ function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, 
         </div>
       )}
 
-      {ultimaNota && (
-        <p className="text-xs text-[#6B6352] italic mt-2 pl-2.5 border-l-2 border-[#E4DECF]">"{ultimaNota}"</p>
-      )}
-
       {/* Bloque 3: actividad programada */}
       {primary.notaPlanificada && (
-        <p className="text-xs font-bold text-[#2A2118] mt-2 pt-2 border-t border-dashed border-[#E4DECF]">{primary.notaPlanificada}</p>
+        <p className="text-xs font-bold text-[#2A2118] mt-2 pl-2.5" style={{ borderLeft: `10px solid ${colorBorde}` }}>{primary.notaPlanificada}</p>
       )}
+
+      <VerContextoOrigen accion={primary} acciones={accionesDelHilo} />
 
       {accionesBucket.length > 1 && (
         <p className="text-[10px] text-[#B0452E] font-bold uppercase tracking-wide mt-1.5">⚠ Este hilo tiene {accionesBucket.length} acciones pendientes a la vez — revisalo, no debería pasar.</p>
