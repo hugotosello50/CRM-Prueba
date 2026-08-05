@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.9.3";
+const APP_VERSION = "1.9.4";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -2264,8 +2264,11 @@ function HiloSinAccionCard({ hilo, core, setCore, acciones, setAcciones, onOpen 
 function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, onOpen, onReprogramar, t, onIniciarDrag, arrastrando }) {
   const [showAvanzar, setShowAvanzar] = useState(false);
   const [verResumen, setVerResumen] = useState(false);
+  const [showReprogramar, setShowReprogramar] = useState(false);
 
   const primary = accionesBucket[0];
+  const tipoPrimary = core.tiposAccion.find((tt) => tt.id === primary.tipoAccionId);
+  const prioTone = primary.prioridad === "Alta" ? "red" : primary.prioridad === "Media" ? "amber" : "neutral";
   const hilo = core.hilos.find((h) => h.id === primary.hiloId);
   const esTarea = hilo?.tipo === "tarea";
   const persona = hilo ? personaPrincipalDeHilo(hilo, core) : null;
@@ -2338,19 +2341,17 @@ function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, 
         <p className="text-xs text-[#6B6352] italic mt-2 pl-2.5 border-l-2 border-[#E4DECF]">"{ultimaNota}"</p>
       )}
 
-      {/* Bloque 3: acción programada */}
-      <div className="mt-2 pt-2 border-t border-dashed border-[#E4DECF] space-y-2">
-        {accionesBucket.map((accion, i) => (
-          <AccionPendienteRow key={accion.id} accion={accion} core={core} onReprogramar={onReprogramar} conBorde={i > 0} />
-        ))}
-      </div>
+      {/* Bloque 3: actividad programada */}
+      {primary.notaPlanificada && (
+        <p className="text-xs font-bold text-[#2A2118] mt-2 pt-2 border-t border-dashed border-[#E4DECF]">{primary.notaPlanificada}</p>
+      )}
 
       {accionesBucket.length > 1 && (
         <p className="text-[10px] text-[#B0452E] font-bold uppercase tracking-wide mt-1.5">⚠ Este hilo tiene {accionesBucket.length} acciones pendientes a la vez — revisalo, no debería pasar.</p>
       )}
 
       {hilo && (
-        <div className="flex items-center gap-2 mt-2 pt-2 border-t border-dashed border-[#E4DECF] flex-wrap">
+        <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-dashed border-[#E4DECF] flex-wrap">
           {tareasVinculadas > 0 && (
             <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#6B6352] bg-[#F7F5F0] border border-[#E4DECF] rounded-sm px-2 py-1">
               <ListChecks size={11} /> {tareasVinculadas} tarea{tareasVinculadas === 1 ? "" : "s"}
@@ -2369,6 +2370,10 @@ function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, 
               ))}
             </span>
           )}
+          {tipoPrimary && <span className="text-xs font-mono text-[#6B6352] whitespace-nowrap">{tipoPrimary.nombre}</span>}
+          <IconBtn label="Reprogramar" onClick={() => setShowReprogramar(true)}><Pencil size={13} /></IconBtn>
+          {primary.recurrente && <Repeat size={12} className="text-[#8A8272] shrink-0" />}
+          {primary.prioridad && <Chip tone={prioTone}>{primary.prioridad}</Chip>}
           <span className="ml-auto text-[11px] font-bold font-mono px-2 py-1 rounded-sm bg-[#F1DFB9] text-[#5C3F18]">
             Próx. {fmtDate(masUrgente.fechaProgramada)}
           </span>
@@ -2388,9 +2393,20 @@ function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, 
             onClick={() => setVerResumen((v) => !v)}
             className="flex items-center gap-1 text-xs font-bold text-[#B0452E]"
           >
-            Resumido {verResumen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+            Resumen {verResumen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
           </button>
         </div>
+      )}
+
+      <p className="text-right text-[9px] font-mono text-[#C9C1AE] mt-1">{fmtNumero(primary.numero)}</p>
+
+      {showReprogramar && (
+        <ReprogramarModal
+          fechaActual={primary.fechaProgramada}
+          core={core}
+          onClose={() => setShowReprogramar(false)}
+          onSave={(nuevaFecha) => { onReprogramar(primary.id, nuevaFecha); setShowReprogramar(false); }}
+        />
       )}
 
       {verResumen && hilo && (
@@ -2420,36 +2436,6 @@ function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, 
           acciones={acciones}
           setAcciones={setAcciones}
           onClose={() => setShowAvanzar(false)}
-        />
-      )}
-    </div>
-  );
-}
-
-function AccionPendienteRow({ accion, core, onReprogramar, conBorde }) {
-  const [showReprogramar, setShowReprogramar] = useState(false);
-  const tipo = core.tiposAccion.find((tt) => tt.id === accion.tipoAccionId);
-  const prioTone = accion.prioridad === "Alta" ? "red" : accion.prioridad === "Media" ? "amber" : "neutral";
-  return (
-    <div className={conBorde ? "pt-2 border-t border-[#EFEBE0]" : ""}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          {accion.notaPlanificada && <p className="text-xs text-[#6B6352] line-clamp-2">{accion.notaPlanificada}</p>}
-        </div>
-        <div className="shrink-0 flex items-center gap-1.5">
-          <span className="text-xs font-mono text-[#6B6352] whitespace-nowrap">{tipo ? `${tipo.nombre} · ` : ""}{fmtDateHora(accion.fechaProgramada, accion.horaProgramada)}</span>
-          <IconBtn label="Reprogramar" onClick={() => setShowReprogramar(true)}><Pencil size={13} /></IconBtn>
-          {accion.recurrente && <Repeat size={12} className="text-[#8A8272] shrink-0" />}
-          {accion.prioridad && <Chip tone={prioTone}>{accion.prioridad}</Chip>}
-        </div>
-      </div>
-      <p className="text-right text-[9px] font-mono text-[#C9C1AE] mt-0.5">{fmtNumero(accion.numero)}</p>
-      {showReprogramar && (
-        <ReprogramarModal
-          fechaActual={accion.fechaProgramada}
-          core={core}
-          onClose={() => setShowReprogramar(false)}
-          onSave={(nuevaFecha) => { onReprogramar(accion.id, nuevaFecha); setShowReprogramar(false); }}
         />
       )}
     </div>
