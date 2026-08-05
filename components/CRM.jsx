@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.9.0";
+const APP_VERSION = "1.9.1";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -361,12 +361,13 @@ function IconBtn({ onClick, children, label, danger }) {
   );
 }
 
-function PrimaryBtn({ onClick, children, full, disabled }) {
+function PrimaryBtn({ onClick, children, full, disabled, core }) {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`${full ? "w-full" : ""} ${disabled ? "bg-[#E7E2D8] text-[#A69C88] cursor-not-allowed" : "bg-[#E8871E] text-[#2A2118] hover:bg-[#D6791A]"} rounded-sm px-3.5 py-2.5 font-bold text-sm transition-colors flex items-center justify-center gap-1.5`}
+      style={disabled ? undefined : core ? { backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) } : undefined}
+      className={`${full ? "w-full" : ""} ${disabled ? "bg-[#E7E2D8] text-[#A69C88] cursor-not-allowed" : core ? "hover:opacity-90" : "bg-[#E8871E] text-[#2A2118] hover:bg-[#D6791A]"} rounded-sm px-3.5 py-2.5 font-bold text-sm transition-colors flex items-center justify-center gap-1.5`}
     >
       {children}
     </button>
@@ -2200,17 +2201,24 @@ function HiloSinAccionCard({ hilo, core, setCore, acciones, setAcciones, onOpen 
         </div>
         <button onClick={() => (esTarea || !persona ? onOpen("hilo", hilo.id) : onOpen("persona", persona.id))} className="text-left min-w-0 flex-1">
           <p className="text-base font-extrabold text-[#2A2118] truncate">{nombrePrincipal}</p>
-          {!esTarea && (
-            <p className="text-sm text-[#8A8272] mt-0.5 flex items-center gap-1">
-              <GitBranch size={11} className="shrink-0" /> {hilo.titulo}
-            </p>
-          )}
           {(empresa || obra) && (
-            <p className="text-[11px] text-[#2A2118] font-semibold mt-0.5 truncate">{[empresa?.denominacion, obra?.nombre].filter(Boolean).join(" · ")}</p>
+            <p className="text-sm mt-0.5 truncate">
+              {empresa && <span className="font-bold text-[#2A2118]">{empresa.denominacion}</span>}
+              {empresa && obra && <span className="text-[#8A8272]"> · </span>}
+              {obra && <span className="text-[#6B6352]">{obra.nombre}</span>}
+            </p>
           )}
         </button>
         {persona && <WhatsAppLink persona={persona} size={15} />}
       </div>
+
+      {!esTarea && (
+        <div className="mt-2 pt-2 border-t border-dashed border-[#E4DECF]">
+          <p className="text-[10px] font-bold uppercase tracking-wide text-[#A69C88] mb-0.5">Tema del hilo</p>
+          <p className="text-base font-extrabold text-[#2A2118]">{hilo.titulo}</p>
+        </div>
+      )}
+
       {ultimaNota && (
         <p className="text-xs text-[#6B6352] italic mt-2 pl-2.5 border-l-2 border-[#E4DECF]">"{ultimaNota}"</p>
       )}
@@ -2234,9 +2242,9 @@ function HiloSinAccionCard({ hilo, core, setCore, acciones, setAcciones, onOpen 
           </span>
         )}
       </div>
-      <div className="flex items-center justify-between gap-2 mt-2">
-        <PrimaryBtn onClick={() => setShowAvanzar(true)}>Avanzar hilo</PrimaryBtn>
-        <button onClick={() => onOpen("hilo", hilo.id)} className="text-xs font-bold text-[#6B6352]">Ver hilo completo</button>
+      <div className="flex items-center gap-2 mt-2">
+        <PrimaryBtn core={core} onClick={() => setShowAvanzar(true)}>Avanzar hilo</PrimaryBtn>
+        <button onClick={() => onOpen("hilo", hilo.id)} className="rounded-sm px-3.5 py-2.5 font-bold text-sm border border-[#E4DECF] text-[#6B6352]">Ver completo</button>
       </div>
       {showAvanzar && (
         <AvanzarHiloForm
@@ -2254,7 +2262,6 @@ function HiloSinAccionCard({ hilo, core, setCore, acciones, setAcciones, onOpen 
 }
 
 function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, onOpen, onReprogramar, t, onIniciarDrag, arrastrando }) {
-  const [verResumen, setVerResumen] = useState(false);
   const [showAvanzar, setShowAvanzar] = useState(false);
 
   const primary = accionesBucket[0];
@@ -2283,7 +2290,7 @@ function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, 
       style={{ opacity: arrastrando ? 0.35 : 1 }}
     >
       <span className="absolute -top-px left-4 w-10 h-1.5" style={{ backgroundColor: colorBorde, clipPath: "polygon(8% 0, 92% 0, 100% 100%, 0% 100%)" }} />
-      {/* Bloque 1: datos fijos del hilo */}
+      {/* Bloque 1: persona, empresa, obra */}
       <div className="flex items-start gap-2.5 min-w-0 mt-1">
         {hilo && setCore && <CasillaFinalizar hilo={hilo} acciones={accionesDelHilo} setCore={setCore} size={18} />}
         {hilo && (
@@ -2296,20 +2303,12 @@ function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, 
         )}
         <button onClick={() => (esTarea || !persona ? onOpen("hilo", hilo.id) : onOpen("persona", persona.id))} className="text-left min-w-0 flex-1">
           <p className="text-base font-extrabold text-[#2A2118] truncate">{nombrePrincipal}</p>
-          {hilo && !esTarea && (
-            <p className="text-sm text-[#8A8272] mt-0.5 flex items-center gap-1 flex-wrap">
-              <GitBranch size={11} className="shrink-0" /> {hilo.titulo}
-              <span className="text-xs text-[#C9C1AE]">
-                · {accionesDelHilo.length} acci{accionesDelHilo.length === 1 ? "ón" : "ones"}
-                {tareasVinculadas > 0 ? ` · ${tareasVinculadas} tarea${tareasVinculadas === 1 ? "" : "s"}` : ""}
-              </span>
-            </p>
-          )}
-          {hilo && esTarea && (
-            <p className="text-xs text-[#C9C1AE] mt-0.5">{accionesDelHilo.length} acci{accionesDelHilo.length === 1 ? "ón" : "ones"}</p>
-          )}
           {(empresa || obra) && (
-            <p className="text-[11px] text-[#2A2118] font-semibold mt-0.5 truncate">{[empresa?.denominacion, obra?.nombre].filter(Boolean).join(" · ")}</p>
+            <p className="text-sm mt-0.5 truncate">
+              {empresa && <span className="font-bold text-[#2A2118]">{empresa.denominacion}</span>}
+              {empresa && obra && <span className="text-[#8A8272]"> · </span>}
+              {obra && <span className="text-[#6B6352]">{obra.nombre}</span>}
+            </p>
           )}
         </button>
         {persona && <WhatsAppLink persona={persona} size={15} />}
@@ -2326,11 +2325,19 @@ function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, 
         )}
       </div>
 
+      {/* Bloque 2: tema del hilo */}
+      {hilo && !esTarea && (
+        <div className="mt-2 pt-2 border-t border-dashed border-[#E4DECF]">
+          <p className="text-[10px] font-bold uppercase tracking-wide text-[#A69C88] mb-0.5">Tema del hilo</p>
+          <p className="text-base font-extrabold text-[#2A2118]">{hilo.titulo}</p>
+        </div>
+      )}
+
       {ultimaNota && (
         <p className="text-xs text-[#6B6352] italic mt-2 pl-2.5 border-l-2 border-[#E4DECF]">"{ultimaNota}"</p>
       )}
 
-      {/* Bloque 2: acción programada */}
+      {/* Bloque 3: acción programada */}
       <div className="mt-2 pt-2 border-t border-dashed border-[#E4DECF] space-y-2">
         {accionesBucket.map((accion, i) => (
           <AccionPendienteRow key={accion.id} accion={accion} core={core} onReprogramar={onReprogramar} conBorde={i > 0} />
@@ -2361,40 +2368,21 @@ function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, 
               ))}
             </span>
           )}
-          <span className="ml-auto text-[11px] font-bold font-mono px-2 py-1 rounded-sm" style={{ color: colorBorde }}>
-            {fmtDate(masUrgente.fechaProgramada)}
+          <span className="ml-auto text-[11px] font-bold font-mono px-2 py-1 rounded-sm bg-[#F1DFB9] text-[#5C3F18]">
+            Próx. {fmtDate(masUrgente.fechaProgramada)}
           </span>
         </div>
       )}
 
       {hilo && (
-        <div className="flex items-center justify-between gap-2 mt-2">
-          <PrimaryBtn onClick={() => setShowAvanzar(true)}>Avanzar hilo</PrimaryBtn>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <span className="text-[10px] font-bold uppercase tracking-wide text-[#A69C88]">Ver hilo</span>
-            <button onClick={() => setVerResumen((v) => !v)} className="text-xs font-bold text-[#B0452E]">Resumido</button>
-            <span className="text-[#D8D2C4] text-xs">·</span>
-            <button onClick={() => onOpen("hilo", hilo.id)} className="text-xs font-bold text-[#B0452E]">Completo</button>
-          </div>
-        </div>
-      )}
-
-      {/* Bloque 3: historial (resumen en la tarjeta) */}
-      {verResumen && hilo && (
-        <div className="mt-2 pt-2 border-t border-dashed border-[#E4DECF]">
-          <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352] mb-1.5">Historial</p>
-          {historialCompleto.length === 0 ? (
-            <p className="text-xs text-[#A69C88] mb-2">Todavía no hay acciones anteriores en este hilo.</p>
-          ) : (
-            <div className="space-y-1.5 mb-2">
-              {historialCompleto.map((a) => (
-                <div key={a.id} className="text-xs">
-                  <span className="font-mono text-[#8A8272]">{fmtDate(a.fechaRealizada)}</span>{" "}
-                  <span className="text-[#6B6352]">{a.notaHecho || core.tiposAccion.find((tt) => tt.id === a.tipoAccionId)?.nombre}</span>
-                </div>
-              ))}
-            </div>
-          )}
+        <div className="flex items-center gap-2 mt-2">
+          <PrimaryBtn core={core} onClick={() => setShowAvanzar(true)}>Avanzar hilo</PrimaryBtn>
+          <button
+            onClick={() => onOpen("hilo", hilo.id)}
+            className="rounded-sm px-3.5 py-2.5 font-bold text-sm border border-[#E4DECF] text-[#6B6352]"
+          >
+            Ver completo
+          </button>
         </div>
       )}
 
@@ -3249,7 +3237,7 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
             {pendienteActual.recurrente && <p className="text-[10px] text-[#8A8272] flex items-center gap-1 mt-1"><Repeat size={11} /> cada {pendienteActual.repiteCadaN} {pendienteActual.repiteUnidad}</p>}
             <VerContextoOrigen accion={pendienteActual} acciones={accionesDelHilo} />
             <div className="flex gap-2 mt-3 flex-wrap">
-              <PrimaryBtn onClick={() => setShowAvanzar(true)}>Avanzar este hilo</PrimaryBtn>
+              <PrimaryBtn core={core} onClick={() => setShowAvanzar(true)}>Avanzar este hilo</PrimaryBtn>
               {esTarea ? (
                 <button onClick={() => setShowFechaTarea(true)} className="text-xs font-bold uppercase tracking-wide px-2.5 py-2 rounded-sm bg-[#E7E2D8] text-[#6B6352]">Editar fecha y hora</button>
               ) : (
@@ -3263,7 +3251,7 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
           <>
             <p className="text-sm text-[#A69C88]">Sin próxima acción programada.</p>
             <div className="flex gap-2 flex-wrap">
-              <PrimaryBtn onClick={() => setShowAvanzar(true)}>Avanzar este hilo</PrimaryBtn>
+              <PrimaryBtn core={core} onClick={() => setShowAvanzar(true)}>Avanzar este hilo</PrimaryBtn>
               {esTarea && (
                 <button onClick={() => setShowFechaTarea(true)} className="text-xs font-bold uppercase tracking-wide px-2.5 py-2 rounded-sm bg-[#E7E2D8] text-[#6B6352]">Poner fecha y hora</button>
               )}
