@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.9.4";
+const APP_VERSION = "1.9.5";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -2371,12 +2371,12 @@ function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, 
             </span>
           )}
           {tipoPrimary && <span className="text-xs font-mono text-[#6B6352] whitespace-nowrap">{tipoPrimary.nombre}</span>}
+          <span className="text-[11px] font-bold font-mono px-2 py-1 rounded-sm bg-[#F1DFB9] text-[#5C3F18]">
+            Próx. {fmtDate(masUrgente.fechaProgramada)}
+          </span>
           <IconBtn label="Reprogramar" onClick={() => setShowReprogramar(true)}><Pencil size={13} /></IconBtn>
           {primary.recurrente && <Repeat size={12} className="text-[#8A8272] shrink-0" />}
           {primary.prioridad && <Chip tone={prioTone}>{primary.prioridad}</Chip>}
-          <span className="ml-auto text-[11px] font-bold font-mono px-2 py-1 rounded-sm bg-[#F1DFB9] text-[#5C3F18]">
-            Próx. {fmtDate(masUrgente.fechaProgramada)}
-          </span>
         </div>
       )}
 
