@@ -2852,7 +2852,10 @@ function PersonasView({ core, setCore, onOpen }) {
           <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#A69C88]" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar persona..." className={`${inputCls} pl-8`} />
         </div>
-        <button onClick={() => setModal({})} className="shrink-0 bg-[#E8871E] text-[#2A2118] rounded-sm px-3.5 py-2 font-bold"><Plus size={18} /></button>
+        <div className="shrink-0 flex flex-col items-center gap-0.5">
+          <span className="text-[10px] text-[#A69C88] leading-none">{core.personas.length}</span>
+          <button onClick={() => setModal({})} className="bg-[#E8871E] text-[#2A2118] rounded-sm px-3.5 py-2 font-bold"><Plus size={18} /></button>
+        </div>
       </div>
     </div>
 
@@ -4714,7 +4717,10 @@ function EmpresasView({ core, setCore, onOpen }) {
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar empresa..." className={`${inputCls} pl-8`} />
         </div>
         <button onClick={() => setShowImportar(true)} aria-label="Importar desde Excel" className="shrink-0 border border-[#E4DECF] rounded-sm px-3.5 py-2 font-bold text-[#6B6352]"><FileSpreadsheet size={18} /></button>
-        <button onClick={() => setModal({})} className="shrink-0 bg-[#E8871E] text-[#2A2118] rounded-sm px-3.5 py-2 font-bold"><Plus size={18} /></button>
+        <div className="shrink-0 flex flex-col items-center gap-0.5">
+          <span className="text-[10px] text-[#A69C88] leading-none">{core.empresas.length}</span>
+          <button onClick={() => setModal({})} className="bg-[#E8871E] text-[#2A2118] rounded-sm px-3.5 py-2 font-bold"><Plus size={18} /></button>
+        </div>
       </div>
     </div>
 
@@ -5224,7 +5230,10 @@ function ObrasView({ core, setCore, onOpen }) {
     <div>
     <div className="sticky top-0 z-10 bg-[#F7F5F0]">
       <div className="flex justify-end mb-3">
-        <button onClick={() => setModal({})} className="bg-[#E8871E] text-[#2A2118] rounded-sm px-3.5 py-2 font-bold"><Plus size={18} /></button>
+        <div className="flex flex-col items-center gap-0.5">
+          <span className="text-[10px] text-[#A69C88] leading-none">{core.obras.length}</span>
+          <button onClick={() => setModal({})} className="bg-[#E8871E] text-[#2A2118] rounded-sm px-3.5 py-2 font-bold"><Plus size={18} /></button>
+        </div>
       </div>
     </div>
       {core.obras.length === 0 ? (
