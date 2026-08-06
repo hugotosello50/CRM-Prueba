@@ -112,7 +112,7 @@ function normalizeCore(c) {
   const out = { ...seed, ...c };
   if (!Array.isArray(out.cargos) || out.cargos.length === 0) out.cargos = seed.cargos;
   if (!Array.isArray(out.categorias) || out.categorias.length === 0) out.categorias = seed.categorias;
-  out.empresas = (out.empresas || []).map((e) => ({ ciudad: "", cuit: "", ...e }));
+  out.empresas = (out.empresas || []).map((e) => ({ ciudad: "", cuit: "", cabeceraId: null, ...e }));
   out.etiquetas = (out.etiquetas || []).map((e) => {
     if (e.categoriaId) return e;
     // dato viejo: tenía "categoria" como texto libre -> lo mapeamos a una categoría de la tabla (o la creamos)
@@ -281,6 +281,16 @@ function empresasDeHilo(hilo, core) {
     .filter((r) => r.hiloId === hilo.id)
     .map((r) => core.empresas.find((e) => e.id === r.empresaId))
     .filter(Boolean);
+}
+// Jerarquía de empresas (un solo nivel): una empresa "cabecera" agrupa a otras.
+// Subsidiarias de una cabecera dada (empresas cuyo cabeceraId apunta a ella).
+function subsidiariasDeEmpresa(empresaId, core) {
+  return core.empresas.filter((e) => e.cabeceraId === empresaId);
+}
+// Empresas elegibles como cabecera para "empresaId": ni ella misma, ni empresas que ya
+// son subsidiarias de otra (evita más de un nivel).
+function candidatasACabecera(empresaId, core) {
+  return core.empresas.filter((e) => e.id !== empresaId && !e.cabeceraId);
 }
 // Un hilo puede estar vinculado a varias obras (vía la relación hiloObra).
 function obrasDeHilo(hilo, core) {
@@ -4624,7 +4634,7 @@ function EmpresasView({ core, setCore, onOpen }) {
   };
   const del = (id) => setCore((prev) => ({
     ...prev,
-    empresas: prev.empresas.filter((e) => e.id !== id),
+    empresas: prev.empresas.filter((e) => e.id !== id).map((e) => (e.cabeceraId === id ? { ...e, cabeceraId: null } : e)),
     personaEmpresa: prev.personaEmpresa.filter((r) => r.empresaId !== id),
     empresaObra: prev.empresaObra.filter((r) => r.empresaId !== id),
     hiloEmpresa: (prev.hiloEmpresa || []).filter((r) => r.empresaId !== id),
@@ -4650,6 +4660,8 @@ function EmpresasView({ core, setCore, onOpen }) {
         <div className="space-y-2">
           {list.map((e) => {
             const nPersonas = core.personaEmpresa.filter((r) => r.empresaId === e.id).length;
+            const nSubsidiarias = subsidiariasDeEmpresa(e.id, core).length;
+            const cabecera = e.cabeceraId ? core.empresas.find((c) => c.id === e.cabeceraId) : null;
             return (
               <div key={e.id} className="w-full bg-white border border-[#E4DECF] rounded-sm p-3 flex items-center gap-3">
                 <button onClick={() => onOpen("empresa", e.id)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
@@ -4660,6 +4672,12 @@ function EmpresasView({ core, setCore, onOpen }) {
                       <p className="text-xs text-[#8A8272] truncate">{e.ciudad ? `${e.ciudad} · ` : ""}{nPersonas} contacto{nPersonas !== 1 ? "s" : ""}</p>
                     ) : (
                       <Chip tone="amber">A definir</Chip>
+                    )}
+                    {nSubsidiarias > 0 && (
+                      <p className="text-[11px] text-[#3F6B4A] font-semibold flex items-center gap-1 mt-0.5"><Layers size={11} /> Cabecera · {nSubsidiarias} empresa{nSubsidiarias !== 1 ? "s" : ""} del grupo</p>
+                    )}
+                    {cabecera && (
+                      <p className="text-[11px] text-[#8A8272] flex items-center gap-1 mt-0.5"><Layers size={11} /> Grupo {cabecera.denominacion}</p>
                     )}
                   </div>
                 </button>
@@ -4693,6 +4711,7 @@ function EmpresaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
   const [cuit, setCuit] = useState(initial.cuit || "");
   const [direccion, setDireccion] = useState(initial.direccion || "");
   const [ciudad, setCiudad] = useState(initial.ciudad || "");
+  const [cabeceraId, setCabeceraId] = useState(initial.cabeceraId || "");
   const [confirmarEliminar, setConfirmarEliminar] = useState(false);
 
   const [personaModo, setPersonaModo] = useState(core?.personas?.length ? "existente" : "nueva"); // 'existente' | 'nueva' | 'adefinir'
@@ -4700,9 +4719,12 @@ function EmpresaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
   const [nombrePersonaNueva, setNombrePersonaNueva] = useState("");
   const [cargoId, setCargoId] = useState((core?.cargos || [])[0]?.id || "");
 
+  const esCabeceraDeGrupo = !esNueva && subsidiariasDeEmpresa(initial.id, core).length > 0;
+  const opcionesCabecera = candidatasACabecera(initial.id, core);
+
   const submit = () => {
     if (!denominacion.trim()) return;
-    const data = { id: initial.id || uid("E"), denominacion: denominacion.trim(), cuit: cuit.trim(), direccion, ciudad };
+    const data = { id: initial.id || uid("E"), denominacion: denominacion.trim(), cuit: cuit.trim(), direccion, ciudad, cabeceraId: esCabeceraDeGrupo ? null : (cabeceraId || null) };
     let vinculoPersona = null;
     if (esNueva) {
       if (personaModo === "existente" && personaId) vinculoPersona = { tipo: "existente", personaId, cargoId };
@@ -4717,6 +4739,20 @@ function EmpresaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
       <Field label="CUIT"><input className={inputCls} placeholder="30-12345678-9" value={cuit} onChange={(e) => setCuit(e.target.value)} /></Field>
       <Field label="Dirección"><input className={inputCls} value={direccion} onChange={(e) => setDireccion(e.target.value)} /></Field>
       <Field label="Ciudad"><input className={inputCls} value={ciudad} onChange={(e) => setCiudad(e.target.value)} /></Field>
+
+      {esCabeceraDeGrupo ? (
+        <p className="text-xs text-[#A69C88] mb-3">Esta empresa ya es cabecera de un grupo, por eso no puede tener a su vez su propia cabecera.</p>
+      ) : (
+        <Field label="Empresa cabecera (opcional)">
+          <BuscadorSelect
+            opciones={opcionesCabecera.map((e) => ({ id: e.id, label: e.denominacion }))}
+            value={cabeceraId}
+            onChange={setCabeceraId}
+            vacioLabel="— Ninguna —"
+            placeholder="Buscar empresa..."
+          />
+        </Field>
+      )}
 
       {esNueva && (
         <div className="border-t border-[#E4DECF] my-3 pt-3">
@@ -4880,11 +4916,16 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
   const [showPersonaLink, setShowPersonaLink] = useState(false);
   const [editRel, setEditRel] = useState(null);
   const [showNuevoHiloEmpresa, setShowNuevoHiloEmpresa] = useState(false);
+  const [verGrupo, setVerGrupo] = useState(false);
   if (!empresa) return <div><BackHeader onClose={onClose} /><p className="text-sm text-[#8A8272]">Esta empresa ya no existe.</p></div>;
+
+  const cabecera = empresa.cabeceraId ? core.empresas.find((e) => e.id === empresa.cabeceraId) : null;
+  const subsidiarias = subsidiariasDeEmpresa(id, core);
+  const empresaIdsIncluidas = verGrupo && subsidiarias.length > 0 ? [id, ...subsidiarias.map((s) => s.id)] : [id];
 
   const personas = core.personaEmpresa.filter((r) => r.empresaId === id);
   const obras = core.empresaObra.filter((r) => r.empresaId === id);
-  const hilosIdsDeEmpresa = new Set((core.hiloEmpresa || []).filter((r) => r.empresaId === id).map((r) => r.hiloId));
+  const hilosIdsDeEmpresa = new Set((core.hiloEmpresa || []).filter((r) => empresaIdsIncluidas.includes(r.empresaId)).map((r) => r.hiloId));
   const hilosDeEmpresa = core.hilos.filter((h) => hilosIdsDeEmpresa.has(h.id)).map((h) => h.id);
   const hilosDeEstaEmpresa = core.hilos.filter((h) => hilosIdsDeEmpresa.has(h.id) && h.estado === "Activo");
   const accCount = acciones.filter((a) => hilosDeEmpresa.includes(a.hiloId)).length;
@@ -4904,10 +4945,37 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
             <h2 className="text-lg font-extrabold text-[#2A2118]">{empresa.denominacion}</h2>
             {empresa.cuit && <p className="text-xs text-[#8A8272] mt-0.5">CUIT {empresa.cuit}</p>}
             {(empresa.direccion || empresa.ciudad) && <p className="text-xs text-[#8A8272] mt-0.5">{[empresa.direccion, empresa.ciudad].filter(Boolean).join(" · ")}</p>}
+            {cabecera && (
+              <button onClick={() => onOpen("empresa", cabecera.id)} className="text-xs font-semibold text-[#3F6B4A] flex items-center gap-1 mt-1">
+                <Layers size={12} /> Grupo {cabecera.denominacion}
+              </button>
+            )}
           </div>
         </div>
         <TagsSection core={core} setCore={setCore} entidadTipo="Empresa" entidadId={id} />
-        <p className="text-xs text-[#8A8272] mt-3">{accCount} acción{accCount !== 1 ? "es" : ""} registrada{accCount !== 1 ? "s" : ""} en total</p>
+        <p className="text-xs text-[#8A8272] mt-3">
+          {accCount} acción{accCount !== 1 ? "es" : ""} registrada{accCount !== 1 ? "s" : ""} {verGrupo && subsidiarias.length > 0 ? "en todo el grupo" : "en total"}
+        </p>
+
+        {subsidiarias.length > 0 && (
+          <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352] flex items-center gap-1"><Layers size={12} /> Empresas del grupo</p>
+              <button
+                onClick={() => setVerGrupo((v) => !v)}
+                style={verGrupo ? { backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) } : { backgroundColor: "#E7E2D8", color: "#6B6352" }}
+                className="text-[11px] font-bold px-2.5 py-1 rounded-sm"
+              >
+                {verGrupo ? "Viendo grupo completo" : "Ver grupo completo"}
+              </button>
+            </div>
+            <div className="space-y-1">
+              {subsidiarias.map((s) => (
+                <button key={s.id} onClick={() => onOpen("empresa", s.id)} className="block w-full text-left text-sm font-semibold text-[#2A2118]">{s.denominacion}</button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
           <div className="flex items-center justify-between mb-2">
@@ -4937,7 +5005,7 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
 
         <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Hilos de esta empresa</p>
+            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">{verGrupo && subsidiarias.length > 0 ? "Hilos del grupo" : "Hilos de esta empresa"}</p>
             <button onClick={() => setShowNuevoHiloEmpresa(true)} className="text-xs font-bold text-[#B0452E]">+ Nuevo hilo</button>
           </div>
           {hilosDeEstaEmpresa.length === 0 ? (
@@ -5623,22 +5691,29 @@ function InformeAccionesPorMes({ core, acciones }) {
 
 function InformeHilosPorEmpresa({ core, acciones }) {
   const [estadoFiltro, setEstadoFiltro] = useState("Activo"); // 'Activo' | 'Cerrado' | 'Todos'
+  const [agruparPorCabecera, setAgruparPorCabecera] = useState(false);
 
   const hilosFiltrados = core.hilos.filter((h) => estadoFiltro === "Todos" || h.estado === estadoFiltro);
   const porEmpresa = {};
   for (const h of hilosFiltrados) {
     const empresas = empresasDeHilo(h, core);
-    const keys = empresas.length > 0 ? empresas.map((e) => e.id) : ["__sin_empresa__"];
+    const keys = empresas.length > 0
+      ? empresas.map((e) => (agruparPorCabecera && e.cabeceraId ? e.cabeceraId : e.id))
+      : ["__sin_empresa__"];
     for (const key of keys) {
-      if (!porEmpresa[key]) porEmpresa[key] = { hilos: 0, acciones: 0 };
+      if (!porEmpresa[key]) porEmpresa[key] = { hilos: 0, acciones: 0, empresaIds: new Set() };
       porEmpresa[key].hilos += 1;
       porEmpresa[key].acciones += acciones.filter((a) => a.hiloId === h.id).length;
+      const empresaOrigen = empresas.find((e) => (agruparPorCabecera && e.cabeceraId ? e.cabeceraId : e.id) === key);
+      if (empresaOrigen) porEmpresa[key].empresaIds.add(empresaOrigen.id);
     }
   }
   const rows = Object.entries(porEmpresa)
     .map(([empresaId, datos]) => {
       const emp = core.empresas.find((e) => e.id === empresaId);
-      return [emp ? emp.denominacion : "Sin empresa", datos.hilos, datos.acciones];
+      const nombre = emp ? emp.denominacion : "Sin empresa";
+      const sufijo = agruparPorCabecera && datos.empresaIds.size > 1 ? ` (${datos.empresaIds.size} empresas del grupo)` : "";
+      return [nombre + sufijo, datos.hilos, datos.acciones];
     })
     .sort((a, b) => b[1] - a[1]);
 
@@ -5652,6 +5727,10 @@ function InformeHilosPorEmpresa({ core, acciones }) {
             <option value="Todos">Todos</option>
           </select>
         </Field>
+        <label className="flex items-center gap-2 text-sm text-[#2A2118] mt-2">
+          <input type="checkbox" checked={agruparPorCabecera} onChange={(e) => setAgruparPorCabecera(e.target.checked)} />
+          Agrupar empresas por cabecera (holding)
+        </label>
       </div>
       <ReportTable
         headers={["Empresa", "Hilos", "Acciones"]}
