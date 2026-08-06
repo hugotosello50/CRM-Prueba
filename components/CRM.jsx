@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.15.0";
+const APP_VERSION = "1.15.1";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -112,7 +112,7 @@ function normalizeCore(c) {
   const out = { ...seed, ...c };
   if (!Array.isArray(out.cargos) || out.cargos.length === 0) out.cargos = seed.cargos;
   if (!Array.isArray(out.categorias) || out.categorias.length === 0) out.categorias = seed.categorias;
-  out.empresas = (out.empresas || []).map((e) => ({ ciudad: "", ...e }));
+  out.empresas = (out.empresas || []).map((e) => ({ ciudad: "", cuit: "", ...e }));
   out.etiquetas = (out.etiquetas || []).map((e) => {
     if (e.categoriaId) return e;
     // dato viejo: tenía "categoria" como texto libre -> lo mapeamos a una categoría de la tabla (o la creamos)
@@ -4569,6 +4569,7 @@ function EmpresasView({ core, setCore, onOpen }) {
 function EmpresaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
   const esNueva = !initial.id;
   const [denominacion, setDenominacion] = useState(initial.denominacion || "");
+  const [cuit, setCuit] = useState(initial.cuit || "");
   const [direccion, setDireccion] = useState(initial.direccion || "");
   const [ciudad, setCiudad] = useState(initial.ciudad || "");
 
@@ -4579,7 +4580,7 @@ function EmpresaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
 
   const submit = () => {
     if (!denominacion.trim()) return;
-    const data = { id: initial.id || uid("E"), denominacion: denominacion.trim(), direccion, ciudad };
+    const data = { id: initial.id || uid("E"), denominacion: denominacion.trim(), cuit: cuit.trim(), direccion, ciudad };
     let vinculoPersona = null;
     if (esNueva) {
       if (personaModo === "existente" && personaId) vinculoPersona = { tipo: "existente", personaId, cargoId };
@@ -4591,6 +4592,7 @@ function EmpresaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
   return (
     <Modal title={initial.id ? "Editar empresa" : "Nueva empresa"} onClose={onClose}>
       <Field label="Denominación *"><input className={inputCls} value={denominacion} onChange={(e) => setDenominacion(e.target.value)} /></Field>
+      <Field label="CUIT"><input className={inputCls} placeholder="30-12345678-9" value={cuit} onChange={(e) => setCuit(e.target.value)} /></Field>
       <Field label="Dirección"><input className={inputCls} value={direccion} onChange={(e) => setDireccion(e.target.value)} /></Field>
       <Field label="Ciudad"><input className={inputCls} value={ciudad} onChange={(e) => setCiudad(e.target.value)} /></Field>
 
@@ -4659,8 +4661,8 @@ function ImportarEmpresasForm({ core, setCore, onClose }) {
   const descargarPlantilla = () => {
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([
-      ["Denominación", "Dirección", "Ciudad"],
-      ["Constructora Ejemplo S.A.", "Av. Siempre Viva 123", "Córdoba"],
+      ["Denominación", "CUIT", "Dirección", "Ciudad"],
+      ["Constructora Ejemplo S.A.", "30-12345678-9", "Av. Siempre Viva 123", "Córdoba"],
     ]);
     XLSX.utils.book_append_sheet(wb, ws, "Empresas");
     XLSX.writeFile(wb, "plantilla_empresas.xlsx");
@@ -4681,6 +4683,7 @@ function ImportarEmpresasForm({ core, setCore, onClose }) {
         const encabezado = filas[0].map(normalizarTexto);
         const idxDenom = encabezado.findIndex((h) => h.includes("denominacion"));
         if (idxDenom === -1) { setResultado({ error: 'No encontré la columna "Denominación" — usá la plantilla sin cambiar los encabezados.' }); return; }
+        const idxCuit = encabezado.findIndex((h) => h.includes("cuit"));
         const idxDireccion = encabezado.findIndex((h) => h.includes("direccion"));
         const idxCiudad = encabezado.findIndex((h) => h.includes("ciudad"));
 
@@ -4696,6 +4699,7 @@ function ImportarEmpresasForm({ core, setCore, onClose }) {
           nuevas.push({
             id: uid("E"),
             denominacion,
+            cuit: idxCuit !== -1 ? (fila[idxCuit] ?? "").toString().trim() : "",
             direccion: idxDireccion !== -1 ? (fila[idxDireccion] ?? "").toString().trim() : "",
             ciudad: idxCiudad !== -1 ? (fila[idxCiudad] ?? "").toString().trim() : "",
           });
@@ -4763,6 +4767,7 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
           </div>
           <div className="min-w-0 flex-1">
             <h2 className="text-lg font-extrabold text-[#2A2118]">{empresa.denominacion}</h2>
+            {empresa.cuit && <p className="text-xs text-[#8A8272] mt-0.5">CUIT {empresa.cuit}</p>}
             {(empresa.direccion || empresa.ciudad) && <p className="text-xs text-[#8A8272] mt-0.5">{[empresa.direccion, empresa.ciudad].filter(Boolean).join(" · ")}</p>}
           </div>
         </div>
