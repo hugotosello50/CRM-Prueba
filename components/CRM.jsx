@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.15.1";
+const APP_VERSION = "1.16.0";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -4049,6 +4049,7 @@ function AvanzarHiloForm({ hilo, pendienteActual, core, setCore, acciones, setAc
   const esTarea = hilo.tipo === "tarea";
   const [tipoAccionId1, setTipoAccionId1] = useState(pendienteActual?.tipoAccionId || (esTarea ? "" : tipoDefaultId(core)));
   const [notas1, setNotas1] = useState("");
+  const [fechaHecho, setFechaHecho] = useState(todayISO());
   const [programarProxima, setProgramarProxima] = useState(true);
   const [tipoAccionId2, setTipoAccionId2] = useState(esTarea ? "" : tipoDefaultId(core));
   const [notas2, setNotas2] = useState("");
@@ -4082,12 +4083,13 @@ function AvanzarHiloForm({ hilo, pendienteActual, core, setCore, acciones, setAc
       let next = prev;
       let idCompletada;
 
+      const fechaRealizada = fechaHecho || hoy;
       if (pendienteActual) {
         idCompletada = pendienteActual.id;
-        next = next.map((a) => (a.id === pendienteActual.id ? { ...a, estado: "Realizada", fechaRealizada: hoy, fechaProgramada: "", horaProgramada: "", prioridad: "", tipoAccionId: tipoAccionId1, notaHecho: notas1, secuencia: Date.now() } : a));
+        next = next.map((a) => (a.id === pendienteActual.id ? { ...a, estado: "Realizada", fechaRealizada, fechaProgramada: "", horaProgramada: "", prioridad: "", tipoAccionId: tipoAccionId1, notaHecho: notas1, secuencia: Date.now() } : a));
       } else {
         idCompletada = uid("A");
-        next = [{ id: idCompletada, hiloId: hilo.id, tipoAccionId: tipoAccionId1, estado: "Realizada", fechaRealizada: hoy, fechaProgramada: "", horaProgramada: "", prioridad: "", notaPlanificada: "", notaHecho: notas1, origenId: null, destinoId: null, numero: siguienteNumero++, recurrente: false, repiteCadaN: null, repiteUnidad: null, fechaCreacion: hoy, secuencia: Date.now() }, ...next];
+        next = [{ id: idCompletada, hiloId: hilo.id, tipoAccionId: tipoAccionId1, estado: "Realizada", fechaRealizada, fechaProgramada: "", horaProgramada: "", prioridad: "", notaPlanificada: "", notaHecho: notas1, origenId: null, destinoId: null, numero: siguienteNumero++, recurrente: false, repiteCadaN: null, repiteUnidad: null, fechaCreacion: hoy, secuencia: Date.now() }, ...next];
       }
 
       if (programarProxima) {
@@ -4124,6 +4126,9 @@ function AvanzarHiloForm({ hilo, pendienteActual, core, setCore, acciones, setAc
       )}
       <Field label={esTarea ? "¿Qué hiciste?" : "Se hizo"}>
         <textarea className={inputCls} rows={2} value={notas1} onChange={(e) => setNotas1(e.target.value)} placeholder="Qué hablaron, qué resultó..." />
+      </Field>
+      <Field label="Fecha en que pasó">
+        <input type="date" className={inputCls} value={fechaHecho} onChange={(e) => setFechaHecho(e.target.value)} />
       </Field>
 
       <div className="border-t border-[#E4DECF] my-3 pt-3">
