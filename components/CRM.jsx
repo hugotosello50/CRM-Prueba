@@ -6035,11 +6035,16 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
     const personaPruebaIds = new Set(core.personas.filter((p) => esNombreDePrueba(p.nombre, "persona prueba")).map((p) => p.id));
     const empresaPruebaIds = new Set(core.empresas.filter((e) => esNombreDePrueba(e.denominacion, "empresa prueba")).map((e) => e.id));
     const obraPruebaIds = new Set(core.obras.filter((o) => esNombreDePrueba(o.nombre, "obra prueba")).map((o) => o.id));
-    const hiloTocaPrueba = (h) =>
+    const hiloTocaPruebaDirecto = (h) =>
       (h.participantes || []).some((pa) => personaPruebaIds.has(pa.personaId)) ||
       (core.hiloEmpresa || []).some((r) => r.hiloId === h.id && empresaPruebaIds.has(r.empresaId)) ||
       (core.hiloObra || []).some((r) => r.hiloId === h.id && obraPruebaIds.has(r.obraId));
-    const hilosABorrarIds = new Set(core.hilos.filter(hiloTocaPrueba).map((h) => h.id));
+    const hilosDirectosPruebaIds = new Set(core.hilos.filter(hiloTocaPruebaDirecto).map((h) => h.id));
+    // Una tarea no tiene el vínculo propio: cuelga de su hilo padre vía hiloRelacionadoId,
+    // así que si ese padre toca una entidad de prueba, la tarea también se considera de prueba.
+    const hilosABorrarIds = new Set(
+      core.hilos.filter((h) => hilosDirectosPruebaIds.has(h.id) || (h.hiloRelacionadoId && hilosDirectosPruebaIds.has(h.hiloRelacionadoId))).map((h) => h.id)
+    );
 
     setCore((prev) => ({
       ...prev,
