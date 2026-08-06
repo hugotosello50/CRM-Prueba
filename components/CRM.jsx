@@ -1700,7 +1700,6 @@ function TareaCard({ hilo, core, setCore, acciones, setAcciones, onOpen, onInici
   const tipo = pendiente ? core.tiposAccion.find((t) => t.id === pendiente.tipoAccionId) : null;
   const finalizada = hilo.estado === "Cerrado";
   const hiloRelacionado = hilo.hiloRelacionadoId ? core.hilos.find((h) => h.id === hilo.hiloRelacionadoId) : null;
-  const personaRelacionada = hiloRelacionado ? personaPrincipalDeHilo(hiloRelacionado, core) : null;
 
   return (
     <div className="bg-white border border-[#E4DECF] rounded-sm p-3" style={{ opacity: arrastrando ? 0.35 : 1 }}>
@@ -1715,7 +1714,7 @@ function TareaCard({ hilo, core, setCore, acciones, setAcciones, onOpen, onInici
             <p className="text-xs text-[#8A8272] mt-0.5 font-mono">{tipo?.nombre ? `${tipo.nombre} · ` : ""}{fmtDateHora(pendiente.fechaProgramada, pendiente.horaProgramada)}</p>
           )}
           {hiloRelacionado && (
-            <p className="text-[11px] text-[#B0452E] font-bold mt-0.5">Vinculada a: {personaRelacionada ? personaRelacionada.nombre : hiloRelacionado.titulo}</p>
+            <p className="text-[11px] text-[#B0452E] font-bold mt-0.5">Vinculada a: {hiloRelacionado.titulo}</p>
           )}
         </button>
         {setAcciones && (
@@ -3530,6 +3529,7 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
   const [verHistorialPersonas, setVerHistorialPersonas] = useState(false);
   const [showVincularEmpresaHilo, setShowVincularEmpresaHilo] = useState(false);
   const [showVincularObraHilo, setShowVincularObraHilo] = useState(false);
+  const [verVinculosTarea, setVerVinculosTarea] = useState(false);
 
   if (!hilo) return <div><BackHeader onClose={onClose} /><p className="text-sm text-[#8A8272]">Este hilo ya no existe.</p></div>;
 
@@ -3539,7 +3539,6 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
   const empresas = empresasDeHilo(hilo, core);
   const obras = obrasDeHilo(hilo, core);
   const hiloRelacionado = hilo.hiloRelacionadoId ? core.hilos.find((h) => h.id === hilo.hiloRelacionadoId) : null;
-  const personaRelacionada = hiloRelacionado ? personaPrincipalDeHilo(hiloRelacionado, core) : null;
   const tareasVinculadas = core.hilos.filter((h) => h.tipo === "tarea" && h.hiloRelacionadoId === id);
   const accionesDelHilo = acciones.filter((a) => a.hiloId === id);
   const pendienteActual = accionesDelHilo.filter((a) => a.estado === "Pendiente").sort((a, b) => (a.fechaProgramada < b.fechaProgramada ? -1 : 1))[0] || null;
@@ -3738,17 +3737,82 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
 
       {hilo.tipo === "tarea" && (
         <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-          <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352] mb-2">Vínculo con un cliente (opcional)</p>
-          {hiloRelacionado ? (
-            <div className="flex items-center justify-between gap-2">
-              <button onClick={() => onOpen("hilo", hiloRelacionado.id)} className="text-left text-sm">
-                <span className="font-semibold text-[#2A2118]">{hiloRelacionado.titulo}</span>
-                {personaRelacionada && <span className="text-[#8A8272]"> · {personaRelacionada.nombre}</span>}
-              </button>
-              <IconBtn label="Desvincular" danger onClick={() => setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === id ? { ...h, hiloRelacionadoId: null } : h)) }))}><X size={14} /></IconBtn>
+          <button onClick={() => setVerVinculosTarea((v) => !v)} className="w-full flex items-center justify-between">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Vínculos</p>
+            {verVinculosTarea ? <ChevronUp size={14} className="text-[#8A8272]" /> : <ChevronDown size={14} className="text-[#8A8272]" />}
+          </button>
+          {verVinculosTarea && (
+            <div className="mt-2.5 space-y-3">
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#8A8272]">Hilo</p>
+                  {!hiloRelacionado && <button onClick={() => setShowVincularCliente(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>}
+                </div>
+                {hiloRelacionado ? (
+                  <div className="flex items-center justify-between gap-2 text-sm">
+                    <button onClick={() => onOpen("hilo", hiloRelacionado.id)} className="text-left flex-1 min-w-0 font-semibold text-[#2A2118]">{hiloRelacionado.titulo}</button>
+                    <IconBtn label="Desvincular" danger onClick={() => setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === id ? { ...h, hiloRelacionadoId: null } : h)) }))}><X size={14} /></IconBtn>
+                  </div>
+                ) : (
+                  <p className="text-sm text-[#A69C88]">Sin hilo vinculado.</p>
+                )}
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#8A8272]">Personas</p>
+                  <button onClick={() => setShowAgregarPersona(true)} className="text-xs font-bold text-[#B0452E]">+ Agregar</button>
+                </div>
+                {personasDelHilo.length === 0 ? <p className="text-sm text-[#A69C88]">Sin personas vinculadas.</p> : (
+                  <div className="space-y-1">
+                    {participantesActivos(hilo).map((part) => {
+                      const p = core.personas.find((pp) => pp.id === part.personaId);
+                      if (!p) return null;
+                      return (
+                        <div key={part.id} className="flex items-center justify-between gap-2 text-sm">
+                          <button onClick={() => onOpen("persona", p.id)} className="text-left flex-1 min-w-0 font-semibold text-[#2A2118]">{p.nombre}</button>
+                          <IconBtn label="Desvincular" danger onClick={() => desvincularParticipante(part.id)}><X size={14} /></IconBtn>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#8A8272]">Empresas</p>
+                  <button onClick={() => setShowVincularEmpresaHilo(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>
+                </div>
+                {empresas.length === 0 ? <p className="text-sm text-[#A69C88]">Sin empresas vinculadas.</p> : (
+                  <div className="space-y-1">
+                    {empresas.map((emp) => (
+                      <div key={emp.id} className="flex items-center justify-between gap-2 text-sm">
+                        <button onClick={() => onOpen("empresa", emp.id)} className="text-left flex-1 min-w-0 font-semibold text-[#2A2118]">{emp.denominacion}</button>
+                        <IconBtn label="Quitar vínculo" danger onClick={() => quitarEmpresaDelHilo(emp.id)}><X size={14} /></IconBtn>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#8A8272]">Obras</p>
+                  <button onClick={() => setShowVincularObraHilo(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>
+                </div>
+                {obras.length === 0 ? <p className="text-sm text-[#A69C88]">Sin obras vinculadas.</p> : (
+                  <div className="space-y-1">
+                    {obras.map((o) => (
+                      <div key={o.id} className="flex items-center justify-between gap-2 text-sm">
+                        <button onClick={() => onOpen("obra", o.id)} className="text-left flex-1 min-w-0 font-semibold text-[#2A2118]">{o.nombre}</button>
+                        <IconBtn label="Quitar vínculo" danger onClick={() => quitarObraDelHilo(o.id)}><X size={14} /></IconBtn>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-          ) : (
-            <button onClick={() => setShowVincularCliente(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular a un hilo de cliente</button>
           )}
         </div>
       )}
@@ -5991,10 +6055,13 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
   const [section, setSection] = useState("parametros");
   const [confirmVaciar, setConfirmVaciar] = useState(false);
   const [confirmBorrarMovimientosPrueba, setConfirmBorrarMovimientosPrueba] = useState(false);
+  const [avisoDatosPrueba, setAvisoDatosPrueba] = useState(false);
 
   // Crea (si no existen ya, por nombre) 3 personas/empresas/obras de prueba vinculadas
   // entre sí de a pares (Persona Prueba N - Empresa Prueba N - Obra Prueba N).
   const generarDatosPrueba = () => {
+    setAvisoDatosPrueba(true);
+    setTimeout(() => setAvisoDatosPrueba(false), 2500);
     setCore((prev) => {
       let personas = prev.personas;
       let empresas = prev.empresas;
@@ -6317,6 +6384,7 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
         <button onClick={generarDatosPrueba} className="text-xs font-bold uppercase tracking-wide text-[#3F6B4A] flex items-center gap-1.5">
           <Plus size={13} /> Generar datos de prueba
         </button>
+        {avisoDatosPrueba && <p className="text-xs font-bold text-[#3F6B4A] mt-1">Datos de prueba generados ✓</p>}
         <p className="text-xs text-[#A69C88] mt-1 mb-3">Crea 3 personas, 3 empresas y 3 obras de prueba (vinculadas entre sí de a pares). Si ya existen, no las duplica.</p>
 
         <button onClick={() => setConfirmBorrarMovimientosPrueba(true)} className="text-xs font-bold uppercase tracking-wide text-[#B0452E] flex items-center gap-1.5">
