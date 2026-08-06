@@ -4886,11 +4886,19 @@ function normalizarTexto(s) {
   return (s || "").toString().trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 }
 
+// Deja solo los dígitos de un CUIT (sin guiones ni espacios) — un CUIT válido tiene 11.
+function soloDigitosCuit(s) {
+  return (s || "").toString().replace(/\D/g, "");
+}
+
 // Carga masiva de empresas desde un Excel: se descarga una plantilla con los encabezados
 // esperados, se completa una fila por empresa y se vuelve a subir. Denominación es la única
-// columna obligatoria; empresas cuya denominación ya existe se omiten (no se duplican).
+// columna obligatoria. Si el CUIT de la fila (11 dígitos, sin guiones) coincide con el de una
+// empresa ya cargada, se corrigen sus datos con lo que traiga la fila (incluso vaciando campos
+// que la fila trae en blanco). Si el CUIT no está o no alcanza para decidir, se cae al criterio
+// de denominación — ahí, si ya existe, se omite sin tocar nada.
 function ImportarEmpresasForm({ core, setCore, onClose }) {
-  const [resultado, setResultado] = useState(null); // { agregadas, existentes } | { error }
+  const [resultado, setResultado] = useState(null); // { agregadas, corregidas, existentes } | { error }
   const inputRef = useRef(null);
 
   const descargarPlantilla = () => {
@@ -4922,25 +4930,50 @@ function ImportarEmpresasForm({ core, setCore, onClose }) {
         const idxDireccion = encabezado.findIndex((h) => h.includes("direccion"));
         const idxCiudad = encabezado.findIndex((h) => h.includes("ciudad"));
 
-        const yaExistentes = new Set(core.empresas.map((emp) => normalizarTexto(emp.denominacion)));
+        const empresaIdPorCuit = new Map();
+        for (const emp of core.empresas) {
+          const c = soloDigitosCuit(emp.cuit);
+          if (c.length === 11) empresaIdPorCuit.set(c, emp.id);
+        }
+        const nombresExistentes = new Set(core.empresas.map((emp) => normalizarTexto(emp.denominacion)));
+
+        const correcciones = new Map(); // empresaId -> campos corregidos
         const nuevas = [];
+        let agregadas = 0;
+        let corregidas = 0;
         let existentes = 0;
+
         for (const fila of filas.slice(1)) {
           const denominacion = (fila[idxDenom] ?? "").toString().trim();
           if (!denominacion) continue;
+          const cuit = idxCuit !== -1 ? soloDigitosCuit(fila[idxCuit]) : "";
+          const direccion = idxDireccion !== -1 ? (fila[idxDireccion] ?? "").toString().trim() : "";
+          const ciudad = idxCiudad !== -1 ? (fila[idxCiudad] ?? "").toString().trim() : "";
+          const cuitValido = cuit.length === 11;
+          const idPorCuit = cuitValido ? empresaIdPorCuit.get(cuit) : null;
+
+          if (idPorCuit) {
+            correcciones.set(idPorCuit, { denominacion, cuit, direccion, ciudad });
+            corregidas++;
+            continue;
+          }
+
           const clave = normalizarTexto(denominacion);
-          if (yaExistentes.has(clave)) { existentes++; continue; }
-          yaExistentes.add(clave);
-          nuevas.push({
-            id: uid("E"),
-            denominacion,
-            cuit: idxCuit !== -1 ? (fila[idxCuit] ?? "").toString().trim() : "",
-            direccion: idxDireccion !== -1 ? (fila[idxDireccion] ?? "").toString().trim() : "",
-            ciudad: idxCiudad !== -1 ? (fila[idxCiudad] ?? "").toString().trim() : "",
-          });
+          if (nombresExistentes.has(clave)) { existentes++; continue; }
+          nombresExistentes.add(clave);
+          const nueva = { id: uid("E"), denominacion, cuit, direccion, ciudad, cabeceraId: null };
+          nuevas.push(nueva);
+          agregadas++;
+          if (cuitValido) empresaIdPorCuit.set(cuit, nueva.id);
         }
-        if (nuevas.length > 0) setCore((prev) => ({ ...prev, empresas: [...nuevas, ...prev.empresas] }));
-        setResultado({ agregadas: nuevas.length, existentes });
+
+        if (nuevas.length > 0 || correcciones.size > 0) {
+          setCore((prev) => ({
+            ...prev,
+            empresas: [...nuevas, ...prev.empresas.map((emp) => (correcciones.has(emp.id) ? { ...emp, ...correcciones.get(emp.id) } : emp))],
+          }));
+        }
+        setResultado({ agregadas, corregidas, existentes });
       } catch {
         setResultado({ error: "No pude leer el archivo. Verificá que sea un .xlsx válido, basado en la plantilla." });
       } finally {
@@ -4952,7 +4985,7 @@ function ImportarEmpresasForm({ core, setCore, onClose }) {
 
   return (
     <Modal title="Importar empresas desde Excel" onClose={onClose}>
-      <p className="text-sm text-[#6B6352] mb-3">Descargá la plantilla, completá una fila por empresa — la Denominación es obligatoria — y subí acá el mismo archivo completado.</p>
+      <p className="text-sm text-[#6B6352] mb-3">Descargá la plantilla, completá una fila por empresa — la Denominación es obligatoria — y subí acá el mismo archivo completado. Si el CUIT coincide con una empresa ya cargada, se corrigen sus datos; si no hay CUIT que decida, se compara por denominación.</p>
       <button type="button" onClick={descargarPlantilla} className="w-full flex items-center justify-center gap-2 border border-[#E4DECF] rounded-sm py-2.5 font-bold text-sm text-[#2A2118] mb-3">
         <Download size={16} /> Descargar plantilla
       </button>
@@ -4967,6 +5000,7 @@ function ImportarEmpresasForm({ core, setCore, onClose }) {
       {resultado && !resultado.error && (
         <p className="text-sm text-[#2A2118] bg-[#F7F5F0] border border-[#E4DECF] rounded-sm p-2.5">
           Se agregar{resultado.agregadas === 1 ? "ó" : "on"} <b>{resultado.agregadas}</b> empresa{resultado.agregadas === 1 ? "" : "s"} nueva{resultado.agregadas === 1 ? "" : "s"}.
+          {resultado.corregidas > 0 && <> Se corrigi{resultado.corregidas === 1 ? "ó" : "eron"} <b>{resultado.corregidas}</b> por coincidir el CUIT.</>}
           {resultado.existentes > 0 && <> {resultado.existentes} ya exist{resultado.existentes === 1 ? "ía" : "ían"} (misma denominación) y se omit{resultado.existentes === 1 ? "ió" : "ieron"}.</>}
         </p>
       )}
