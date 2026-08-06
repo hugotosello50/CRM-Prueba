@@ -5991,11 +5991,71 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
   const [section, setSection] = useState("parametros");
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmVaciar, setConfirmVaciar] = useState(false);
+  const [confirmBorrarMovimientosPrueba, setConfirmBorrarMovimientosPrueba] = useState(false);
 
   const resetDemo = () => {
     setCore(seedCore());
     setAcciones(seedAcciones());
     setConfirmReset(false);
+  };
+
+  // Crea (si no existen ya, por nombre) 3 personas/empresas/obras de prueba vinculadas
+  // entre sí de a pares (Persona Prueba N - Empresa Prueba N - Obra Prueba N).
+  const generarDatosPrueba = () => {
+    setCore((prev) => {
+      let personas = prev.personas;
+      let empresas = prev.empresas;
+      let obras = prev.obras;
+      let personaEmpresa = prev.personaEmpresa;
+      let empresaObra = prev.empresaObra;
+      const cargoId = (prev.cargos.find((c) => c.nombre.toLowerCase() === "otro") || prev.cargos[prev.cargos.length - 1])?.id;
+
+      for (let i = 1; i <= 3; i++) {
+        const nombrePersona = `Persona Prueba ${i}`;
+        let persona = personas.find((p) => p.nombre === nombrePersona);
+        if (!persona) { persona = { id: uid("P"), nombre: nombrePersona, whatsapp: "", direccion: "", ciudad: "", notas: "" }; personas = [persona, ...personas]; }
+
+        const nombreEmpresa = `Empresa Prueba ${i}`;
+        let empresa = empresas.find((e) => e.denominacion === nombreEmpresa);
+        if (!empresa) { empresa = { id: uid("E"), denominacion: nombreEmpresa, cuit: "", direccion: "", ciudad: "", cabeceraId: null }; empresas = [empresa, ...empresas]; }
+
+        const nombreObra = `Obra Prueba ${i}`;
+        let obra = obras.find((o) => o.nombre === nombreObra);
+        if (!obra) { obra = { id: uid("O"), nombre: nombreObra, descripcion: "", metros2: null, direccion: "", ciudad: "" }; obras = [obra, ...obras]; }
+
+        if (!personaEmpresa.some((r) => r.personaId === persona.id && r.empresaId === empresa.id)) {
+          personaEmpresa = [...personaEmpresa, { id: uid("pe"), personaId: persona.id, empresaId: empresa.id, cargoId, principal: true }];
+        }
+        if (!empresaObra.some((r) => r.empresaId === empresa.id && r.obraId === obra.id)) {
+          empresaObra = [...empresaObra, { id: uid("eo"), empresaId: empresa.id, obraId: obra.id }];
+        }
+      }
+      return { ...prev, personas, empresas, obras, personaEmpresa, empresaObra };
+    });
+  };
+
+  // Borra solo los hilos (seguimientos y tareas) y acciones vinculados a personas,
+  // empresas u obras cuyo nombre empieza con "Persona/Empresa/Obra Prueba" — deja
+  // esas personas/empresas/obras intactas, para borrarlas a mano desde cada ABM.
+  const esNombreDePrueba = (nombre, prefijo) => (nombre || "").trim().toLowerCase().startsWith(prefijo);
+  const borrarMovimientosPrueba = () => {
+    const personaPruebaIds = new Set(core.personas.filter((p) => esNombreDePrueba(p.nombre, "persona prueba")).map((p) => p.id));
+    const empresaPruebaIds = new Set(core.empresas.filter((e) => esNombreDePrueba(e.denominacion, "empresa prueba")).map((e) => e.id));
+    const obraPruebaIds = new Set(core.obras.filter((o) => esNombreDePrueba(o.nombre, "obra prueba")).map((o) => o.id));
+    const hiloTocaPrueba = (h) =>
+      (h.participantes || []).some((pa) => personaPruebaIds.has(pa.personaId)) ||
+      (core.hiloEmpresa || []).some((r) => r.hiloId === h.id && empresaPruebaIds.has(r.empresaId)) ||
+      (core.hiloObra || []).some((r) => r.hiloId === h.id && obraPruebaIds.has(r.obraId));
+    const hilosABorrarIds = new Set(core.hilos.filter(hiloTocaPrueba).map((h) => h.id));
+
+    setCore((prev) => ({
+      ...prev,
+      hilos: prev.hilos.filter((h) => !hilosABorrarIds.has(h.id)),
+      hiloEmpresa: (prev.hiloEmpresa || []).filter((r) => !hilosABorrarIds.has(r.hiloId)),
+      hiloObra: (prev.hiloObra || []).filter((r) => !hilosABorrarIds.has(r.hiloId)),
+    }));
+    setAcciones((prev) => prev.filter((a) => !hilosABorrarIds.has(a.hiloId)));
+    setConfirmBorrarMovimientosPrueba(false);
   };
 
   // Borra personas, empresas, obras, hilos (seguimientos y tareas) y acciones,
@@ -6255,6 +6315,19 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
       )}
 
       <div className="mt-6 pt-4 border-t border-[#E4DECF]">
+        <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352] mb-2">Datos de prueba</p>
+        <button onClick={generarDatosPrueba} className="text-xs font-bold uppercase tracking-wide text-[#3F6B4A] flex items-center gap-1.5">
+          <Plus size={13} /> Generar datos de prueba
+        </button>
+        <p className="text-xs text-[#A69C88] mt-1 mb-3">Crea 3 personas, 3 empresas y 3 obras de prueba (vinculadas entre sí de a pares). Si ya existen, no las duplica.</p>
+
+        <button onClick={() => setConfirmBorrarMovimientosPrueba(true)} className="text-xs font-bold uppercase tracking-wide text-[#B0452E] flex items-center gap-1.5">
+          <Trash2 size={13} /> Borrar movimientos de prueba
+        </button>
+        <p className="text-xs text-[#A69C88] mt-1">Borra los seguimientos, tareas y acciones vinculados a personas, empresas u obras cuyo nombre empieza con "Persona/Empresa/Obra Prueba". No borra esas personas, empresas ni obras — eso lo hacés vos desde cada ABM.</p>
+      </div>
+
+      <div className="mt-6 pt-4 border-t border-[#E4DECF]">
         <button onClick={() => setConfirmVaciar(true)} className="text-xs font-bold uppercase tracking-wide text-[#B0452E] flex items-center gap-1.5">
           <AlertTriangle size={13} /> Vaciar todos los datos cargados
         </button>
@@ -6269,6 +6342,16 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
       </div>
 
       <p className="text-center text-[10px] font-mono text-[#C9C1AE] mt-6">Versión {APP_VERSION}</p>
+
+      {confirmBorrarMovimientosPrueba && (
+        <Modal title="¿Borrar movimientos de prueba?" onClose={() => setConfirmBorrarMovimientosPrueba(false)}>
+          <p className="text-sm text-[#2A2118] mb-4">Esto borra los seguimientos, tareas y acciones vinculados a "Persona/Empresa/Obra Prueba". Las personas, empresas y obras de prueba quedan como están. No se puede deshacer.</p>
+          <div className="flex gap-2">
+            <button onClick={() => setConfirmBorrarMovimientosPrueba(false)} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
+            <button onClick={borrarMovimientosPrueba} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, borrar</button>
+          </div>
+        </Modal>
+      )}
 
       {confirmVaciar && (
         <Modal title="¿Vaciar todos los datos cargados?" onClose={() => setConfirmVaciar(false)}>
