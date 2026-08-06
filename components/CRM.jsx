@@ -5412,7 +5412,19 @@ function VincularEmpresaDesdeObraForm({ core, setCore, obraId, onClose, onLinked
 function BuscarView({ core, search, setSearch, onOpen }) {
   const q = search.trim().toLowerCase();
   const personas = q ? core.personas.filter((p) => p.nombre.toLowerCase().includes(q)) : [];
-  const empresas = q ? core.empresas.filter((e) => e.denominacion.toLowerCase().includes(q)) : [];
+  const empresasDirectas = q ? core.empresas.filter((e) => e.denominacion.toLowerCase().includes(q)) : [];
+  // Si el nombre coincide con una cabecera o con una subsidiaria, sumamos el resto del
+  // grupo — si no, buscar "Constructora del Sur" no te muestra las empresas que agrupa.
+  const empresasIds = new Set(empresasDirectas.map((e) => e.id));
+  const empresas = [...empresasDirectas];
+  for (const e of empresasDirectas) {
+    const relacionadas = e.cabeceraId
+      ? [core.empresas.find((c) => c.id === e.cabeceraId), ...subsidiariasDeEmpresa(e.cabeceraId, core)]
+      : subsidiariasDeEmpresa(e.id, core);
+    for (const r of relacionadas) {
+      if (r && !empresasIds.has(r.id)) { empresasIds.add(r.id); empresas.push(r); }
+    }
+  }
   const obras = q ? core.obras.filter((o) => o.nombre.toLowerCase().includes(q)) : [];
 
   return (
@@ -5431,7 +5443,12 @@ function BuscarView({ core, search, setSearch, onOpen }) {
       ) : (
         <div className="space-y-4">
           {personas.length > 0 && <ResultGroup title="Personas" items={personas.map((p) => ({ id: p.id, label: p.nombre, type: "persona", persona: p }))} onOpen={onOpen} />}
-          {empresas.length > 0 && <ResultGroup title="Empresas" items={empresas.map((e) => ({ id: e.id, label: e.denominacion, type: "empresa" }))} onOpen={onOpen} />}
+          {empresas.length > 0 && <ResultGroup title="Empresas" items={empresas.map((e) => {
+            const nSub = subsidiariasDeEmpresa(e.id, core).length;
+            const cab = e.cabeceraId ? core.empresas.find((c) => c.id === e.cabeceraId) : null;
+            const sub = nSub > 0 ? `Cabecera · ${nSub} empresa${nSub !== 1 ? "s" : ""} del grupo` : cab ? `Grupo ${cab.denominacion}` : null;
+            return { id: e.id, label: e.denominacion, type: "empresa", sub };
+          })} onOpen={onOpen} />}
           {obras.length > 0 && <ResultGroup title="Obras" items={obras.map((o) => ({ id: o.id, label: o.nombre, type: "obra" }))} onOpen={onOpen} />}
         </div>
       )}
@@ -5446,8 +5463,9 @@ function ResultGroup({ title, items, onOpen }) {
       <div className="space-y-1.5">
         {items.map((it) => (
           <div key={it.id} className="w-full bg-white border border-[#E4DECF] rounded-sm p-2.5 text-sm flex items-center gap-2">
-            <button onClick={() => onOpen(it.type, it.id)} className="flex-1 text-left font-semibold text-[#2A2118]">
-              {it.label}
+            <button onClick={() => onOpen(it.type, it.id)} className="flex-1 min-w-0 text-left">
+              <span className="font-semibold text-[#2A2118]">{it.label}</span>
+              {it.sub && <span className="block text-xs text-[#8A8272]">{it.sub}</span>}
             </button>
             {it.persona && <WhatsAppLink persona={it.persona} size={15} />}
             <ChevronRight size={14} className="text-[#C9C1AE] shrink-0" />
