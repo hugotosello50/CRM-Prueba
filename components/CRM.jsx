@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.14.0";
+const APP_VERSION = "1.15.0";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -731,7 +731,7 @@ export default function CRM({ userId, onLogout }) {
 
   return (
     <ErrorBoundary onReset={() => window.location.reload()}>
-    <div className="relative min-h-screen bg-[#F7F5F0] flex justify-center">
+    <div className="relative h-[100dvh] overflow-hidden bg-[#F7F5F0] flex justify-center">
       <style>{`
         .bg-white { background-color: ${core.tema.tarjeta} !important; }
         .bg-\\[\\#F7F5F0\\] { background-color: ${core.tema.fondo} !important; }
@@ -746,8 +746,8 @@ export default function CRM({ userId, onLogout }) {
         .text-\\[\\#D8D2C4\\] { color: ${core.tema.mutedBase} !important; }
         .placeholder-\\[\\#A69C88\\]::placeholder { color: ${core.tema.mutedBase} !important; }
       `}</style>
-      <div className="w-full max-w-md px-3 pt-5 pb-6 flex flex-col min-h-screen">
-        <header className="mb-4 px-1 flex items-start justify-between gap-2">
+      <div className="w-full max-w-md px-3 pt-5 flex flex-col h-full">
+        <header className="mb-4 px-1 flex items-start justify-between gap-2 shrink-0">
           <div>
             <h1 className="text-xl font-extrabold text-[#2A2118] tracking-tight">{core.parametros.tituloApp || "Seguimiento comercial"}</h1>
             <p className={`text-[10px] font-bold uppercase tracking-wide mt-0.5 ${guardado === "error" ? "text-[#B0452E]" : "text-[#A69C88]"}`}>
@@ -778,7 +778,7 @@ export default function CRM({ userId, onLogout }) {
           </div>
         </header>
 
-        <nav className="flex gap-1 mb-4">
+        <nav className="flex gap-1 mb-4 shrink-0">
           {NAV.map((n) => {
             const Icon = n.icon;
             const active = tab === n.id && !detail;
@@ -795,7 +795,7 @@ export default function CRM({ userId, onLogout }) {
           })}
         </nav>
 
-        <main className="flex-1">
+        <main className="flex-1 min-h-0 overflow-y-auto pb-6">
           {detail ? (
             <ErrorBoundary key={`${detail.type}-${detail.id}`} onReset={closeDetail}>
               <DetailRouter detail={detail} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onClose={closeDetail} onOpen={openDetail} />
@@ -1470,6 +1470,7 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
 
   return (
     <div>
+    <div className="sticky top-0 z-10 bg-[#F7F5F0]">
       <div className="bg-white border border-[#E4DECF] rounded-sm p-3 mb-3">
         <div className="flex gap-2">
           <input
@@ -1523,6 +1524,7 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
         hoverId={hoverColumnaId}
         dragging={dragging}
       />
+    </div>
 
       <div className="mt-3">
         {tareasColumna.length === 0 ? (
@@ -1786,6 +1788,7 @@ function CalendarioView({ core, setCore, acciones, setAcciones, onOpen, t }) {
 
   return (
     <div>
+    <div className="sticky top-0 z-10 bg-[#F7F5F0]">
       <div className="flex gap-1.5 mb-3">
         <button onClick={() => setModo("mes")} style={modo === "mes" ? { backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) } : { backgroundColor: core.tema.botonInactivo, color: core.tema.ink }} className="flex-1 h-8 text-[11px] font-bold uppercase tracking-wide rounded-sm">Mensual</button>
         <button onClick={() => setModo("semana")} style={modo === "semana" ? { backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) } : { backgroundColor: core.tema.botonInactivo, color: core.tema.ink }} className="flex-1 h-8 text-[11px] font-bold uppercase tracking-wide rounded-sm">Semanal</button>
@@ -1804,6 +1807,7 @@ function CalendarioView({ core, setCore, acciones, setAcciones, onOpen, t }) {
         <span className="flex items-center gap-1 text-[10px] font-bold text-[#6B6352]"><span className="w-2 h-2 rounded-full bg-[#E8871E]" /> Hilos de clientes</span>
         <span className="flex items-center gap-1 text-[10px] font-bold text-[#6B6352]"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: COLOR_TAREA }} /> Tareas</span>
       </div>
+    </div>
 
       {modo === "mes" ? (
         <div>
@@ -2199,6 +2203,7 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, onReprograma
 
   return (
     <div>
+    <div className="sticky top-0 z-10 bg-[#F7F5F0]">
       {dragging && (
         <p className="text-center text-xs font-bold text-[#B0452E] uppercase tracking-wide mb-1.5 animate-pulse">
           Soltá sobre una pestaña para mover el hilo
@@ -2288,6 +2293,7 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, onReprograma
       </div>
 
       <div className="border-t border-[#E4DECF] mb-3" />
+    </div>
 
       {gruposActivos.length === 0 ? (
         <EmptyState icon={<Trello size={26} />} text={`No hay hilos en "${nombreColumnaActiva}" con este filtro. Arrastrá una tarjeta desde otra pestaña usando el ícono ⠿, o probá otro filtro de fecha.`} />
@@ -2720,6 +2726,7 @@ function PersonasView({ core, setCore, onOpen }) {
 
   return (
     <div>
+    <div className="sticky top-0 z-10 bg-[#F7F5F0]">
       {(googleEstado === "noConectado" || googleEstado === "reconectar" || googleEstado === "error") && (
         <div className="bg-white border border-[#E4DECF] rounded-sm p-3 mb-3 flex items-center justify-between gap-2">
           <p className="text-xs text-[#6B6352]">
@@ -2757,6 +2764,7 @@ function PersonasView({ core, setCore, onOpen }) {
         </div>
         <button onClick={() => setModal({})} className="shrink-0 bg-[#E8871E] text-[#2A2118] rounded-sm px-3.5 py-2 font-bold"><Plus size={18} /></button>
       </div>
+    </div>
 
       {list.length === 0 ? (
         <EmptyState icon={<Users size={26} />} text="No hay personas cargadas todavía." />
@@ -4504,6 +4512,7 @@ function EmpresasView({ core, setCore, onOpen }) {
 
   return (
     <div>
+    <div className="sticky top-0 z-10 bg-[#F7F5F0]">
       <div className="flex gap-2 mb-3">
         <div className="relative flex-1">
           <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#A69C88]" />
@@ -4512,6 +4521,7 @@ function EmpresasView({ core, setCore, onOpen }) {
         <button onClick={() => setShowImportar(true)} aria-label="Importar desde Excel" className="shrink-0 border border-[#E4DECF] rounded-sm px-3.5 py-2 font-bold text-[#6B6352]"><FileSpreadsheet size={18} /></button>
         <button onClick={() => setModal({})} className="shrink-0 bg-[#E8871E] text-[#2A2118] rounded-sm px-3.5 py-2 font-bold"><Plus size={18} /></button>
       </div>
+    </div>
 
       {list.length === 0 ? (
         <EmptyState icon={<Building2 size={26} />} text="No hay empresas cargadas todavía." />
@@ -4906,9 +4916,11 @@ function ObrasView({ core, setCore, onOpen }) {
 
   return (
     <div>
+    <div className="sticky top-0 z-10 bg-[#F7F5F0]">
       <div className="flex justify-end mb-3">
         <button onClick={() => setModal({})} className="bg-[#E8871E] text-[#2A2118] rounded-sm px-3.5 py-2 font-bold"><Plus size={18} /></button>
       </div>
+    </div>
       {core.obras.length === 0 ? (
         <EmptyState icon={<HardHat size={26} />} text="No hay obras cargadas todavía." />
       ) : (
@@ -5180,10 +5192,12 @@ function BuscarView({ core, search, setSearch, onOpen }) {
 
   return (
     <div>
+    <div className="sticky top-0 z-10 bg-[#F7F5F0]">
       <div className="relative mb-4">
         <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#A69C88]" />
         <input autoFocus value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar persona, empresa u obra..." className={`${inputCls} pl-8`} />
       </div>
+    </div>
 
       {!q ? (
         <EmptyState icon={<Search size={26} />} text="Escribí un nombre para buscar en toda tu cartera." />
@@ -5245,6 +5259,7 @@ function InformesView({ core, acciones }) {
   const [subVista, setSubVista] = useState("tablero"); // 'tablero' | 'informes'
   return (
     <div>
+    <div className="sticky top-0 z-10 bg-[#F7F5F0]">
       <div className="flex gap-1.5 mb-4">
         <button
           onClick={() => setSubVista("tablero")}
@@ -5261,6 +5276,7 @@ function InformesView({ core, acciones }) {
           <FileSpreadsheet size={13} /> Informes
         </button>
       </div>
+    </div>
       {subVista === "tablero" ? <TableroControl core={core} acciones={acciones} /> : <ReportesView core={core} acciones={acciones} />}
     </div>
   );
@@ -5536,7 +5552,9 @@ function TiposAccionView({ core, setCore }) {
 
   return (
     <div>
+    <div className="sticky top-0 z-10 bg-[#F7F5F0]">
       <div className="flex justify-end mb-2"><button onClick={() => setModal({})} className="bg-[#E8871E] text-[#2A2118] rounded-sm px-3 py-1.5 font-bold text-sm flex items-center gap-1"><Plus size={14} /> Agregar</button></div>
+    </div>
       <div className="space-y-1.5">
         {core.tiposAccion.map((t) => (
           <div key={t.id} className="bg-white border border-[#E4DECF] rounded-sm p-2.5 flex items-center justify-between text-sm">
@@ -5574,7 +5592,9 @@ function EtiquetasView({ core, setCore }) {
 
   return (
     <div>
+    <div className="sticky top-0 z-10 bg-[#F7F5F0]">
       <div className="flex justify-end mb-2"><button onClick={() => setModal({})} className="bg-[#E8871E] text-[#2A2118] rounded-sm px-3 py-1.5 font-bold text-sm flex items-center gap-1"><Plus size={14} /> Agregar</button></div>
+    </div>
       <div className="space-y-1.5">
         {core.etiquetas.map((t) => (
           <div key={t.id} className="bg-white border border-[#E4DECF] rounded-sm p-2.5 flex items-center justify-between text-sm">
@@ -5611,7 +5631,9 @@ function CategoriasView({ core, setCore }) {
 
   return (
     <div>
+    <div className="sticky top-0 z-10 bg-[#F7F5F0]">
       <div className="flex justify-end mb-2"><button onClick={() => setModal({})} className="bg-[#E8871E] text-[#2A2118] rounded-sm px-3 py-1.5 font-bold text-sm flex items-center gap-1"><Plus size={14} /> Agregar</button></div>
+    </div>
       <div className="space-y-1.5">
         {(core.categorias || []).map((c) => (
           <div key={c.id} className="bg-white border border-[#E4DECF] rounded-sm p-2.5 flex items-center justify-between text-sm">
@@ -5645,7 +5667,9 @@ function CargosView({ core, setCore }) {
 
   return (
     <div>
+    <div className="sticky top-0 z-10 bg-[#F7F5F0]">
       <div className="flex justify-end mb-2"><button onClick={() => setModal({})} className="bg-[#E8871E] text-[#2A2118] rounded-sm px-3 py-1.5 font-bold text-sm flex items-center gap-1"><Plus size={14} /> Agregar</button></div>
+    </div>
       <div className="space-y-1.5">
         {(core.cargos || []).map((c) => (
           <div key={c.id} className="bg-white border border-[#E4DECF] rounded-sm p-2.5 flex items-center justify-between text-sm">
