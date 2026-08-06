@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.16.0";
+const APP_VERSION = "1.17.0";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -452,6 +452,69 @@ function Modal({ title, onClose, children }) {
 // Select de un catálogo simple (tipo de acción, cargo, categoría...) con la posibilidad
 // de crear un registro nuevo ahí mismo, sin salir del formulario. "allowVacio" agrega
 // una opción "— A definir —" al principio de la lista.
+// Combobox con buscador: un input de texto que va filtrando una lista de opciones a medida
+// que se escribe, en vez de un <select> plano donde hay que desplazarse para encontrar algo.
+function BuscadorSelect({ opciones, value, onChange, placeholder, vacioLabel }) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    const onClickFuera = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", onClickFuera);
+    document.addEventListener("touchstart", onClickFuera);
+    return () => {
+      document.removeEventListener("mousedown", onClickFuera);
+      document.removeEventListener("touchstart", onClickFuera);
+    };
+  }, []);
+
+  const seleccionada = opciones.find((o) => o.id === value);
+  const q = query.trim().toLowerCase();
+  const filtradas = q ? opciones.filter((o) => o.label.toLowerCase().includes(q)) : opciones;
+
+  const elegir = (id) => {
+    onChange(id);
+    setQuery("");
+    setOpen(false);
+  };
+
+  return (
+    <div className="relative" ref={wrapRef}>
+      <input
+        className={inputCls}
+        placeholder={placeholder || "Buscar..."}
+        value={open ? query : (seleccionada?.label || "")}
+        onFocus={() => { setOpen(true); setQuery(""); }}
+        onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+      />
+      {open && (
+        <div className="absolute z-20 left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-white border border-[#E4DECF] rounded-sm shadow-lg">
+          {vacioLabel && (
+            <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => elegir("")} className="w-full text-left px-3 py-2 text-sm text-[#8A8272] border-b border-[#E4DECF]">{vacioLabel}</button>
+          )}
+          {filtradas.length === 0 ? (
+            <p className="px-3 py-2 text-sm text-[#A69C88]">Sin resultados.</p>
+          ) : (
+            filtradas.map((o) => (
+              <button
+                key={o.id}
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => elegir(o.id)}
+                className="w-full text-left px-3 py-2 text-sm text-[#2A2118]"
+                style={{ backgroundColor: o.id === value ? "#F7F5F0" : "transparent" }}
+              >
+                {o.label}
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SelectConCrear({ label, opciones, value, onChange, onCrear, placeholderCrear, allowVacio }) {
   const [creando, setCreando] = useState(false);
   const [nombreNuevo, setNombreNuevo] = useState("");
@@ -467,10 +530,14 @@ function SelectConCrear({ label, opciones, value, onChange, onCrear, placeholder
   return (
     <Field label={label}>
       <div className="flex gap-2">
-        <select className={`${inputCls} flex-1`} value={value} onChange={(e) => onChange(e.target.value)}>
-          {allowVacio && <option value="">— A definir —</option>}
-          {opciones.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
-        </select>
+        <div className="flex-1">
+          <BuscadorSelect
+            opciones={opciones.map((o) => ({ id: o.id, label: o.nombre }))}
+            value={value}
+            onChange={onChange}
+            vacioLabel={allowVacio ? "— A definir —" : null}
+          />
+        </div>
         <button
           type="button"
           onClick={() => setCreando((v) => !v)}
@@ -623,9 +690,12 @@ function TagPickerForm({ core, setCore, entidadTipo, entidadId, asignadas, onClo
           </div>
           {categoriaModo === "existente" ? (
             <Field label="Categoría">
-              <select className={inputCls} value={categoriaId} onChange={(e) => setCategoriaId(e.target.value)}>
-                {(core.categorias || []).map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-              </select>
+              <BuscadorSelect
+                opciones={(core.categorias || []).map((c) => ({ id: c.id, label: c.nombre }))}
+                value={categoriaId}
+                onChange={setCategoriaId}
+                placeholder="Buscar categoría..."
+              />
             </Field>
           ) : (
             <Field label="Nueva categoría"><input className={inputCls} value={nombreCategoriaNueva} onChange={(e) => setNombreCategoriaNueva(e.target.value)} placeholder="Ej: Zona, Rubro, Prioridad" /></Field>
@@ -1103,10 +1173,13 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
 
       {!personaFija && (
         <Field label="Persona">
-          <select className={inputCls} value={personaId} onChange={(e) => setPersonaId(e.target.value)}>
-            <option value="">— ninguna —</option>
-            {core.personas.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-          </select>
+          <BuscadorSelect
+            opciones={core.personas.map((p) => ({ id: p.id, label: p.nombre }))}
+            value={personaId}
+            onChange={setPersonaId}
+            vacioLabel="— ninguna —"
+            placeholder="Buscar persona..."
+          />
         </Field>
       )}
 
@@ -1135,10 +1208,14 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
             }
             return (
               <div className="flex gap-2">
-                <select className={inputCls} value={empresaParaAgregar} onChange={(e) => setEmpresaParaAgregar(e.target.value)}>
-                  <option value="">— elegir —</option>
-                  {opciones.map((e) => <option key={e.id} value={e.id}>{e.denominacion}</option>)}
-                </select>
+                <div className="flex-1">
+                  <BuscadorSelect
+                    opciones={opciones.map((e) => ({ id: e.id, label: e.denominacion }))}
+                    value={empresaParaAgregar}
+                    onChange={setEmpresaParaAgregar}
+                    placeholder="Buscar empresa..."
+                  />
+                </div>
                 <button
                   type="button"
                   disabled={!empresaParaAgregar}
@@ -1181,10 +1258,14 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
             }
             return (
               <div className="flex gap-2">
-                <select className={inputCls} value={obraParaAgregar} onChange={(e) => setObraParaAgregar(e.target.value)}>
-                  <option value="">— elegir —</option>
-                  {opciones.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
-                </select>
+                <div className="flex-1">
+                  <BuscadorSelect
+                    opciones={opciones.map((o) => ({ id: o.id, label: o.nombre }))}
+                    value={obraParaAgregar}
+                    onChange={setObraParaAgregar}
+                    placeholder="Buscar obra..."
+                  />
+                </div>
                 <button
                   type="button"
                   disabled={!obraParaAgregar}
@@ -2816,6 +2897,7 @@ function PersonaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
   const [direccion, setDireccion] = useState(initial.direccion || "");
   const [ciudad, setCiudad] = useState(initial.ciudad || "");
   const [notas, setNotas] = useState(initial.notas || "");
+  const [confirmarEliminar, setConfirmarEliminar] = useState(false);
 
   const [vincularEmpresa, setVincularEmpresa] = useState(false);
   const [modoEmpresa, setModoEmpresa] = useState("existente"); // 'existente' | 'nueva'
@@ -2882,9 +2964,12 @@ function PersonaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
                 <p className="text-xs text-[#A69C88] mb-2">No hay empresas cargadas — probá creando una nueva.</p>
               ) : (
                 <Field label="Empresa">
-                  <select className={inputCls} value={empresaId} onChange={(e) => setEmpresaId(e.target.value)}>
-                    {core.empresas.map((e) => <option key={e.id} value={e.id}>{e.denominacion}</option>)}
-                  </select>
+                  <BuscadorSelect
+                    opciones={core.empresas.map((e) => ({ id: e.id, label: e.denominacion }))}
+                    value={empresaId}
+                    onChange={setEmpresaId}
+                    placeholder="Buscar empresa..."
+                  />
                 </Field>
               )
             ) : (
@@ -2909,9 +2994,12 @@ function PersonaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
                 <p className="text-xs text-[#A69C88] mb-2">No hay obras cargadas — probá creando una nueva.</p>
               ) : (
                 <Field label="Obra">
-                  <select className={inputCls} value={obraId} onChange={(e) => setObraId(e.target.value)}>
-                    {core.obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
-                  </select>
+                  <BuscadorSelect
+                    opciones={core.obras.map((o) => ({ id: o.id, label: o.nombre }))}
+                    value={obraId}
+                    onChange={setObraId}
+                    placeholder="Buscar obra..."
+                  />
                 </Field>
               )
             ) : (
@@ -2921,9 +3009,19 @@ function PersonaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
         )}
       </div>
 
-      <div className="flex gap-2 mt-2">
-        <PrimaryBtn onClick={submit} full>Guardar</PrimaryBtn>
-        {onDelete && <button onClick={onDelete} className="shrink-0 border border-[#E4DECF] rounded-sm px-3 text-[#B0452E]"><Trash2 size={16} /></button>}
+      <div className="flex items-center gap-2 mt-2">
+        {confirmarEliminar ? (
+          <>
+            <span className="flex-1 text-xs text-[#B0452E] font-semibold">¿Eliminar a esta persona? No se puede deshacer.</span>
+            <button type="button" onClick={() => setConfirmarEliminar(false)} className="shrink-0 border border-[#D8D2C4] rounded-sm px-3 py-2.5 text-xs font-bold text-[#6B6352]">Cancelar</button>
+            <button type="button" onClick={onDelete} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="shrink-0 rounded-sm px-3 py-2.5 text-xs font-bold">Sí, eliminar</button>
+          </>
+        ) : (
+          <>
+            <PrimaryBtn onClick={submit} full>Guardar</PrimaryBtn>
+            {onDelete && <button type="button" onClick={() => setConfirmarEliminar(true)} className="shrink-0 border border-[#E4DECF] rounded-sm px-3 text-[#B0452E]"><Trash2 size={16} /></button>}
+          </>
+        )}
       </div>
     </Modal>
   );
@@ -3245,9 +3343,12 @@ function VincularEmpresaForm({ core, setCore, onClose, onSave }) {
 
       {modo === "existente" ? (
         <Field label="Empresa">
-          <select className={inputCls} value={empresaId} onChange={(e) => setEmpresaId(e.target.value)}>
-            {core.empresas.map((e) => <option key={e.id} value={e.id}>{e.denominacion}</option>)}
-          </select>
+          <BuscadorSelect
+            opciones={core.empresas.map((e) => ({ id: e.id, label: e.denominacion }))}
+            value={empresaId}
+            onChange={setEmpresaId}
+            placeholder="Buscar empresa..."
+          />
         </Field>
       ) : (
         <>
@@ -3329,9 +3430,12 @@ function VincularObraAPersonaForm({ core, setCore, personaId, onClose, onLinked 
           <p className="text-sm text-[#A69C88] mb-3">No hay más obras disponibles para vincular — probá creando una nueva.</p>
         ) : (
           <Field label="Obra">
-            <select className={inputCls} value={obraId} onChange={(e) => setObraId(e.target.value)}>
-              {disponibles.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
-            </select>
+            <BuscadorSelect
+              opciones={disponibles.map((o) => ({ id: o.id, label: o.nombre }))}
+              value={obraId}
+              onChange={setObraId}
+              placeholder="Buscar obra..."
+            />
           </Field>
         )
       ) : (
@@ -3876,9 +3980,12 @@ function VincularEmpresaAHiloForm({ core, setCore, hiloId, onClose, onLinked }) 
           <p className="text-sm text-[#A69C88] mb-3">No hay más empresas disponibles para vincular — probá creando una nueva.</p>
         ) : (
           <Field label="Empresa">
-            <select className={inputCls} value={empresaId} onChange={(e) => setEmpresaId(e.target.value)}>
-              {disponibles.map((e) => <option key={e.id} value={e.id}>{e.denominacion}</option>)}
-            </select>
+            <BuscadorSelect
+              opciones={disponibles.map((e) => ({ id: e.id, label: e.denominacion }))}
+              value={empresaId}
+              onChange={setEmpresaId}
+              placeholder="Buscar empresa..."
+            />
           </Field>
         )
       ) : (
@@ -3939,9 +4046,12 @@ function VincularObraAHiloForm({ core, setCore, hiloId, onClose, onLinked }) {
           <p className="text-sm text-[#A69C88] mb-3">No hay más obras disponibles para vincular — probá creando una nueva.</p>
         ) : (
           <Field label="Obra">
-            <select className={inputCls} value={obraId} onChange={(e) => setObraId(e.target.value)}>
-              {disponibles.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
-            </select>
+            <BuscadorSelect
+              opciones={disponibles.map((o) => ({ id: o.id, label: o.nombre }))}
+              value={obraId}
+              onChange={setObraId}
+              placeholder="Buscar obra..."
+            />
           </Field>
         )
       ) : (
@@ -4388,9 +4498,12 @@ function VincularObraForm({ core, setCore, empresaId, onClose, onLinked }) {
           <p className="text-sm text-[#A69C88] mb-3">No hay más obras disponibles para vincular — probá creando una nueva.</p>
         ) : (
           <Field label="Obra">
-            <select className={inputCls} value={obraId} onChange={(e) => setObraId(e.target.value)}>
-              {disponibles.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
-            </select>
+            <BuscadorSelect
+              opciones={disponibles.map((o) => ({ id: o.id, label: o.nombre }))}
+              value={obraId}
+              onChange={setObraId}
+              placeholder="Buscar obra..."
+            />
           </Field>
         )
       ) : (
@@ -4449,9 +4562,12 @@ function VincularPersonaForm({ core, setCore, empresaId, onClose, onLinked }) {
           <p className="text-sm text-[#A69C88] mb-3">No hay más personas disponibles para vincular — probá creando una nueva.</p>
         ) : (
           <Field label="Persona">
-            <select className={inputCls} value={personaId} onChange={(e) => setPersonaId(e.target.value)}>
-              {disponibles.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-            </select>
+            <BuscadorSelect
+              opciones={disponibles.map((p) => ({ id: p.id, label: p.nombre }))}
+              value={personaId}
+              onChange={setPersonaId}
+              placeholder="Buscar persona..."
+            />
           </Field>
         )
       ) : (
@@ -4577,6 +4693,7 @@ function EmpresaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
   const [cuit, setCuit] = useState(initial.cuit || "");
   const [direccion, setDireccion] = useState(initial.direccion || "");
   const [ciudad, setCiudad] = useState(initial.ciudad || "");
+  const [confirmarEliminar, setConfirmarEliminar] = useState(false);
 
   const [personaModo, setPersonaModo] = useState(core?.personas?.length ? "existente" : "nueva"); // 'existente' | 'nueva' | 'adefinir'
   const [personaId, setPersonaId] = useState(core?.personas?.[0]?.id || "");
@@ -4614,9 +4731,12 @@ function EmpresaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
               <p className="text-sm text-[#A69C88] mb-3">Todavía no hay personas cargadas — probá "Nueva".</p>
             ) : (
               <Field label="Persona">
-                <select className={inputCls} value={personaId} onChange={(e) => setPersonaId(e.target.value)}>
-                  {core.personas.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-                </select>
+                <BuscadorSelect
+                  opciones={core.personas.map((p) => ({ id: p.id, label: p.nombre }))}
+                  value={personaId}
+                  onChange={setPersonaId}
+                  placeholder="Buscar persona..."
+                />
               </Field>
             )
           )}
@@ -4643,9 +4763,19 @@ function EmpresaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
         </div>
       )}
 
-      <div className="flex gap-2 mt-2">
-        <PrimaryBtn onClick={submit} full>Guardar</PrimaryBtn>
-        {onDelete && <button onClick={onDelete} className="shrink-0 border border-[#E4DECF] rounded-sm px-3 text-[#B0452E]"><Trash2 size={16} /></button>}
+      <div className="flex items-center gap-2 mt-2">
+        {confirmarEliminar ? (
+          <>
+            <span className="flex-1 text-xs text-[#B0452E] font-semibold">¿Eliminar esta empresa? No se puede deshacer.</span>
+            <button type="button" onClick={() => setConfirmarEliminar(false)} className="shrink-0 border border-[#D8D2C4] rounded-sm px-3 py-2.5 text-xs font-bold text-[#6B6352]">Cancelar</button>
+            <button type="button" onClick={onDelete} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="shrink-0 rounded-sm px-3 py-2.5 text-xs font-bold">Sí, eliminar</button>
+          </>
+        ) : (
+          <>
+            <PrimaryBtn onClick={submit} full>Guardar</PrimaryBtn>
+            {onDelete && <button type="button" onClick={() => setConfirmarEliminar(true)} className="shrink-0 border border-[#E4DECF] rounded-sm px-3 text-[#B0452E]"><Trash2 size={16} /></button>}
+          </>
+        )}
       </div>
     </Modal>
   );
@@ -4979,6 +5109,7 @@ function ObraForm({ initial, core, onSave, onDelete, onClose }) {
   const [metros2, setMetros2] = useState(initial.metros2 || "");
   const [direccion, setDireccion] = useState(initial.direccion || "");
   const [ciudad, setCiudad] = useState(initial.ciudad || "");
+  const [confirmarEliminar, setConfirmarEliminar] = useState(false);
 
   const [empresaModo, setEmpresaModo] = useState(core?.empresas?.length ? "existente" : "nueva"); // 'existente' | 'nueva' | 'adefinir'
   const [empresaId, setEmpresaId] = useState(core?.empresas?.[0]?.id || "");
@@ -5018,9 +5149,12 @@ function ObraForm({ initial, core, onSave, onDelete, onClose }) {
               <p className="text-sm text-[#A69C88] mb-3">Todavía no hay empresas cargadas — probá "Nueva".</p>
             ) : (
               <Field label="Empresa">
-                <select className={inputCls} value={empresaId} onChange={(e) => setEmpresaId(e.target.value)}>
-                  {core.empresas.map((e) => <option key={e.id} value={e.id}>{e.denominacion}</option>)}
-                </select>
+                <BuscadorSelect
+                  opciones={core.empresas.map((e) => ({ id: e.id, label: e.denominacion }))}
+                  value={empresaId}
+                  onChange={setEmpresaId}
+                  placeholder="Buscar empresa..."
+                />
               </Field>
             )
           )}
@@ -5037,9 +5171,19 @@ function ObraForm({ initial, core, onSave, onDelete, onClose }) {
         </div>
       )}
 
-      <div className="flex gap-2 mt-2">
-        <PrimaryBtn onClick={submit} full>Guardar</PrimaryBtn>
-        {onDelete && <button onClick={onDelete} className="shrink-0 border border-[#E4DECF] rounded-sm px-3 text-[#B0452E]"><Trash2 size={16} /></button>}
+      <div className="flex items-center gap-2 mt-2">
+        {confirmarEliminar ? (
+          <>
+            <span className="flex-1 text-xs text-[#B0452E] font-semibold">¿Eliminar esta obra? No se puede deshacer.</span>
+            <button type="button" onClick={() => setConfirmarEliminar(false)} className="shrink-0 border border-[#D8D2C4] rounded-sm px-3 py-2.5 text-xs font-bold text-[#6B6352]">Cancelar</button>
+            <button type="button" onClick={onDelete} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="shrink-0 rounded-sm px-3 py-2.5 text-xs font-bold">Sí, eliminar</button>
+          </>
+        ) : (
+          <>
+            <PrimaryBtn onClick={submit} full>Guardar</PrimaryBtn>
+            {onDelete && <button type="button" onClick={() => setConfirmarEliminar(true)} className="shrink-0 border border-[#E4DECF] rounded-sm px-3 text-[#B0452E]"><Trash2 size={16} /></button>}
+          </>
+        )}
       </div>
     </Modal>
   );
@@ -5174,9 +5318,12 @@ function VincularEmpresaDesdeObraForm({ core, setCore, obraId, onClose, onLinked
           <p className="text-sm text-[#A69C88] mb-3">No hay más empresas disponibles para vincular — probá creando una nueva.</p>
         ) : (
           <Field label="Empresa">
-            <select className={inputCls} value={empresaId} onChange={(e) => setEmpresaId(e.target.value)}>
-              {disponibles.map((e) => <option key={e.id} value={e.id}>{e.denominacion}</option>)}
-            </select>
+            <BuscadorSelect
+              opciones={disponibles.map((e) => ({ id: e.id, label: e.denominacion }))}
+              value={empresaId}
+              onChange={setEmpresaId}
+              placeholder="Buscar empresa..."
+            />
           </Field>
         )
       ) : (
@@ -5455,10 +5602,13 @@ function InformeAccionesPorMes({ core, acciones }) {
           <Field label="Hasta"><input type="date" className={inputCls} value={hasta} onChange={(e) => setHasta(e.target.value)} /></Field>
         </div>
         <Field label="Tipo de acción">
-          <select className={inputCls} value={tipoAccionId} onChange={(e) => setTipoAccionId(e.target.value)}>
-            <option value="">Todos</option>
-            {core.tiposAccion.map((tp) => <option key={tp.id} value={tp.id}>{tp.nombre}</option>)}
-          </select>
+          <BuscadorSelect
+            opciones={core.tiposAccion.map((tp) => ({ id: tp.id, label: tp.nombre }))}
+            value={tipoAccionId}
+            onChange={setTipoAccionId}
+            vacioLabel="Todos"
+            placeholder="Buscar tipo de acción..."
+          />
         </Field>
       </div>
       <ReportTable
@@ -5551,6 +5701,7 @@ function InformeSinContacto({ core, acciones }) {
 // ---------------------------------------------------------------------------
 function TiposAccionView({ core, setCore }) {
   const [modal, setModal] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
   const saveTipo = (data) => {
     setCore((prev) => {
       const exists = prev.tiposAccion.some((t) => t.id === data.id);
@@ -5571,7 +5722,7 @@ function TiposAccionView({ core, setCore }) {
             <span className="font-semibold text-[#2A2118]">{t.nombre}</span>
             <div className="flex gap-1">
               <IconBtn label="Editar" onClick={() => setModal(t)}><Pencil size={14} /></IconBtn>
-              <IconBtn label="Eliminar" danger onClick={() => delTipo(t.id)}><Trash2 size={14} /></IconBtn>
+              <IconBtn label="Eliminar" danger onClick={() => setDeletingId(t.id)}><Trash2 size={14} /></IconBtn>
             </div>
           </div>
         ))}
@@ -5581,12 +5732,22 @@ function TiposAccionView({ core, setCore }) {
           <TipoAccionForm data={modal} onSave={saveTipo} />
         </Modal>
       )}
+      {deletingId && (
+        <Modal title="¿Eliminar este tipo de acción?" onClose={() => setDeletingId(null)}>
+          <p className="text-sm text-[#2A2118] mb-4">No se puede deshacer.</p>
+          <div className="flex gap-2">
+            <button onClick={() => setDeletingId(null)} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
+            <button onClick={() => { delTipo(deletingId); setDeletingId(null); }} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, eliminar</button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
 
 function EtiquetasView({ core, setCore }) {
   const [modal, setModal] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
   const saveEtiqueta = (data) => {
     setCore((prev) => {
       const exists = prev.etiquetas.some((t) => t.id === data.id);
@@ -5614,7 +5775,7 @@ function EtiquetasView({ core, setCore }) {
             </div>
             <div className="flex gap-1">
               <IconBtn label="Editar" onClick={() => setModal(t)}><Pencil size={14} /></IconBtn>
-              <IconBtn label="Eliminar" danger onClick={() => delEtiqueta(t.id)}><Trash2 size={14} /></IconBtn>
+              <IconBtn label="Eliminar" danger onClick={() => setDeletingId(t.id)}><Trash2 size={14} /></IconBtn>
             </div>
           </div>
         ))}
@@ -5624,12 +5785,22 @@ function EtiquetasView({ core, setCore }) {
           <EtiquetaForm data={modal} core={core} setCore={setCore} onSave={saveEtiqueta} />
         </Modal>
       )}
+      {deletingId && (
+        <Modal title="¿Eliminar esta etiqueta?" onClose={() => setDeletingId(null)}>
+          <p className="text-sm text-[#2A2118] mb-4">Se quita de todo lo que la tenga asignada. No se puede deshacer.</p>
+          <div className="flex gap-2">
+            <button onClick={() => setDeletingId(null)} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
+            <button onClick={() => { delEtiqueta(deletingId); setDeletingId(null); }} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, eliminar</button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
 
 function CategoriasView({ core, setCore }) {
   const [modal, setModal] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
   const saveCategoria = (data) => {
     setCore((prev) => {
       const exists = (prev.categorias || []).some((c) => c.id === data.id);
@@ -5650,7 +5821,7 @@ function CategoriasView({ core, setCore }) {
             <span className="font-semibold text-[#2A2118]">{c.nombre}</span>
             <div className="flex gap-1">
               <IconBtn label="Editar" onClick={() => setModal(c)}><Pencil size={14} /></IconBtn>
-              <IconBtn label="Eliminar" danger onClick={() => delCategoria(c.id)}><Trash2 size={14} /></IconBtn>
+              <IconBtn label="Eliminar" danger onClick={() => setDeletingId(c.id)}><Trash2 size={14} /></IconBtn>
             </div>
           </div>
         ))}
@@ -5660,12 +5831,22 @@ function CategoriasView({ core, setCore }) {
           <CategoriaForm data={modal} onSave={saveCategoria} />
         </Modal>
       )}
+      {deletingId && (
+        <Modal title="¿Eliminar esta categoría?" onClose={() => setDeletingId(null)}>
+          <p className="text-sm text-[#2A2118] mb-4">No se puede deshacer.</p>
+          <div className="flex gap-2">
+            <button onClick={() => setDeletingId(null)} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
+            <button onClick={() => { delCategoria(deletingId); setDeletingId(null); }} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, eliminar</button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
 
 function CargosView({ core, setCore }) {
   const [modal, setModal] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
   const saveCargo = (data) => {
     setCore((prev) => {
       const exists = prev.cargos.some((c) => c.id === data.id);
@@ -5686,7 +5867,7 @@ function CargosView({ core, setCore }) {
             <span className="font-semibold text-[#2A2118]">{c.nombre}</span>
             <div className="flex gap-1">
               <IconBtn label="Editar" onClick={() => setModal(c)}><Pencil size={14} /></IconBtn>
-              <IconBtn label="Eliminar" danger onClick={() => delCargo(c.id)}><Trash2 size={14} /></IconBtn>
+              <IconBtn label="Eliminar" danger onClick={() => setDeletingId(c.id)}><Trash2 size={14} /></IconBtn>
             </div>
           </div>
         ))}
@@ -5694,6 +5875,15 @@ function CargosView({ core, setCore }) {
       {modal !== null && (
         <Modal title={modal.id ? "Editar cargo" : "Nuevo cargo"} onClose={() => setModal(null)}>
           <CargoForm data={modal} onSave={saveCargo} />
+        </Modal>
+      )}
+      {deletingId && (
+        <Modal title="¿Eliminar este cargo?" onClose={() => setDeletingId(null)}>
+          <p className="text-sm text-[#2A2118] mb-4">No se puede deshacer.</p>
+          <div className="flex gap-2">
+            <button onClick={() => setDeletingId(null)} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
+            <button onClick={() => { delCargo(deletingId); setDeletingId(null); }} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, eliminar</button>
+          </div>
         </Modal>
       )}
     </div>
