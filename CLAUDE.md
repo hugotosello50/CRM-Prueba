@@ -30,6 +30,15 @@ todo lo que quedó anotado en la conversación desde el último "ejecutar".
 Cada vez que se ejecuta lo anotado (con "ejecutar" o "ejecutar todo") y se
 llega a hacer commit/push de cambios de código, hay que subir el número de
 versión de la app (`APP_VERSION` en `components/CRM.jsx`, se ve al pie de
-Configuración). Convención: bump de versión menor (ej. 1.17.0 → 1.18.0),
-reiniciando el parche a 0. No aplica a cambios que no toquen código de la app
-(por ejemplo, editar este mismo archivo).
+Configuración), siguiendo semver por profundidad, a criterio propio sin
+preguntar:
+- **Patch** (último dígito, ej. 1.17.0 → 1.17.1): correcciones chicas,
+  ajustes visuales, textos.
+- **Minor** (dígito del medio, ej. 1.17.1 → 1.18.0, resetea el patch a 0):
+  funcionalidad nueva que no rompe nada existente.
+- **Major** (primer dígito, ej. 1.x.x → 2.0.0): cambios grandes de
+  arquitectura. Acá **sí hay que consultar al usuario antes** de subirlo,
+  nunca decidirlo solo.
+
+No aplica a cambios que no toquen código de la app (por ejemplo, editar este
+mismo archivo).
