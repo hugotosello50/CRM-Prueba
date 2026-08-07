@@ -24,3 +24,12 @@ No está bien:
 
 Cuando el usuario dice "ejecutar" (o "ejecutar todo"), recién ahí se implementa
 todo lo que quedó anotado en la conversación desde el último "ejecutar".
+
+## Regla fija: subir el número de versión al ejecutar
+
+Cada vez que se ejecuta lo anotado (con "ejecutar" o "ejecutar todo") y se
+llega a hacer commit/push de cambios de código, hay que subir el número de
+versión de la app (`APP_VERSION` en `components/CRM.jsx`, se ve al pie de
+Configuración). Convención: bump de versión menor (ej. 1.17.0 → 1.18.0),
+reiniciando el parche a 0. No aplica a cambios que no toquen código de la app
+(por ejemplo, editar este mismo archivo).
