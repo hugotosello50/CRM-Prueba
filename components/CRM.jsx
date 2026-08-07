@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.20.0";
+const APP_VERSION = "1.21.0";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -3778,16 +3778,35 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
     ...prev,
     hiloObra: (prev.hiloObra || []).filter((r) => !(r.hiloId === id && r.obraId === obraId)),
   }));
-  const agregarPersona = (personaId, comoPrincipal) => setCore((prev) => ({
-    ...prev,
-    hilos: prev.hilos.map((h) => {
+  // Agrega la persona al hilo y, si tiene empresas vinculadas, arrastra también esas
+  // empresas y las obras de esas empresas (además de las obras vinculadas directamente
+  // a la persona) — mismo criterio que al crear un hilo desde una persona.
+  const agregarPersona = (personaId, comoPrincipal) => setCore((prev) => {
+    const hilo = prev.hilos.find((h) => h.id === id);
+    if (!hilo) return prev;
+    const yaActivo = participantesActivos(hilo).some((p) => p.personaId === personaId);
+    const hilos = yaActivo ? prev.hilos : prev.hilos.map((h) => {
       if (h.id !== id) return h;
-      const yaActivo = participantesActivos(h).some((p) => p.personaId === personaId);
-      if (yaActivo) return h;
       const nuevos = comoPrincipal ? h.participantes.map((p) => (p.hasta ? p : { ...p, principal: false })) : h.participantes;
       return { ...h, participantes: [...nuevos, { id: uid("part"), personaId, desde: todayISO(), hasta: null, principal: comoPrincipal || participantesActivos(h).length === 0 }] };
-    }),
-  }));
+    });
+
+    const empresasDeEsaPersona = prev.personaEmpresa.filter((r) => r.personaId === personaId).map((r) => r.empresaId);
+    const yaVinculadasEmpresa = new Set((prev.hiloEmpresa || []).filter((r) => r.hiloId === id).map((r) => r.empresaId));
+    const nuevasEmpresaLinks = empresasDeEsaPersona.filter((eid) => !yaVinculadasEmpresa.has(eid)).map((eid) => ({ id: uid("he"), hiloId: id, empresaId: eid }));
+    const empresasParaObras = [...yaVinculadasEmpresa, ...nuevasEmpresaLinks.map((r) => r.empresaId)];
+    const obrasDirectas = (prev.personaObra || []).filter((r) => r.personaId === personaId).map((r) => r.obraId);
+    const obrasDeEmpresas = prev.empresaObra.filter((r) => empresasParaObras.includes(r.empresaId)).map((r) => r.obraId);
+    const yaVinculadasObra = new Set((prev.hiloObra || []).filter((r) => r.hiloId === id).map((r) => r.obraId));
+    const nuevasObraLinks = [...new Set([...obrasDirectas, ...obrasDeEmpresas])].filter((oid) => !yaVinculadasObra.has(oid)).map((oid) => ({ id: uid("ho"), hiloId: id, obraId: oid }));
+
+    return {
+      ...prev,
+      hilos,
+      hiloEmpresa: [...(prev.hiloEmpresa || []), ...nuevasEmpresaLinks],
+      hiloObra: [...(prev.hiloObra || []), ...nuevasObraLinks],
+    };
+  });
   const updateAccion = (accId, cambios) => setAcciones((prev) => prev.map((a) => (a.id === accId ? { ...a, ...cambios } : a)));
   const deleteAccion = (accId) => setAcciones((prev) => prev.filter((a) => a.id !== accId));
   const reprogramar = (nuevaFecha) => { if (pendienteActual) updateAccion(pendienteActual.id, { fechaProgramada: nuevaFecha }); setShowReprogramar(false); };
@@ -4239,7 +4258,16 @@ function VincularEmpresaAHiloForm({ core, setCore, hiloId, onClose }) {
 
   const agregarExistente = () => {
     if (!empresaId) return;
-    setCore((prev) => ({ ...prev, hiloEmpresa: [...(prev.hiloEmpresa || []), { id: uid("he"), hiloId, empresaId }] }));
+    setCore((prev) => {
+      const obrasDeEsaEmpresa = prev.empresaObra.filter((r) => r.empresaId === empresaId).map((r) => r.obraId);
+      const yaVinculadasObra = new Set((prev.hiloObra || []).filter((r) => r.hiloId === hiloId).map((r) => r.obraId));
+      const nuevasObraLinks = obrasDeEsaEmpresa.filter((oid) => !yaVinculadasObra.has(oid)).map((oid) => ({ id: uid("ho"), hiloId, obraId: oid }));
+      return {
+        ...prev,
+        hiloEmpresa: [...(prev.hiloEmpresa || []), { id: uid("he"), hiloId, empresaId }],
+        hiloObra: [...(prev.hiloObra || []), ...nuevasObraLinks],
+      };
+    });
     setAgregadas((a) => [...a, empresaId]);
     setEmpresaId("");
   };
