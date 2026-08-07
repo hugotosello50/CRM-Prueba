@@ -42,3 +42,10 @@ preguntar:
 
 No aplica a cambios que no toquen código de la app (por ejemplo, editar este
 mismo archivo).
+
+# Contexto del negocio
+
+La empresa del usuario es **Feyro**, dedicada a la venta de materiales
+eléctricos dentro del rubro de la construcción de inmuebles. La app es un CRM
+para gestionar las relaciones comerciales de ese negocio (personas, empresas,
+obras, seguimientos).
