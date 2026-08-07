@@ -22,6 +22,11 @@ create policy "Users can update own crm data"
   on public.crm_data for update
   using (auth.uid() = user_id);
 
+-- Habilita Realtime sobre esta tabla: así, cuando un dispositivo guarda un cambio,
+-- los demás dispositivos abiertos con la misma cuenta lo reciben solos y actualizan
+-- su copia local, sin que el usuario tenga que refrescar manualmente.
+alter publication supabase_realtime add table public.crm_data;
+
 -- Guarda el access/refresh token de Google Contacts por usuario. A propósito NO tiene
 -- políticas para los roles "anon"/"authenticated" — con RLS activado y sin políticas,
 -- solo el service role (usado exclusivamente por las API routes del servidor, nunca por

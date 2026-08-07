@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.17.0";
+const APP_VERSION = "1.18.0";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -734,6 +734,45 @@ export default function CRM({ userId, onLogout }) {
   const primerRenderCore = useRef(true);
   const primerRenderAcciones = useRef(true);
   const resumenMostrado = useRef(false);
+  const coreRef = useRef(null);
+  const accionesRef = useRef(null);
+  const aplicandoRemotoCore = useRef(false);
+  const aplicandoRemotoAcciones = useRef(false);
+
+  useEffect(() => { coreRef.current = core; }, [core]);
+  useEffect(() => { accionesRef.current = acciones; }, [acciones]);
+
+  // Tiempo real: cuando otro dispositivo con la misma cuenta guarda un cambio, este
+  // dispositivo lo recibe solo y actualiza su copia local, sin que el usuario tenga
+  // que refrescar manualmente. Requiere Realtime habilitado en la tabla crm_data.
+  useEffect(() => {
+    if (!userId) return;
+    const canal = supabase
+      .channel(`crm_data_${userId}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "crm_data", filter: `user_id=eq.${userId}` },
+        (payload) => {
+          const nuevo = payload.new;
+          if (!nuevo) return;
+          if (nuevo.core) {
+            const nuevoCore = normalizeCore(nuevo.core);
+            if (JSON.stringify(nuevoCore) !== JSON.stringify(coreRef.current)) {
+              aplicandoRemotoCore.current = true;
+              setCore(nuevoCore);
+            }
+          }
+          if (nuevo.acciones) {
+            if (JSON.stringify(nuevo.acciones) !== JSON.stringify(accionesRef.current)) {
+              aplicandoRemotoAcciones.current = true;
+              setAcciones(nuevo.acciones);
+            }
+          }
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(canal); };
+  }, [userId]);
 
   useEffect(() => {
     (async () => {
@@ -765,6 +804,7 @@ export default function CRM({ userId, onLogout }) {
   useEffect(() => {
     if (!core) return;
     if (primerRenderCore.current) { primerRenderCore.current = false; return; }
+    if (aplicandoRemotoCore.current) { aplicandoRemotoCore.current = false; return; }
     setGuardado("guardando");
     saveCrmField(userId, "core", core).then((ok) => setGuardado(ok ? "ok" : "error"));
   }, [core, userId]);
@@ -772,6 +812,7 @@ export default function CRM({ userId, onLogout }) {
   useEffect(() => {
     if (!acciones) return;
     if (primerRenderAcciones.current) { primerRenderAcciones.current = false; return; }
+    if (aplicandoRemotoAcciones.current) { aplicandoRemotoAcciones.current = false; return; }
     setGuardado("guardando");
     saveCrmField(userId, "acciones", acciones).then((ok) => setGuardado(ok ? "ok" : "error"));
   }, [acciones, userId]);
