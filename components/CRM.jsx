@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.21.0";
+const APP_VERSION = "1.21.1";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -170,7 +170,7 @@ function normalizeCore(c) {
 async function loadCrmRow(userId) {
   const { data, error } = await supabase
     .from("crm_data")
-    .select("core, acciones")
+    .select("core, acciones, updated_at")
     .eq("user_id", userId)
     .maybeSingle();
   if (error) throw error;
@@ -182,20 +182,23 @@ async function insertCrmRow(userId, core, acciones) {
   if (error) throw error;
 }
 
-async function saveCrmField(userId, field, value, intento = 0) {
+// Devuelve la fecha (updated_at) que efectivamente quedó guardada, o null si falló — el
+// llamador la usa para saber qué avisos de tiempo real son más nuevos que su propio guardado.
+async function saveCrmField(userId, field, value, intento = 0, ts) {
+  const updatedAt = ts || new Date().toISOString();
   try {
     const { error } = await supabase
       .from("crm_data")
-      .update({ [field]: value, updated_at: new Date().toISOString() })
+      .update({ [field]: value, updated_at: updatedAt })
       .eq("user_id", userId);
     if (error) throw error;
-    return true;
+    return updatedAt;
   } catch {
     if (intento < 2) {
       await new Promise((r) => setTimeout(r, 400));
-      return saveCrmField(userId, field, value, intento + 1);
+      return saveCrmField(userId, field, value, intento + 1, updatedAt);
     }
-    return false;
+    return null;
   }
 }
 
@@ -768,6 +771,10 @@ export default function CRM({ userId, onLogout }) {
   const accionesRef = useRef(null);
   const aplicandoRemotoCore = useRef(false);
   const aplicandoRemotoAcciones = useRef(false);
+  // Última fecha de guardado (propia o recibida) que ya se aplicó — un aviso de tiempo real
+  // más viejo o igual que esto se ignora, para que un aviso demorado o fuera de orden no
+  // pueda pisar un cambio más reciente.
+  const ultimoUpdatedAtRef = useRef(null);
 
   useEffect(() => { coreRef.current = core; }, [core]);
   useEffect(() => { accionesRef.current = acciones; }, [acciones]);
@@ -785,18 +792,15 @@ export default function CRM({ userId, onLogout }) {
         (payload) => {
           const nuevo = payload.new;
           if (!nuevo) return;
-          if (nuevo.core) {
-            const nuevoCore = normalizeCore(nuevo.core);
-            if (JSON.stringify(nuevoCore) !== JSON.stringify(coreRef.current)) {
-              aplicandoRemotoCore.current = true;
-              setCore(nuevoCore);
-            }
+          if (nuevo.updated_at && ultimoUpdatedAtRef.current && nuevo.updated_at <= ultimoUpdatedAtRef.current) return;
+          if (nuevo.updated_at) ultimoUpdatedAtRef.current = nuevo.updated_at;
+          if (nuevo.core && JSON.stringify(nuevo.core) !== JSON.stringify(coreRef.current)) {
+            aplicandoRemotoCore.current = true;
+            setCore(nuevo.core);
           }
-          if (nuevo.acciones) {
-            if (JSON.stringify(nuevo.acciones) !== JSON.stringify(accionesRef.current)) {
-              aplicandoRemotoAcciones.current = true;
-              setAcciones(nuevo.acciones);
-            }
+          if (nuevo.acciones && JSON.stringify(nuevo.acciones) !== JSON.stringify(accionesRef.current)) {
+            aplicandoRemotoAcciones.current = true;
+            setAcciones(nuevo.acciones);
           }
         }
       )
@@ -812,19 +816,26 @@ export default function CRM({ userId, onLogout }) {
       let a = row ? row.acciones : seedAcciones();
       if (!row) {
         await insertCrmRow(userId, c, a);
+        ultimoUpdatedAtRef.current = new Date().toISOString();
+      } else {
+        ultimoUpdatedAtRef.current = row.updated_at || new Date().toISOString();
       }
       // Migración: las acciones de versiones anteriores no tenían hiloId (eran de prueba).
       // Se reinician hilos + acciones con datos de ejemplo del nuevo sistema.
       if (a.some((accion) => !accion.hiloId)) {
         c = { ...c, hilos: seedCore().hilos };
         a = seedAcciones();
-        await saveCrmField(userId, "core", c);
-        await saveCrmField(userId, "acciones", a);
+        const ts = new Date().toISOString();
+        ultimoUpdatedAtRef.current = ts;
+        await saveCrmField(userId, "core", c, 0, ts);
+        await saveCrmField(userId, "acciones", a, 0, ts);
       }
       // Migración: asignar número correlativo global y separar "nota planificada" de "nota de lo hecho".
       if (a.some((accion) => typeof accion.numero !== "number")) {
         a = migrarNumerosYNotas(a);
-        await saveCrmField(userId, "acciones", a);
+        const ts = new Date().toISOString();
+        ultimoUpdatedAtRef.current = ts;
+        await saveCrmField(userId, "acciones", a, 0, ts);
       }
       setCore(c);
       setAcciones(a);
@@ -835,16 +846,20 @@ export default function CRM({ userId, onLogout }) {
     if (!core) return;
     if (primerRenderCore.current) { primerRenderCore.current = false; return; }
     if (aplicandoRemotoCore.current) { aplicandoRemotoCore.current = false; return; }
+    const ts = new Date().toISOString();
+    ultimoUpdatedAtRef.current = ts;
     setGuardado("guardando");
-    saveCrmField(userId, "core", core).then((ok) => setGuardado(ok ? "ok" : "error"));
+    saveCrmField(userId, "core", core, 0, ts).then((ok) => setGuardado(ok ? "ok" : "error"));
   }, [core, userId]);
 
   useEffect(() => {
     if (!acciones) return;
     if (primerRenderAcciones.current) { primerRenderAcciones.current = false; return; }
     if (aplicandoRemotoAcciones.current) { aplicandoRemotoAcciones.current = false; return; }
+    const ts = new Date().toISOString();
+    ultimoUpdatedAtRef.current = ts;
     setGuardado("guardando");
-    saveCrmField(userId, "acciones", acciones).then((ok) => setGuardado(ok ? "ok" : "error"));
+    saveCrmField(userId, "acciones", acciones, 0, ts).then((ok) => setGuardado(ok ? "ok" : "error"));
   }, [acciones, userId]);
 
   useEffect(() => {
