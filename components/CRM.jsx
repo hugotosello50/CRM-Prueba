@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.19.0";
+const APP_VERSION = "1.20.0";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -1008,6 +1008,7 @@ export default function CRM({ userId, onLogout }) {
                   <LogOut size={16} /> Cerrar sesión
                 </button>
               )}
+              <p className="text-center text-[10px] font-mono text-[#C9C1AE] pt-3">Versión {APP_VERSION}</p>
             </div>
           </div>
         </Modal>
@@ -1147,8 +1148,15 @@ function AgendaView({ core, setCore, acciones, setAcciones, onOpen }) {
 function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empresaFijaId, obraFijaId, onCreated, onCancelar }) {
   const [titulo, setTitulo] = useState("");
   const [personaId, setPersonaId] = useState("");
+  // Al arrancar desde una persona o una empresa fijas, se precargan también todas las
+  // empresas/obras que dependen de ellas — después es más fácil corregir sacando lo que
+  // sobra que buscando lo que falta.
   const [empresaIds, setEmpresaIds] = useState(() => {
-    const base = empresaFijaId ? [empresaFijaId] : [];
+    let base = empresaFijaId ? [empresaFijaId] : [];
+    if (personaFija) {
+      const empresasDePersona = core.personaEmpresa.filter((r) => r.personaId === personaFija.id).map((r) => r.empresaId);
+      base = [...new Set([...base, ...empresasDePersona])];
+    }
     if (obraFijaId) {
       const dueña = core.empresaObra.find((r) => r.obraId === obraFijaId)?.empresaId;
       if (dueña && !base.includes(dueña)) base.push(dueña);
@@ -1156,7 +1164,17 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
     return base;
   });
   const [empresaParaAgregar, setEmpresaParaAgregar] = useState("");
-  const [obraIds, setObraIds] = useState(obraFijaId ? [obraFijaId] : []);
+  const [obraIds, setObraIds] = useState(() => {
+    let base = obraFijaId ? [obraFijaId] : [];
+    if (personaFija) {
+      const obrasDirectas = (core.personaObra || []).filter((r) => r.personaId === personaFija.id).map((r) => r.obraId);
+      base = [...new Set([...base, ...obrasDirectas])];
+    }
+    const empresasBase = empresaFijaId ? [empresaFijaId] : [];
+    if (personaFija) empresasBase.push(...core.personaEmpresa.filter((r) => r.personaId === personaFija.id).map((r) => r.empresaId));
+    const obrasDeEmpresas = core.empresaObra.filter((r) => empresasBase.includes(r.empresaId)).map((r) => r.obraId);
+    return [...new Set([...base, ...obrasDeEmpresas])];
+  });
   const [obraParaAgregar, setObraParaAgregar] = useState("");
   const [showVincularEmpresa, setShowVincularEmpresa] = useState(false);
   const [showVincularObra, setShowVincularObra] = useState(false);
@@ -1193,6 +1211,8 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
   const agregarEmpresa = (empresaId) => {
     if (!empresaId) return;
     setEmpresaIds((ids) => (ids.includes(empresaId) ? ids : [...ids, empresaId]));
+    const obrasDeEsaEmpresa = core.empresaObra.filter((r) => r.empresaId === empresaId).map((r) => r.obraId);
+    if (obrasDeEsaEmpresa.length > 0) setObraIds((ids) => [...new Set([...ids, ...obrasDeEsaEmpresa])]);
   };
   const quitarEmpresa = (empresaId) => setEmpresaIds((ids) => ids.filter((x) => x !== empresaId));
   const agregarObra = (nuevoObraId) => {
@@ -1202,6 +1222,17 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
     if (dueña) agregarEmpresa(dueña);
   };
   const quitarObra = (obraId) => setObraIds((ids) => ids.filter((x) => x !== obraId));
+  // Al elegir una persona en el flujo libre (sin personaFija), precarga sus empresas y las
+  // obras de esas empresas — mismo criterio que al entrar desde la ficha de una persona.
+  const elegirPersona = (nuevaPersonaId) => {
+    setPersonaId(nuevaPersonaId);
+    if (!nuevaPersonaId) return;
+    const empresasDeEsaPersona = core.personaEmpresa.filter((r) => r.personaId === nuevaPersonaId).map((r) => r.empresaId);
+    const obrasDirectas = (core.personaObra || []).filter((r) => r.personaId === nuevaPersonaId).map((r) => r.obraId);
+    const obrasDeEsasEmpresas = core.empresaObra.filter((r) => empresasDeEsaPersona.includes(r.empresaId)).map((r) => r.obraId);
+    if (empresasDeEsaPersona.length > 0) setEmpresaIds((ids) => [...new Set([...ids, ...empresasDeEsaPersona])]);
+    if (obrasDirectas.length + obrasDeEsasEmpresas.length > 0) setObraIds((ids) => [...new Set([...ids, ...obrasDirectas, ...obrasDeEsasEmpresas])]);
+  };
 
   useEffect(() => {
     if (showPrimerContacto && programarProxima && modoFecha === "periodo") {
@@ -1257,7 +1288,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
           <BuscadorSelect
             opciones={core.personas.map((p) => ({ id: p.id, label: p.nombre }))}
             value={personaId}
-            onChange={setPersonaId}
+            onChange={elegirPersona}
             vacioLabel="— ninguna —"
             placeholder="Buscar persona..."
           />
@@ -1508,11 +1539,11 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
         <VincularEmpresaForm
           core={core}
           setCore={setCore}
+          excluirIds={empresasDeLaPersona.map((e) => e.id)}
           onClose={() => setShowVincularEmpresa(false)}
           onSave={(rel) => {
             setCore((prev) => ({ ...prev, personaEmpresa: [...prev.personaEmpresa, { ...rel, personaId: personaFija.id, id: uid("pe") }] }));
             agregarEmpresa(rel.empresaId);
-            setShowVincularEmpresa(false);
           }}
         />
       )}
@@ -2982,45 +3013,65 @@ function PersonaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
   const [notas, setNotas] = useState(initial.notas || "");
   const [confirmarEliminar, setConfirmarEliminar] = useState(false);
 
-  const [vincularEmpresa, setVincularEmpresa] = useState(false);
+  const [empresaIds, setEmpresaIds] = useState([]);
+  const [empresaParaAgregar, setEmpresaParaAgregar] = useState("");
   const [modoEmpresa, setModoEmpresa] = useState("existente"); // 'existente' | 'nueva'
-  const [empresaId, setEmpresaId] = useState(core.empresas[0]?.id || "");
   const [empresaNueva, setEmpresaNueva] = useState("");
 
-  const [vincularObra, setVincularObra] = useState(false);
+  const [obraIds, setObraIds] = useState([]);
+  const [obraParaAgregar, setObraParaAgregar] = useState("");
   const [modoObra, setModoObra] = useState("existente"); // 'existente' | 'nueva'
-  const [obraId, setObraId] = useState(core.obras[0]?.id || "");
   const [obraNueva, setObraNueva] = useState("");
+
+  const agregarEmpresa = () => {
+    if (!empresaParaAgregar) return;
+    setEmpresaIds((ids) => [...ids, empresaParaAgregar]);
+    setEmpresaParaAgregar("");
+  };
+  const crearEmpresaYAgregar = () => {
+    if (!empresaNueva.trim()) return;
+    const nueva = { id: uid("E"), denominacion: empresaNueva.trim(), direccion: "", ciudad: "", cabeceraId: null };
+    setCore((prev) => ({ ...prev, empresas: [nueva, ...prev.empresas] }));
+    setEmpresaIds((ids) => [...ids, nueva.id]);
+    setEmpresaNueva("");
+    setModoEmpresa("existente");
+  };
+  const quitarEmpresa = (eid) => setEmpresaIds((ids) => ids.filter((x) => x !== eid));
+
+  const agregarObra = () => {
+    if (!obraParaAgregar) return;
+    setObraIds((ids) => [...ids, obraParaAgregar]);
+    setObraParaAgregar("");
+  };
+  const crearObraYAgregar = () => {
+    if (!obraNueva.trim()) return;
+    const nueva = { id: uid("O"), nombre: obraNueva.trim(), descripcion: "", metros2: 0, direccion: "", ciudad: "" };
+    setCore((prev) => ({ ...prev, obras: [nueva, ...prev.obras] }));
+    setObraIds((ids) => [...ids, nueva.id]);
+    setObraNueva("");
+    setModoObra("existente");
+  };
+  const quitarObra = (oid) => setObraIds((ids) => ids.filter((x) => x !== oid));
 
   const submit = () => {
     if (!nombre.trim()) return;
     const personaId = initial.id || uid("P");
-
-    if (vincularEmpresa) {
-      if (modoEmpresa === "existente" && empresaId) {
-        setCore((prev) => ({ ...prev, personaEmpresa: [...prev.personaEmpresa, { id: uid("pe"), personaId, empresaId }] }));
-      } else if (modoEmpresa === "nueva" && empresaNueva.trim()) {
-        const nueva = { id: uid("E"), denominacion: empresaNueva.trim(), direccion: "", ciudad: "" };
-        setCore((prev) => ({ ...prev, empresas: [nueva, ...prev.empresas], personaEmpresa: [...prev.personaEmpresa, { id: uid("pe"), personaId, empresaId: nueva.id }] }));
-      }
+    if (empresaIds.length > 0 || obraIds.length > 0) {
+      setCore((prev) => {
+        const empresaIdsYaLinkeadas = new Set(empresaIds);
+        const personaEmpresa = [...prev.personaEmpresa, ...empresaIds.map((empresaId) => ({ id: uid("pe"), personaId, empresaId }))];
+        const personaObra = [...(prev.personaObra || [])];
+        for (const obraId of obraIds) {
+          personaObra.push({ id: uid("po"), personaId, obraId });
+          const dueña = core.empresaObra.find((r) => r.obraId === obraId)?.empresaId;
+          if (dueña && !empresaIdsYaLinkeadas.has(dueña)) {
+            personaEmpresa.push({ id: uid("pe"), personaId, empresaId: dueña });
+            empresaIdsYaLinkeadas.add(dueña);
+          }
+        }
+        return { ...prev, personaEmpresa, personaObra };
+      });
     }
-    if (vincularObra) {
-      if (modoObra === "existente" && obraId) {
-        const dueña = core.empresaObra.find((r) => r.obraId === obraId)?.empresaId;
-        setCore((prev) => {
-          const yaVinculadaEmpresa = dueña && prev.personaEmpresa.some((r) => r.personaId === personaId && r.empresaId === dueña);
-          return {
-            ...prev,
-            personaObra: [...(prev.personaObra || []), { id: uid("po"), personaId, obraId }],
-            personaEmpresa: dueña && !yaVinculadaEmpresa ? [...prev.personaEmpresa, { id: uid("pe"), personaId, empresaId: dueña }] : prev.personaEmpresa,
-          };
-        });
-      } else if (modoObra === "nueva" && obraNueva.trim()) {
-        const nueva = { id: uid("O"), nombre: obraNueva.trim(), descripcion: "", metros2: 0, direccion: "", ciudad: "" };
-        setCore((prev) => ({ ...prev, obras: [nueva, ...prev.obras], personaObra: [...(prev.personaObra || []), { id: uid("po"), personaId, obraId: nueva.id }] }));
-      }
-    }
-
     onSave({ id: personaId, nombre: nombre.trim(), whatsapp, direccion, ciudad, notas });
   };
 
@@ -3033,63 +3084,99 @@ function PersonaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
       <Field label="Notas generales"><textarea className={inputCls} rows={2} value={notas} onChange={(e) => setNotas(e.target.value)} /></Field>
 
       <div className="border-t border-dashed border-[#E4DECF] mt-1 mb-3 pt-3">
-        <label className="flex items-center gap-2 mb-2 text-sm font-semibold text-[#2A2118]">
-          <input type="checkbox" checked={vincularEmpresa} onChange={(e) => setVincularEmpresa(e.target.checked)} /> Vincular con una empresa
-        </label>
-        {vincularEmpresa && (
-          <div className="mb-1">
-            <div className="flex gap-2 mb-2">
-              <button type="button" onClick={() => setModoEmpresa("existente")} style={{ backgroundColor: modoEmpresa === "existente" ? "#2A2F36" : "#E7E2D8", color: modoEmpresa === "existente" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-1.5 rounded-sm text-xs font-bold">Empresa existente</button>
-              <button type="button" onClick={() => setModoEmpresa("nueva")} style={{ backgroundColor: modoEmpresa === "nueva" ? "#2A2F36" : "#E7E2D8", color: modoEmpresa === "nueva" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-1.5 rounded-sm text-xs font-bold">Agregar empresa</button>
+        <Field label="Empresa(s)">
+          {empresaIds.length > 0 && (
+            <div className="space-y-1 mb-2">
+              {empresaIds.map((eid) => {
+                const e = core.empresas.find((ee) => ee.id === eid);
+                if (!e) return null;
+                return (
+                  <div key={eid} className="flex items-center justify-between gap-2 bg-[#F7F5F0] border border-[#E4DECF] rounded-sm px-2.5 py-1.5 text-sm">
+                    <span className="font-semibold text-[#2A2118]">{e.denominacion}</span>
+                    <button type="button" onClick={() => quitarEmpresa(eid)} className="text-[#B0452E]"><X size={14} /></button>
+                  </div>
+                );
+              })}
             </div>
-            {modoEmpresa === "existente" ? (
-              core.empresas.length === 0 ? (
-                <p className="text-xs text-[#A69C88] mb-2">No hay empresas cargadas — probá creando una nueva.</p>
-              ) : (
-                <Field label="Empresa">
-                  <BuscadorSelect
-                    opciones={core.empresas.map((e) => ({ id: e.id, label: e.denominacion }))}
-                    value={empresaId}
-                    onChange={setEmpresaId}
-                    placeholder="Buscar empresa..."
-                  />
-                </Field>
-              )
-            ) : (
-              <Field label="Denominación"><input className={inputCls} value={empresaNueva} onChange={(e) => setEmpresaNueva(e.target.value)} /></Field>
-            )}
+          )}
+          <div className="flex gap-1.5 mb-2">
+            <button type="button" onClick={() => setModoEmpresa("existente")} style={{ backgroundColor: modoEmpresa === "existente" ? "#2A2F36" : "#E7E2D8", color: modoEmpresa === "existente" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-1.5 rounded-sm text-xs font-bold">Existente</button>
+            <button type="button" onClick={() => setModoEmpresa("nueva")} style={{ backgroundColor: modoEmpresa === "nueva" ? "#2A2F36" : "#E7E2D8", color: modoEmpresa === "nueva" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-1.5 rounded-sm text-xs font-bold">Nueva</button>
           </div>
-        )}
+          {modoEmpresa === "existente" ? (
+            (() => {
+              const opciones = core.empresas.filter((e) => !empresaIds.includes(e.id));
+              return opciones.length === 0 ? (
+                <p className="text-xs text-[#A69C88] mb-2">No hay más empresas disponibles.</p>
+              ) : (
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <BuscadorSelect
+                      opciones={opciones.map((e) => ({ id: e.id, label: e.denominacion }))}
+                      value={empresaParaAgregar}
+                      onChange={setEmpresaParaAgregar}
+                      placeholder="Buscar empresa..."
+                    />
+                  </div>
+                  <button type="button" disabled={!empresaParaAgregar} onClick={agregarEmpresa} className="shrink-0 border border-[#E4DECF] rounded-sm px-3 text-sm font-bold text-[#2A2118] disabled:text-[#C9C1AE] disabled:cursor-not-allowed">+ Agregar</button>
+                </div>
+              );
+            })()
+          ) : (
+            <div className="flex gap-2">
+              <input className={`${inputCls} flex-1`} placeholder="Denominación" value={empresaNueva} onChange={(e) => setEmpresaNueva(e.target.value)} />
+              <button type="button" disabled={!empresaNueva.trim()} onClick={crearEmpresaYAgregar} className="shrink-0 border border-[#E4DECF] rounded-sm px-3 text-sm font-bold text-[#2A2118] disabled:text-[#C9C1AE] disabled:cursor-not-allowed">+ Agregar</button>
+            </div>
+          )}
+        </Field>
       </div>
 
       <div className="border-t border-dashed border-[#E4DECF] mb-3 pt-3">
-        <label className="flex items-center gap-2 mb-2 text-sm font-semibold text-[#2A2118]">
-          <input type="checkbox" checked={vincularObra} onChange={(e) => setVincularObra(e.target.checked)} /> Vincular con una obra
-        </label>
-        {vincularObra && (
-          <div className="mb-1">
-            <div className="flex gap-2 mb-2">
-              <button type="button" onClick={() => setModoObra("existente")} style={{ backgroundColor: modoObra === "existente" ? "#2A2F36" : "#E7E2D8", color: modoObra === "existente" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-1.5 rounded-sm text-xs font-bold">Obra existente</button>
-              <button type="button" onClick={() => setModoObra("nueva")} style={{ backgroundColor: modoObra === "nueva" ? "#2A2F36" : "#E7E2D8", color: modoObra === "nueva" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-1.5 rounded-sm text-xs font-bold">Agregar obra</button>
+        <Field label="Obra(s)">
+          {obraIds.length > 0 && (
+            <div className="space-y-1 mb-2">
+              {obraIds.map((oid) => {
+                const o = core.obras.find((oo) => oo.id === oid);
+                if (!o) return null;
+                return (
+                  <div key={oid} className="flex items-center justify-between gap-2 bg-[#F7F5F0] border border-[#E4DECF] rounded-sm px-2.5 py-1.5 text-sm">
+                    <span className="font-semibold text-[#2A2118]">{o.nombre}</span>
+                    <button type="button" onClick={() => quitarObra(oid)} className="text-[#B0452E]"><X size={14} /></button>
+                  </div>
+                );
+              })}
             </div>
-            {modoObra === "existente" ? (
-              core.obras.length === 0 ? (
-                <p className="text-xs text-[#A69C88] mb-2">No hay obras cargadas — probá creando una nueva.</p>
-              ) : (
-                <Field label="Obra">
-                  <BuscadorSelect
-                    opciones={core.obras.map((o) => ({ id: o.id, label: o.nombre }))}
-                    value={obraId}
-                    onChange={setObraId}
-                    placeholder="Buscar obra..."
-                  />
-                </Field>
-              )
-            ) : (
-              <Field label="Nombre de la obra"><input className={inputCls} value={obraNueva} onChange={(e) => setObraNueva(e.target.value)} /></Field>
-            )}
+          )}
+          <div className="flex gap-1.5 mb-2">
+            <button type="button" onClick={() => setModoObra("existente")} style={{ backgroundColor: modoObra === "existente" ? "#2A2F36" : "#E7E2D8", color: modoObra === "existente" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-1.5 rounded-sm text-xs font-bold">Existente</button>
+            <button type="button" onClick={() => setModoObra("nueva")} style={{ backgroundColor: modoObra === "nueva" ? "#2A2F36" : "#E7E2D8", color: modoObra === "nueva" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-1.5 rounded-sm text-xs font-bold">Nueva</button>
           </div>
-        )}
+          {modoObra === "existente" ? (
+            (() => {
+              const opciones = core.obras.filter((o) => !obraIds.includes(o.id));
+              return opciones.length === 0 ? (
+                <p className="text-xs text-[#A69C88] mb-2">No hay más obras disponibles.</p>
+              ) : (
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <BuscadorSelect
+                      opciones={opciones.map((o) => ({ id: o.id, label: o.nombre }))}
+                      value={obraParaAgregar}
+                      onChange={setObraParaAgregar}
+                      placeholder="Buscar obra..."
+                    />
+                  </div>
+                  <button type="button" disabled={!obraParaAgregar} onClick={agregarObra} className="shrink-0 border border-[#E4DECF] rounded-sm px-3 text-sm font-bold text-[#2A2118] disabled:text-[#C9C1AE] disabled:cursor-not-allowed">+ Agregar</button>
+                </div>
+              );
+            })()
+          ) : (
+            <div className="flex gap-2">
+              <input className={`${inputCls} flex-1`} placeholder="Nombre de la obra" value={obraNueva} onChange={(e) => setObraNueva(e.target.value)} />
+              <button type="button" disabled={!obraNueva.trim()} onClick={crearObraYAgregar} className="shrink-0 border border-[#E4DECF] rounded-sm px-3 text-sm font-bold text-[#2A2118] disabled:text-[#C9C1AE] disabled:cursor-not-allowed">+ Agregar</button>
+            </div>
+          )}
+        </Field>
       </div>
 
       <div className="flex items-center gap-2 mt-2">
@@ -3234,8 +3321,9 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
         <VincularEmpresaForm
           core={core}
           setCore={setCore}
+          excluirIds={relEmpresas.map((r) => r.empresaId)}
           onClose={() => setShowRel(false)}
-          onSave={(rel) => { setCore((prev) => ({ ...prev, personaEmpresa: [...prev.personaEmpresa, { ...rel, personaId: id, id: uid("pe") }] })); setShowRel(false); }}
+          onSave={(rel) => setCore((prev) => ({ ...prev, personaEmpresa: [...prev.personaEmpresa, { ...rel, personaId: id, id: uid("pe") }] }))}
         />
       )}
       {editRel && (
@@ -3385,29 +3473,42 @@ function AccionCard({ accion, acciones, core, onEdit, onDelete }) {
   );
 }
 
-function VincularEmpresaForm({ core, setCore, onClose, onSave }) {
+// Formulario reutilizable para vincular una o varias empresas (existentes o nuevas) a lo
+// que sea que el llamador esté armando (una persona, o el hilo en creación de una persona
+// fija) — cada "onSave" agrega una sin cerrar el formulario, hasta tocar "Listo".
+function VincularEmpresaForm({ core, setCore, onClose, onSave, excluirIds }) {
   const [modo, setModo] = useState("existente"); // 'existente' | 'nueva'
-  const [empresaId, setEmpresaId] = useState(core.empresas[0]?.id || "");
+  const [agregadas, setAgregadas] = useState([]);
+  const excluidas = new Set([...(excluirIds || []), ...agregadas]);
+  const disponibles = core.empresas.filter((e) => !excluidas.has(e.id));
+  const [empresaId, setEmpresaId] = useState("");
   const [nombreNueva, setNombreNueva] = useState("");
   const [direccionNueva, setDireccionNueva] = useState("");
   const [ciudadNueva, setCiudadNueva] = useState("");
   const [cargoId, setCargoId] = useState((core.cargos || [])[0]?.id || "");
   const [principal, setPrincipal] = useState(false);
 
-  const submit = () => {
-    if (modo === "existente") {
-      if (!empresaId) return;
-      onSave({ empresaId, cargoId, principal });
-    } else {
-      if (!nombreNueva.trim()) return;
-      const nueva = { id: uid("E"), denominacion: nombreNueva.trim(), direccion: direccionNueva, ciudad: ciudadNueva };
-      setCore((prev) => ({ ...prev, empresas: [nueva, ...prev.empresas] }));
-      onSave({ empresaId: nueva.id, cargoId, principal });
-    }
+  const agregarExistente = () => {
+    if (!empresaId) return;
+    onSave({ empresaId, cargoId, principal });
+    setAgregadas((a) => [...a, empresaId]);
+    setEmpresaId("");
+    setPrincipal(false);
+  };
+  const crearYAgregar = () => {
+    if (!nombreNueva.trim()) return;
+    const nueva = { id: uid("E"), denominacion: nombreNueva.trim(), direccion: direccionNueva, ciudad: ciudadNueva, cabeceraId: null };
+    setCore((prev) => ({ ...prev, empresas: [nueva, ...prev.empresas] }));
+    onSave({ empresaId: nueva.id, cargoId, principal });
+    setAgregadas((a) => [...a, nueva.id]);
+    setNombreNueva(""); setDireccionNueva(""); setCiudadNueva("");
+    setPrincipal(false);
+    setModo("existente");
   };
 
   return (
-    <Modal title="Vincular a una empresa" onClose={onClose}>
+    <Modal title="Vincular empresas" onClose={onClose}>
+      <ChipsAgregados items={agregadas} core={core} coleccion="empresas" labelKey="denominacion" />
       <div className="flex gap-2 mb-3">
         <button
           type="button"
@@ -3424,14 +3525,18 @@ function VincularEmpresaForm({ core, setCore, onClose, onSave }) {
       </div>
 
       {modo === "existente" ? (
-        <Field label="Empresa">
-          <BuscadorSelect
-            opciones={core.empresas.map((e) => ({ id: e.id, label: e.denominacion }))}
-            value={empresaId}
-            onChange={setEmpresaId}
-            placeholder="Buscar empresa..."
-          />
-        </Field>
+        disponibles.length === 0 ? (
+          <p className="text-sm text-[#A69C88] mb-3">No hay más empresas disponibles para vincular.</p>
+        ) : (
+          <Field label="Empresa">
+            <BuscadorSelect
+              opciones={disponibles.map((e) => ({ id: e.id, label: e.denominacion }))}
+              value={empresaId}
+              onChange={setEmpresaId}
+              placeholder="Buscar empresa..."
+            />
+          </Field>
+        )
       ) : (
         <>
           <Field label="Denominación *"><input className={inputCls} value={nombreNueva} onChange={(e) => setNombreNueva(e.target.value)} /></Field>
@@ -3455,7 +3560,12 @@ function VincularEmpresaForm({ core, setCore, onClose, onSave }) {
       <label className="flex items-center gap-2 mb-3 text-sm text-[#2A2118]">
         <input type="checkbox" checked={principal} onChange={(e) => setPrincipal(e.target.checked)} /> Es el contacto principal de esta empresa
       </label>
-      <PrimaryBtn full onClick={submit}>Vincular</PrimaryBtn>
+      {modo === "existente" ? (
+        <button type="button" disabled={!empresaId} onClick={agregarExistente} className="w-full border border-[#E4DECF] rounded-sm py-2.5 font-bold text-sm text-[#2A2118] disabled:text-[#C9C1AE] disabled:cursor-not-allowed mb-3">+ Agregar</button>
+      ) : (
+        <PrimaryBtn full onClick={crearYAgregar}>Crear y agregar</PrimaryBtn>
+      )}
+      <button type="button" onClick={onClose} className="w-full mt-1 bg-[#E8871E] text-[#2A2118] rounded-sm py-2.5 font-bold text-sm">Listo</button>
     </Modal>
   );
 }
