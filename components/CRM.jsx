@@ -5000,6 +5000,20 @@ function ImportarEmpresasForm({ core, setCore, onClose }) {
       </button>
       <input ref={inputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={onFile} />
 
+      <div className="border-t border-[#E4DECF] mt-1 mb-3 pt-3">
+        <button
+          type="button"
+          onClick={() => exportarExcel(
+            "empresas.xlsx",
+            ["Denominación", "CUIT", "Dirección", "Ciudad"],
+            core.empresas.map((e) => [e.denominacion, e.cuit || "", e.direccion || "", e.ciudad || ""])
+          )}
+          className="w-full flex items-center justify-center gap-2 border border-[#E4DECF] rounded-sm py-2.5 font-bold text-sm text-[#2A2118]"
+        >
+          <Download size={16} /> Exportar tus {core.empresas.length} empresas actuales
+        </button>
+      </div>
+
       {resultado?.error && (
         <p className="text-sm text-[#B0452E] bg-[#FBEEE7] border border-[#E8871E] rounded-sm p-2.5">{resultado.error}</p>
       )}
