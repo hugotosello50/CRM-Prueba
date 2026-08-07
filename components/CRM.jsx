@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.18.0";
+const APP_VERSION = "1.19.0";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -403,6 +403,27 @@ function Chip({ children, tone = "neutral" }) {
   return <span className={`text-[10px] font-bold tracking-widest uppercase px-2 py-1 rounded-sm ${tones[tone]}`}>{children}</span>;
 }
 
+// Chips de los ítems que se fueron agregando en esta apertura de un formulario de vínculo
+// múltiple (empresas, obras, personas...), con una X para deshacer cada uno sin cerrar el
+// formulario — así se puede seguir buscando y sumando más de uno antes de terminar.
+function ChipsAgregados({ items, core, coleccion, labelKey, onQuitar }) {
+  if (!items || items.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-1.5 mb-3">
+      {items.map((id) => {
+        const item = (core[coleccion] || []).find((x) => x.id === id);
+        if (!item) return null;
+        return (
+          <span key={id} className="flex items-center gap-1 bg-[#D9F0DE] text-[#1B4D2E] text-xs font-bold px-2 py-1 rounded-sm">
+            {item[labelKey]}
+            {onQuitar && <button type="button" onClick={() => onQuitar(id)} aria-label="Quitar"><X size={12} /></button>}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 function IconBtn({ onClick, children, label, danger }) {
   return (
     <button onClick={onClick} aria-label={label} className={`p-1.5 rounded-sm ${danger ? "text-[#C9A08A] hover:text-[#B0452E]" : "text-[#8A8272] hover:text-[#2A2118]"}`}>
@@ -620,6 +641,7 @@ function TagsSection({ core, setCore, entidadTipo, entidadId }) {
 
 function TagPickerForm({ core, setCore, entidadTipo, entidadId, asignadas, onClose }) {
   const [modo, setModo] = useState("existente");
+  const [etiquetaId, setEtiquetaId] = useState("");
   const [nombre, setNombre] = useState("");
   const [categoriaId, setCategoriaId] = useState((core.categorias || [])[0]?.id || "");
   const [categoriaModo, setCategoriaModo] = useState("existente"); // 'existente' | 'nueva'
@@ -627,8 +649,10 @@ function TagPickerForm({ core, setCore, entidadTipo, entidadId, asignadas, onClo
 
   const disponibles = core.etiquetas.filter((e) => e.aplicaA === entidadTipo && !asignadas.some((r) => r.etiquetaId === e.id));
 
-  const asignar = (etiquetaId) => {
+  const asignar = () => {
+    if (!etiquetaId) return;
     setCore((prev) => ({ ...prev, entidadEtiqueta: [...prev.entidadEtiqueta, { id: uid("et"), etiquetaId, entidadTipo, entidadId }] }));
+    setEtiquetaId("");
   };
 
   const crearYAsignar = () => {
@@ -648,11 +672,13 @@ function TagPickerForm({ core, setCore, entidadTipo, entidadId, asignadas, onClo
       etiquetas: [...prev.etiquetas, nueva],
       entidadEtiqueta: [...prev.entidadEtiqueta, { id: uid("et"), etiquetaId: nueva.id, entidadTipo, entidadId }],
     }));
-    onClose();
+    setNombre("");
+    setNombreCategoriaNueva("");
+    setModo("existente");
   };
 
   return (
-    <Modal title="Agregar etiqueta" onClose={onClose}>
+    <Modal title="Agregar etiquetas" onClose={onClose}>
       <div className="flex gap-2 mb-3">
         <button
           type="button"
@@ -669,16 +695,19 @@ function TagPickerForm({ core, setCore, entidadTipo, entidadId, asignadas, onClo
       </div>
       {modo === "existente" ? (
         disponibles.length === 0 ? (
-          <p className="text-sm text-[#A69C88]">No hay más etiquetas de tipo "{entidadTipo}" disponibles — creá una nueva.</p>
+          <p className="text-sm text-[#A69C88] mb-3">No hay más etiquetas de tipo "{entidadTipo}" disponibles — creá una nueva.</p>
         ) : (
-          <div className="space-y-1.5">
-            {disponibles.map((e) => (
-              <button key={e.id} onClick={() => { asignar(e.id); onClose(); }} className="w-full text-left bg-[#F7F5F0] border border-[#E4DECF] rounded-sm p-2.5 text-sm">
-                <span className="font-semibold text-[#2A2118]">{e.etiqueta}</span>
-                <span className="text-[#8A8272]"> · {(core.categorias || []).find((c) => c.id === e.categoriaId)?.nombre || "sin categoría"}</span>
-              </button>
-            ))}
-          </div>
+          <>
+            <Field label="Etiqueta">
+              <BuscadorSelect
+                opciones={disponibles.map((e) => ({ id: e.id, label: `${e.etiqueta} · ${(core.categorias || []).find((c) => c.id === e.categoriaId)?.nombre || "sin categoría"}` }))}
+                value={etiquetaId}
+                onChange={setEtiquetaId}
+                placeholder="Buscar etiqueta..."
+              />
+            </Field>
+            <button type="button" disabled={!etiquetaId} onClick={asignar} className="w-full border border-[#E4DECF] rounded-sm py-2.5 font-bold text-sm text-[#2A2118] disabled:text-[#C9C1AE] disabled:cursor-not-allowed mb-3">+ Agregar</button>
+          </>
         )
       ) : (
         <>
@@ -715,6 +744,7 @@ function TagPickerForm({ core, setCore, entidadTipo, entidadId, asignadas, onClo
           <PrimaryBtn full onClick={crearYAsignar}>Crear y asignar</PrimaryBtn>
         </>
       )}
+      <button type="button" onClick={onClose} className="w-full mt-3 border border-[#E4DECF] rounded-sm py-2.5 font-bold text-sm text-[#2A2118]">Listo</button>
     </Modal>
   );
 }
@@ -1492,7 +1522,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
           setCore={setCore}
           empresaId={empresaIds[empresaIds.length - 1]}
           onClose={() => setShowVincularObra(false)}
-          onLinked={(newObraId) => { agregarObra(newObraId); setShowVincularObra(false); }}
+          onVinculada={agregarObra}
         />
       )}
     </div>
@@ -3223,7 +3253,6 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
           setCore={setCore}
           personaId={id}
           onClose={() => setShowRelObra(false)}
-          onLinked={() => setShowRelObra(false)}
         />
       )}
       {showNuevoHilo && (
@@ -3432,38 +3461,48 @@ function VincularEmpresaForm({ core, setCore, onClose, onSave }) {
 }
 
 // Vincula una obra (existente o nueva) directamente a una persona.
-function VincularObraAPersonaForm({ core, setCore, personaId, onClose, onLinked }) {
+function VincularObraAPersonaForm({ core, setCore, personaId, onClose }) {
   const [modo, setModo] = useState("existente"); // 'existente' | 'nueva'
+  const [agregadas, setAgregadas] = useState([]);
   const yaVinculadas = new Set((core.personaObra || []).filter((r) => r.personaId === personaId).map((r) => r.obraId));
-  const disponibles = core.obras.filter((o) => !yaVinculadas.has(o.id));
-  const [obraId, setObraId] = useState(disponibles[0]?.id || "");
+  const disponibles = core.obras.filter((o) => !yaVinculadas.has(o.id) && !agregadas.includes(o.id));
+  const [obraId, setObraId] = useState("");
   const [nombreNueva, setNombreNueva] = useState("");
   const [descripcionNueva, setDescripcionNueva] = useState("");
   const [ciudadNueva, setCiudadNueva] = useState("");
 
-  const submit = () => {
-    if (modo === "existente") {
-      if (!obraId) return;
-      setCore((prev) => {
-        const dueña = core.empresaObra.find((r) => r.obraId === obraId)?.empresaId;
-        const yaVinculadaEmpresa = dueña && prev.personaEmpresa.some((r) => r.personaId === personaId && r.empresaId === dueña);
-        return {
-          ...prev,
-          personaObra: [...(prev.personaObra || []), { id: uid("po"), personaId, obraId }],
-          personaEmpresa: dueña && !yaVinculadaEmpresa ? [...prev.personaEmpresa, { id: uid("pe"), personaId, empresaId: dueña }] : prev.personaEmpresa,
-        };
-      });
-      onLinked(obraId);
-    } else {
-      if (!nombreNueva.trim()) return;
-      const nueva = { id: uid("O"), nombre: nombreNueva.trim(), descripcion: descripcionNueva, metros2: 0, direccion: "", ciudad: ciudadNueva };
-      setCore((prev) => ({ ...prev, obras: [nueva, ...prev.obras], personaObra: [...(prev.personaObra || []), { id: uid("po"), personaId, obraId: nueva.id }] }));
-      onLinked(nueva.id);
-    }
+  const vincularConEmpresaDueña = (prev, obraId) => {
+    const dueña = core.empresaObra.find((r) => r.obraId === obraId)?.empresaId;
+    const yaVinculadaEmpresa = dueña && prev.personaEmpresa.some((r) => r.personaId === personaId && r.empresaId === dueña);
+    return dueña && !yaVinculadaEmpresa ? [...prev.personaEmpresa, { id: uid("pe"), personaId, empresaId: dueña }] : prev.personaEmpresa;
+  };
+
+  const agregarExistente = () => {
+    if (!obraId) return;
+    setCore((prev) => ({
+      ...prev,
+      personaObra: [...(prev.personaObra || []), { id: uid("po"), personaId, obraId }],
+      personaEmpresa: vincularConEmpresaDueña(prev, obraId),
+    }));
+    setAgregadas((a) => [...a, obraId]);
+    setObraId("");
+  };
+  const crearYAgregar = () => {
+    if (!nombreNueva.trim()) return;
+    const nueva = { id: uid("O"), nombre: nombreNueva.trim(), descripcion: descripcionNueva, metros2: 0, direccion: "", ciudad: ciudadNueva };
+    setCore((prev) => ({ ...prev, obras: [nueva, ...prev.obras], personaObra: [...(prev.personaObra || []), { id: uid("po"), personaId, obraId: nueva.id }] }));
+    setAgregadas((a) => [...a, nueva.id]);
+    setNombreNueva(""); setDescripcionNueva(""); setCiudadNueva("");
+    setModo("existente");
+  };
+  const quitarAgregada = (id) => {
+    setCore((prev) => ({ ...prev, personaObra: (prev.personaObra || []).filter((r) => !(r.personaId === personaId && r.obraId === id)) }));
+    setAgregadas((a) => a.filter((x) => x !== id));
   };
 
   return (
-    <Modal title="Vincular a una obra" onClose={onClose}>
+    <Modal title="Vincular obras" onClose={onClose}>
+      <ChipsAgregados items={agregadas} core={core} coleccion="obras" labelKey="nombre" onQuitar={quitarAgregada} />
       <div className="flex gap-2 mb-3">
         <button
           type="button"
@@ -3480,45 +3519,60 @@ function VincularObraAPersonaForm({ core, setCore, personaId, onClose, onLinked 
       </div>
       {modo === "existente" ? (
         disponibles.length === 0 ? (
-          <p className="text-sm text-[#A69C88] mb-3">No hay más obras disponibles para vincular — probá creando una nueva.</p>
+          <p className="text-sm text-[#A69C88] mb-3">No hay más obras disponibles para vincular.</p>
         ) : (
-          <Field label="Obra">
-            <BuscadorSelect
-              opciones={disponibles.map((o) => ({ id: o.id, label: o.nombre }))}
-              value={obraId}
-              onChange={setObraId}
-              placeholder="Buscar obra..."
-            />
-          </Field>
+          <>
+            <Field label="Obra">
+              <BuscadorSelect
+                opciones={disponibles.map((o) => ({ id: o.id, label: o.nombre }))}
+                value={obraId}
+                onChange={setObraId}
+                placeholder="Buscar obra..."
+              />
+            </Field>
+            <button type="button" disabled={!obraId} onClick={agregarExistente} className="w-full border border-[#E4DECF] rounded-sm py-2.5 font-bold text-sm text-[#2A2118] disabled:text-[#C9C1AE] disabled:cursor-not-allowed mb-3">+ Agregar</button>
+          </>
         )
       ) : (
         <>
           <Field label="Nombre de la obra *"><input className={inputCls} value={nombreNueva} onChange={(e) => setNombreNueva(e.target.value)} /></Field>
           <Field label="Descripción"><input className={inputCls} value={descripcionNueva} onChange={(e) => setDescripcionNueva(e.target.value)} /></Field>
           <Field label="Ciudad"><input className={inputCls} value={ciudadNueva} onChange={(e) => setCiudadNueva(e.target.value)} /></Field>
+          <PrimaryBtn full onClick={crearYAgregar}>Crear y agregar</PrimaryBtn>
         </>
       )}
-      <PrimaryBtn full onClick={submit}>Vincular</PrimaryBtn>
+      <button type="button" onClick={onClose} className="w-full mt-1 bg-[#E8871E] text-[#2A2118] rounded-sm py-2.5 font-bold text-sm">Listo</button>
     </Modal>
   );
 }
 
 // Agrega una persona (existente o nueva) como participante de un hilo ya creado.
-function AgregarPersonaAlHiloForm({ core, setCore, hilo, personasDelHilo, agregarPersona, onClose }) {
+function AgregarPersonaAlHiloForm({ core, hilo, personasDelHilo, setCore, agregarPersona, onClose }) {
   const [modo, setModo] = useState("existente"); // 'existente' | 'nueva'
+  const [agregadas, setAgregadas] = useState([]); // personaIds agregadas en esta apertura del modal
   const [nombreNueva, setNombreNueva] = useState("");
-  const disponibles = core.personas.filter((p) => !participantesActivos(hilo).some((pa) => pa.personaId === p.id));
+  const [personaId, setPersonaId] = useState("");
+  const disponibles = core.personas.filter((p) => !participantesActivos(hilo).some((pa) => pa.personaId === p.id) && !agregadas.includes(p.id));
 
+  const agregarExistente = () => {
+    if (!personaId) return;
+    agregarPersona(personaId, personasDelHilo.length === 0 && agregadas.length === 0);
+    setAgregadas((a) => [...a, personaId]);
+    setPersonaId("");
+  };
   const crearYAgregar = () => {
     if (!nombreNueva.trim()) return;
     const nueva = { id: uid("P"), nombre: nombreNueva.trim(), whatsapp: "", direccion: "", ciudad: "", notas: "" };
     setCore((prev) => ({ ...prev, personas: [nueva, ...prev.personas] }));
-    agregarPersona(nueva.id, personasDelHilo.length === 0);
-    onClose();
+    agregarPersona(nueva.id, personasDelHilo.length === 0 && agregadas.length === 0);
+    setAgregadas((a) => [...a, nueva.id]);
+    setNombreNueva("");
+    setModo("existente");
   };
 
   return (
     <>
+      <ChipsAgregados items={agregadas} core={core} coleccion="personas" labelKey="nombre" />
       <div className="flex gap-2 mb-3">
         <button
           type="button"
@@ -3537,17 +3591,17 @@ function AgregarPersonaAlHiloForm({ core, setCore, hilo, personasDelHilo, agrega
         disponibles.length === 0 ? (
           <p className="text-sm text-[#A69C88]">No hay más personas para agregar (o ya están todas vinculadas) — probá creando una nueva.</p>
         ) : (
-          <div className="space-y-1.5">
-            {disponibles.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => { agregarPersona(p.id, personasDelHilo.length === 0); onClose(); }}
-                className="w-full text-left bg-[#F7F5F0] border border-[#E4DECF] rounded-sm p-2.5 text-sm font-semibold text-[#2A2118]"
-              >
-                {p.nombre}
-              </button>
-            ))}
-          </div>
+          <>
+            <Field label="Persona">
+              <BuscadorSelect
+                opciones={disponibles.map((p) => ({ id: p.id, label: p.nombre }))}
+                value={personaId}
+                onChange={setPersonaId}
+                placeholder="Buscar persona..."
+              />
+            </Field>
+            <button type="button" disabled={!personaId} onClick={agregarExistente} className="w-full border border-[#E4DECF] rounded-sm py-2.5 font-bold text-sm text-[#2A2118] disabled:text-[#C9C1AE] disabled:cursor-not-allowed mb-3">+ Agregar</button>
+          </>
         )
       ) : (
         <>
@@ -3555,6 +3609,7 @@ function AgregarPersonaAlHiloForm({ core, setCore, hilo, personasDelHilo, agrega
           <PrimaryBtn full onClick={crearYAgregar}>Crear y agregar</PrimaryBtn>
         </>
       )}
+      <button type="button" onClick={onClose} className="w-full mt-1 bg-[#E8871E] text-[#2A2118] rounded-sm py-2.5 font-bold text-sm">Listo</button>
     </>
   );
 }
@@ -3962,7 +4017,6 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
           setCore={setCore}
           hiloId={id}
           onClose={() => setShowVincularEmpresaHilo(false)}
-          onLinked={() => setShowVincularEmpresaHilo(false)}
         />
       )}
       {showVincularObraHilo && (
@@ -3971,7 +4025,6 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
           setCore={setCore}
           hiloId={id}
           onClose={() => setShowVincularObraHilo(false)}
-          onLinked={() => setShowVincularObraHilo(false)}
         />
       )}
       {showVincularCliente && (
@@ -3979,21 +4032,21 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
           {core.hilos.filter((h) => h.tipo === "cliente" && h.estado === "Activo").length === 0 ? (
             <p className="text-sm text-[#A69C88]">No hay hilos de clientes activos para vincular.</p>
           ) : (
-            <div className="space-y-1.5">
-              {core.hilos.filter((h) => h.tipo === "cliente" && h.estado === "Activo").map((h) => {
-                const p = personaPrincipalDeHilo(h, core);
-                return (
-                  <button
-                    key={h.id}
-                    onClick={() => { setCore((prev) => ({ ...prev, hilos: prev.hilos.map((hh) => (hh.id === id ? { ...hh, hiloRelacionadoId: h.id } : hh)) })); setShowVincularCliente(false); }}
-                    className="w-full text-left bg-[#F7F5F0] border border-[#E4DECF] rounded-sm p-2.5 text-sm"
-                  >
-                    <span className="font-semibold text-[#2A2118]">{h.titulo}</span>
-                    {p && <span className="text-[#8A8272]"> · {p.nombre}</span>}
-                  </button>
-                );
-              })}
-            </div>
+            <Field label="Hilo de cliente">
+              <BuscadorSelect
+                opciones={core.hilos.filter((h) => h.tipo === "cliente" && h.estado === "Activo").map((h) => {
+                  const p = personaPrincipalDeHilo(h, core);
+                  return { id: h.id, label: p ? `${h.titulo} · ${p.nombre}` : h.titulo };
+                })}
+                value=""
+                onChange={(hiloElegidoId) => {
+                  if (!hiloElegidoId) return;
+                  setCore((prev) => ({ ...prev, hilos: prev.hilos.map((hh) => (hh.id === id ? { ...hh, hiloRelacionadoId: hiloElegidoId } : hh)) }));
+                  setShowVincularCliente(false);
+                }}
+                placeholder="Buscar hilo de cliente..."
+              />
+            </Field>
           )}
         </Modal>
       )}
@@ -4017,7 +4070,6 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
             personasDelHilo={personasDelHilo}
             onVincular={(tareaId) => {
               setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === tareaId ? { ...h, hiloRelacionadoId: id } : h)) }));
-              setShowAgregarTarea(false);
             }}
             onCrear={(nuevoHilo, fecha, hora) => {
               setCore((prev) => ({ ...prev, hilos: [nuevoHilo, ...prev.hilos] }));
@@ -4027,8 +4079,8 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
                   return [{ id: uid("A"), hiloId: nuevoHilo.id, tipoAccionId: "", estado: "Pendiente", fechaRealizada: "", fechaProgramada: fecha, horaProgramada: hora, prioridad: "Media", notaPlanificada: nuevoHilo.titulo, notaHecho: "", origenId: null, destinoId: null, numero: siguienteNumero, recurrente: false, repiteCadaN: null, repiteUnidad: null, fechaCreacion: todayISO(), secuencia: Date.now() }, ...prev];
                 });
               }
-              setShowAgregarTarea(false);
             }}
+            onClose={() => setShowAgregarTarea(false)}
           />
         </Modal>
       )}
@@ -4067,49 +4119,63 @@ function EditarTituloHiloForm({ hilo, onSave }) {
 
 // Vincula una empresa más (existente o nueva) a un hilo de cliente ya creado.
 // Un hilo puede tener varias empresas vinculadas a la vez.
-function VincularEmpresaAHiloForm({ core, setCore, hiloId, onClose, onLinked }) {
+function VincularEmpresaAHiloForm({ core, setCore, hiloId, onClose }) {
   const [modo, setModo] = useState("existente"); // 'existente' | 'nueva'
+  const [agregadas, setAgregadas] = useState([]); // empresaIds vinculados en esta apertura del modal
   const yaVinculadas = new Set((core.hiloEmpresa || []).filter((r) => r.hiloId === hiloId).map((r) => r.empresaId));
-  const disponibles = core.empresas.filter((e) => !yaVinculadas.has(e.id));
-  const [empresaId, setEmpresaId] = useState(disponibles[0]?.id || "");
+  const disponibles = core.empresas.filter((e) => !yaVinculadas.has(e.id) && !agregadas.includes(e.id));
+  const [empresaId, setEmpresaId] = useState("");
   const [nombreNueva, setNombreNueva] = useState("");
 
-  const submit = () => {
-    if (modo === "existente") {
-      if (!empresaId) return;
-      setCore((prev) => ({ ...prev, hiloEmpresa: [...(prev.hiloEmpresa || []), { id: uid("he"), hiloId, empresaId }] }));
-      onLinked(empresaId);
-    } else {
-      if (!nombreNueva.trim()) return;
-      const nueva = { id: uid("E"), denominacion: nombreNueva.trim(), direccion: "", ciudad: "" };
-      setCore((prev) => ({ ...prev, empresas: [nueva, ...prev.empresas], hiloEmpresa: [...(prev.hiloEmpresa || []), { id: uid("he"), hiloId, empresaId: nueva.id }] }));
-      onLinked(nueva.id);
-    }
+  const agregarExistente = () => {
+    if (!empresaId) return;
+    setCore((prev) => ({ ...prev, hiloEmpresa: [...(prev.hiloEmpresa || []), { id: uid("he"), hiloId, empresaId }] }));
+    setAgregadas((a) => [...a, empresaId]);
+    setEmpresaId("");
+  };
+  const crearYAgregar = () => {
+    if (!nombreNueva.trim()) return;
+    const nueva = { id: uid("E"), denominacion: nombreNueva.trim(), direccion: "", ciudad: "", cabeceraId: null };
+    setCore((prev) => ({ ...prev, empresas: [nueva, ...prev.empresas], hiloEmpresa: [...(prev.hiloEmpresa || []), { id: uid("he"), hiloId, empresaId: nueva.id }] }));
+    setAgregadas((a) => [...a, nueva.id]);
+    setNombreNueva("");
+    setModo("existente");
+  };
+  const quitarAgregada = (id) => {
+    setCore((prev) => ({ ...prev, hiloEmpresa: (prev.hiloEmpresa || []).filter((r) => !(r.hiloId === hiloId && r.empresaId === id)) }));
+    setAgregadas((a) => a.filter((x) => x !== id));
   };
 
   return (
-    <Modal title="Vincular una empresa" onClose={onClose}>
+    <Modal title="Vincular empresas" onClose={onClose}>
+      <ChipsAgregados items={agregadas} core={core} coleccion="empresas" labelKey="denominacion" onQuitar={quitarAgregada} />
       <div className="flex gap-2 mb-3">
         <button type="button" onClick={() => setModo("existente")} style={{ backgroundColor: modo === "existente" ? "#2A2F36" : "#E7E2D8", color: modo === "existente" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-2 rounded-sm text-sm font-bold">Empresa existente</button>
         <button type="button" onClick={() => setModo("nueva")} style={{ backgroundColor: modo === "nueva" ? "#2A2F36" : "#E7E2D8", color: modo === "nueva" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-2 rounded-sm text-sm font-bold">Agregar empresa</button>
       </div>
       {modo === "existente" ? (
         disponibles.length === 0 ? (
-          <p className="text-sm text-[#A69C88] mb-3">No hay más empresas disponibles para vincular — probá creando una nueva.</p>
+          <p className="text-sm text-[#A69C88] mb-3">No hay más empresas disponibles para vincular.</p>
         ) : (
-          <Field label="Empresa">
-            <BuscadorSelect
-              opciones={disponibles.map((e) => ({ id: e.id, label: e.denominacion }))}
-              value={empresaId}
-              onChange={setEmpresaId}
-              placeholder="Buscar empresa..."
-            />
-          </Field>
+          <>
+            <Field label="Empresa">
+              <BuscadorSelect
+                opciones={disponibles.map((e) => ({ id: e.id, label: e.denominacion }))}
+                value={empresaId}
+                onChange={setEmpresaId}
+                placeholder="Buscar empresa..."
+              />
+            </Field>
+            <button type="button" disabled={!empresaId} onClick={agregarExistente} className="w-full border border-[#E4DECF] rounded-sm py-2.5 font-bold text-sm text-[#2A2118] disabled:text-[#C9C1AE] disabled:cursor-not-allowed mb-3">+ Agregar</button>
+          </>
         )
       ) : (
-        <Field label="Denominación *"><input className={inputCls} value={nombreNueva} onChange={(e) => setNombreNueva(e.target.value)} /></Field>
+        <>
+          <Field label="Denominación *"><input className={inputCls} value={nombreNueva} onChange={(e) => setNombreNueva(e.target.value)} /></Field>
+          <PrimaryBtn full onClick={crearYAgregar}>Crear y agregar</PrimaryBtn>
+        </>
       )}
-      <PrimaryBtn full onClick={submit}>Vincular</PrimaryBtn>
+      <button type="button" onClick={onClose} className="w-full mt-1 bg-[#E8871E] text-[#2A2118] rounded-sm py-2.5 font-bold text-sm">Listo</button>
     </Modal>
   );
 }
@@ -4121,61 +4187,73 @@ function VincularEmpresaAHiloForm({ core, setCore, hiloId, onClose, onLinked }) 
 // tener varias obras vinculadas a la vez. Si la obra elegida tiene una empresa dueña
 // conocida (vía empresaObra), esa empresa se agrega automáticamente a las del hilo — sin
 // desvincular las que ya estaban.
-function VincularObraAHiloForm({ core, setCore, hiloId, onClose, onLinked }) {
+function VincularObraAHiloForm({ core, setCore, hiloId, onClose }) {
   const [modo, setModo] = useState("existente"); // 'existente' | 'nueva'
+  const [agregadas, setAgregadas] = useState([]); // obraIds vinculadas en esta apertura del modal
   const yaVinculadas = new Set((core.hiloObra || []).filter((r) => r.hiloId === hiloId).map((r) => r.obraId));
-  const disponibles = core.obras.filter((o) => !yaVinculadas.has(o.id));
-  const [obraId, setObraId] = useState(disponibles[0]?.id || "");
+  const disponibles = core.obras.filter((o) => !yaVinculadas.has(o.id) && !agregadas.includes(o.id));
+  const [obraId, setObraId] = useState("");
   const [obraNueva, setObraNueva] = useState("");
 
-  const submit = () => {
-    if (modo === "existente") {
-      if (!obraId) return;
-      const empresaDueña = core.empresaObra.find((r) => r.obraId === obraId)?.empresaId;
-      setCore((prev) => {
-        const yaVinculadaEmpresa = empresaDueña && (prev.hiloEmpresa || []).some((r) => r.hiloId === hiloId && r.empresaId === empresaDueña);
-        return {
-          ...prev,
-          hiloObra: [...(prev.hiloObra || []), { id: uid("ho"), hiloId, obraId }],
-          hiloEmpresa: empresaDueña && !yaVinculadaEmpresa ? [...(prev.hiloEmpresa || []), { id: uid("he"), hiloId, empresaId: empresaDueña }] : prev.hiloEmpresa,
-        };
-      });
-      onLinked(obraId);
-    } else {
-      if (!obraNueva.trim()) return;
-      const nueva = { id: uid("O"), nombre: obraNueva.trim(), descripcion: "", metros2: 0, direccion: "", ciudad: "" };
-      setCore((prev) => ({
-        ...prev,
-        obras: [nueva, ...prev.obras],
-        hiloObra: [...(prev.hiloObra || []), { id: uid("ho"), hiloId, obraId: nueva.id }],
-      }));
-      onLinked(nueva.id);
-    }
+  const vincularConEmpresaDueña = (prev, obraId) => {
+    const empresaDueña = core.empresaObra.find((r) => r.obraId === obraId)?.empresaId;
+    const yaVinculadaEmpresa = empresaDueña && (prev.hiloEmpresa || []).some((r) => r.hiloId === hiloId && r.empresaId === empresaDueña);
+    return empresaDueña && !yaVinculadaEmpresa ? [...(prev.hiloEmpresa || []), { id: uid("he"), hiloId, empresaId: empresaDueña }] : prev.hiloEmpresa;
+  };
+
+  const agregarExistente = () => {
+    if (!obraId) return;
+    setCore((prev) => ({
+      ...prev,
+      hiloObra: [...(prev.hiloObra || []), { id: uid("ho"), hiloId, obraId }],
+      hiloEmpresa: vincularConEmpresaDueña(prev, obraId),
+    }));
+    setAgregadas((a) => [...a, obraId]);
+    setObraId("");
+  };
+  const crearYAgregar = () => {
+    if (!obraNueva.trim()) return;
+    const nueva = { id: uid("O"), nombre: obraNueva.trim(), descripcion: "", metros2: 0, direccion: "", ciudad: "" };
+    setCore((prev) => ({ ...prev, obras: [nueva, ...prev.obras], hiloObra: [...(prev.hiloObra || []), { id: uid("ho"), hiloId, obraId: nueva.id }] }));
+    setAgregadas((a) => [...a, nueva.id]);
+    setObraNueva("");
+    setModo("existente");
+  };
+  const quitarAgregada = (id) => {
+    setCore((prev) => ({ ...prev, hiloObra: (prev.hiloObra || []).filter((r) => !(r.hiloId === hiloId && r.obraId === id)) }));
+    setAgregadas((a) => a.filter((x) => x !== id));
   };
 
   return (
-    <Modal title="Vincular una obra" onClose={onClose}>
+    <Modal title="Vincular obras" onClose={onClose}>
+      <ChipsAgregados items={agregadas} core={core} coleccion="obras" labelKey="nombre" onQuitar={quitarAgregada} />
       <div className="flex gap-2 mb-3">
         <button type="button" onClick={() => setModo("existente")} style={{ backgroundColor: modo === "existente" ? "#2A2F36" : "#E7E2D8", color: modo === "existente" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-2 rounded-sm text-sm font-bold">Obra existente</button>
         <button type="button" onClick={() => setModo("nueva")} style={{ backgroundColor: modo === "nueva" ? "#2A2F36" : "#E7E2D8", color: modo === "nueva" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-2 rounded-sm text-sm font-bold">Agregar obra</button>
       </div>
       {modo === "existente" ? (
         disponibles.length === 0 ? (
-          <p className="text-sm text-[#A69C88] mb-3">No hay más obras disponibles para vincular — probá creando una nueva.</p>
+          <p className="text-sm text-[#A69C88] mb-3">No hay más obras disponibles para vincular.</p>
         ) : (
-          <Field label="Obra">
-            <BuscadorSelect
-              opciones={disponibles.map((o) => ({ id: o.id, label: o.nombre }))}
-              value={obraId}
-              onChange={setObraId}
-              placeholder="Buscar obra..."
-            />
-          </Field>
+          <>
+            <Field label="Obra">
+              <BuscadorSelect
+                opciones={disponibles.map((o) => ({ id: o.id, label: o.nombre }))}
+                value={obraId}
+                onChange={setObraId}
+                placeholder="Buscar obra..."
+              />
+            </Field>
+            <button type="button" disabled={!obraId} onClick={agregarExistente} className="w-full border border-[#E4DECF] rounded-sm py-2.5 font-bold text-sm text-[#2A2118] disabled:text-[#C9C1AE] disabled:cursor-not-allowed mb-3">+ Agregar</button>
+          </>
         )
       ) : (
-        <Field label="Nombre de la obra *"><input className={inputCls} value={obraNueva} onChange={(e) => setObraNueva(e.target.value)} /></Field>
+        <>
+          <Field label="Nombre de la obra *"><input className={inputCls} value={obraNueva} onChange={(e) => setObraNueva(e.target.value)} /></Field>
+          <PrimaryBtn full onClick={crearYAgregar}>Crear y agregar</PrimaryBtn>
+        </>
       )}
-      <PrimaryBtn full onClick={submit}>Vincular</PrimaryBtn>
+      <button type="button" onClick={onClose} className="w-full mt-1 bg-[#E8871E] text-[#2A2118] rounded-sm py-2.5 font-bold text-sm">Listo</button>
     </Modal>
   );
 }
@@ -4183,7 +4261,7 @@ function VincularObraAHiloForm({ core, setCore, hiloId, onClose, onLinked }) {
 // Agrega una tarea a un hilo de cliente: buscando entre las tareas sueltas (sin vincular
 // todavía a ningún hilo de cliente) — priorizando las que comparten alguna persona con este
 // hilo — o creando una nueva si no la encuentra.
-function AgregarTareaAlHiloForm({ core, hiloClienteId, personasDelHilo, onVincular, onCrear }) {
+function AgregarTareaAlHiloForm({ core, hiloClienteId, personasDelHilo, onVincular, onCrear, onClose }) {
   const [modo, setModo] = useState("existente"); // 'existente' | 'nueva'
   const [q, setQ] = useState("");
   const [titulo, setTitulo] = useState("");
@@ -4214,6 +4292,8 @@ function AgregarTareaAlHiloForm({ core, hiloClienteId, personasDelHilo, onVincul
       columnaTareaId: columnaId || null, hiloRelacionadoId: hiloClienteId, notaCierre: "",
     };
     onCrear(nuevoHilo, fecha, hora);
+    setTitulo(""); setColumnaId(""); setFecha(""); setHora("");
+    setModo("existente");
   };
 
   return (
@@ -4268,6 +4348,7 @@ function AgregarTareaAlHiloForm({ core, hiloClienteId, personasDelHilo, onVincul
           <PrimaryBtn full onClick={crear}>Crear tarea</PrimaryBtn>
         </>
       )}
+      <button type="button" onClick={onClose} className="w-full mt-3 border border-[#E4DECF] rounded-sm py-2.5 font-bold text-sm text-[#2A2118]">Listo</button>
     </>
   );
 }
@@ -4573,30 +4654,40 @@ function EditAccionForm({ accion, core, setCore, otrasAccionesDelHilo = [], onCl
   );
 }
 
-function VincularObraForm({ core, setCore, empresaId, onClose, onLinked }) {
+function VincularObraForm({ core, setCore, empresaId, onClose, onVinculada }) {
   const [modo, setModo] = useState("existente"); // 'existente' | 'nueva'
+  const [agregadas, setAgregadas] = useState([]);
   const yaVinculadas = new Set(core.empresaObra.filter((r) => r.empresaId === empresaId).map((r) => r.obraId));
-  const disponibles = core.obras.filter((o) => !yaVinculadas.has(o.id));
-  const [obraId, setObraId] = useState(disponibles[0]?.id || "");
+  const disponibles = core.obras.filter((o) => !yaVinculadas.has(o.id) && !agregadas.includes(o.id));
+  const [obraId, setObraId] = useState("");
   const [nombreNueva, setNombreNueva] = useState("");
   const [descripcionNueva, setDescripcionNueva] = useState("");
   const [ciudadNueva, setCiudadNueva] = useState("");
 
-  const submit = () => {
-    if (modo === "existente") {
-      if (!obraId) return;
-      setCore((prev) => ({ ...prev, empresaObra: [...prev.empresaObra, { id: uid("eo"), empresaId, obraId }] }));
-      onLinked(obraId);
-    } else {
-      if (!nombreNueva.trim()) return;
-      const nueva = { id: uid("O"), nombre: nombreNueva.trim(), descripcion: descripcionNueva, metros2: 0, direccion: "", ciudad: ciudadNueva };
-      setCore((prev) => ({ ...prev, obras: [nueva, ...prev.obras], empresaObra: [...prev.empresaObra, { id: uid("eo"), empresaId, obraId: nueva.id }] }));
-      onLinked(nueva.id);
-    }
+  const agregarExistente = () => {
+    if (!obraId) return;
+    setCore((prev) => ({ ...prev, empresaObra: [...prev.empresaObra, { id: uid("eo"), empresaId, obraId }] }));
+    setAgregadas((a) => [...a, obraId]);
+    onVinculada?.(obraId);
+    setObraId("");
+  };
+  const crearYAgregar = () => {
+    if (!nombreNueva.trim()) return;
+    const nueva = { id: uid("O"), nombre: nombreNueva.trim(), descripcion: descripcionNueva, metros2: 0, direccion: "", ciudad: ciudadNueva };
+    setCore((prev) => ({ ...prev, obras: [nueva, ...prev.obras], empresaObra: [...prev.empresaObra, { id: uid("eo"), empresaId, obraId: nueva.id }] }));
+    onVinculada?.(nueva.id);
+    setAgregadas((a) => [...a, nueva.id]);
+    setNombreNueva(""); setDescripcionNueva(""); setCiudadNueva("");
+    setModo("existente");
+  };
+  const quitarAgregada = (id) => {
+    setCore((prev) => ({ ...prev, empresaObra: prev.empresaObra.filter((r) => !(r.empresaId === empresaId && r.obraId === id)) }));
+    setAgregadas((a) => a.filter((x) => x !== id));
   };
 
   return (
-    <Modal title="Vincular obra a la empresa" onClose={onClose}>
+    <Modal title="Vincular obras a la empresa" onClose={onClose}>
+      <ChipsAgregados items={agregadas} core={core} coleccion="obras" labelKey="nombre" onQuitar={quitarAgregada} />
       <div className="flex gap-2 mb-3">
         <button
           type="button"
@@ -4613,54 +4704,68 @@ function VincularObraForm({ core, setCore, empresaId, onClose, onLinked }) {
       </div>
       {modo === "existente" ? (
         disponibles.length === 0 ? (
-          <p className="text-sm text-[#A69C88] mb-3">No hay más obras disponibles para vincular — probá creando una nueva.</p>
+          <p className="text-sm text-[#A69C88] mb-3">No hay más obras disponibles para vincular.</p>
         ) : (
-          <Field label="Obra">
-            <BuscadorSelect
-              opciones={disponibles.map((o) => ({ id: o.id, label: o.nombre }))}
-              value={obraId}
-              onChange={setObraId}
-              placeholder="Buscar obra..."
-            />
-          </Field>
+          <>
+            <Field label="Obra">
+              <BuscadorSelect
+                opciones={disponibles.map((o) => ({ id: o.id, label: o.nombre }))}
+                value={obraId}
+                onChange={setObraId}
+                placeholder="Buscar obra..."
+              />
+            </Field>
+            <button type="button" disabled={!obraId} onClick={agregarExistente} className="w-full border border-[#E4DECF] rounded-sm py-2.5 font-bold text-sm text-[#2A2118] disabled:text-[#C9C1AE] disabled:cursor-not-allowed mb-3">+ Agregar</button>
+          </>
         )
       ) : (
         <>
           <Field label="Nombre de la obra *"><input className={inputCls} value={nombreNueva} onChange={(e) => setNombreNueva(e.target.value)} /></Field>
           <Field label="Descripción"><input className={inputCls} value={descripcionNueva} onChange={(e) => setDescripcionNueva(e.target.value)} /></Field>
           <Field label="Ciudad"><input className={inputCls} value={ciudadNueva} onChange={(e) => setCiudadNueva(e.target.value)} /></Field>
+          <PrimaryBtn full onClick={crearYAgregar}>Crear y agregar</PrimaryBtn>
         </>
       )}
-      <PrimaryBtn full onClick={submit}>Vincular</PrimaryBtn>
+      <button type="button" onClick={onClose} className="w-full mt-1 bg-[#E8871E] text-[#2A2118] rounded-sm py-2.5 font-bold text-sm">Listo</button>
     </Modal>
   );
 }
 
-// Agrega una persona de contacto a una empresa (existente o nueva), desde la ficha de la empresa.
-function VincularPersonaForm({ core, setCore, empresaId, onClose, onLinked }) {
+// Agrega una o varias personas de contacto a una empresa (existentes o nuevas), desde la ficha de la empresa.
+function VincularPersonaForm({ core, setCore, empresaId, onClose }) {
   const [modo, setModo] = useState("existente"); // 'existente' | 'nueva'
+  const [agregadas, setAgregadas] = useState([]);
   const yaVinculadas = new Set(core.personaEmpresa.filter((r) => r.empresaId === empresaId).map((r) => r.personaId));
-  const disponibles = core.personas.filter((p) => !yaVinculadas.has(p.id));
-  const [personaId, setPersonaId] = useState(disponibles[0]?.id || "");
+  const disponibles = core.personas.filter((p) => !yaVinculadas.has(p.id) && !agregadas.includes(p.id));
+  const [personaId, setPersonaId] = useState("");
   const [nombreNueva, setNombreNueva] = useState("");
   const [cargoId, setCargoId] = useState((core.cargos || [])[0]?.id || "");
   const [principal, setPrincipal] = useState(false);
 
-  const submit = () => {
-    if (modo === "existente") {
-      if (!personaId) return;
-      setCore((prev) => ({ ...prev, personaEmpresa: [...prev.personaEmpresa, { id: uid("pe"), personaId, empresaId, cargoId, principal }] }));
-      onLinked(personaId);
-    } else {
-      if (!nombreNueva.trim()) return;
-      const nueva = { id: uid("P"), nombre: nombreNueva.trim(), whatsapp: "", direccion: "", ciudad: "", notas: "" };
-      setCore((prev) => ({ ...prev, personas: [nueva, ...prev.personas], personaEmpresa: [...prev.personaEmpresa, { id: uid("pe"), personaId: nueva.id, empresaId, cargoId, principal }] }));
-      onLinked(nueva.id);
-    }
+  const agregarExistente = () => {
+    if (!personaId) return;
+    setCore((prev) => ({ ...prev, personaEmpresa: [...prev.personaEmpresa, { id: uid("pe"), personaId, empresaId, cargoId, principal }] }));
+    setAgregadas((a) => [...a, personaId]);
+    setPersonaId("");
+    setPrincipal(false);
+  };
+  const crearYAgregar = () => {
+    if (!nombreNueva.trim()) return;
+    const nueva = { id: uid("P"), nombre: nombreNueva.trim(), whatsapp: "", direccion: "", ciudad: "", notas: "" };
+    setCore((prev) => ({ ...prev, personas: [nueva, ...prev.personas], personaEmpresa: [...prev.personaEmpresa, { id: uid("pe"), personaId: nueva.id, empresaId, cargoId, principal }] }));
+    setAgregadas((a) => [...a, nueva.id]);
+    setNombreNueva("");
+    setPrincipal(false);
+    setModo("existente");
+  };
+  const quitarAgregada = (id) => {
+    setCore((prev) => ({ ...prev, personaEmpresa: prev.personaEmpresa.filter((r) => !(r.empresaId === empresaId && r.personaId === id)) }));
+    setAgregadas((a) => a.filter((x) => x !== id));
   };
 
   return (
-    <Modal title="Agregar persona de contacto" onClose={onClose}>
+    <Modal title="Agregar personas de contacto" onClose={onClose}>
+      <ChipsAgregados items={agregadas} core={core} coleccion="personas" labelKey="nombre" onQuitar={quitarAgregada} />
       <div className="flex gap-2 mb-3">
         <button
           type="button"
@@ -4677,7 +4782,7 @@ function VincularPersonaForm({ core, setCore, empresaId, onClose, onLinked }) {
       </div>
       {modo === "existente" ? (
         disponibles.length === 0 ? (
-          <p className="text-sm text-[#A69C88] mb-3">No hay más personas disponibles para vincular — probá creando una nueva.</p>
+          <p className="text-sm text-[#A69C88] mb-3">No hay más personas disponibles para vincular.</p>
         ) : (
           <Field label="Persona">
             <BuscadorSelect
@@ -4706,7 +4811,12 @@ function VincularPersonaForm({ core, setCore, empresaId, onClose, onLinked }) {
       <label className="flex items-center gap-2 mb-3 text-sm text-[#2A2118]">
         <input type="checkbox" checked={principal} onChange={(e) => setPrincipal(e.target.checked)} /> Es el contacto principal de esta empresa
       </label>
-      <PrimaryBtn full onClick={submit}>Agregar</PrimaryBtn>
+      {modo === "existente" ? (
+        <button type="button" disabled={!personaId} onClick={agregarExistente} className="w-full border border-[#E4DECF] rounded-sm py-2.5 font-bold text-sm text-[#2A2118] disabled:text-[#C9C1AE] disabled:cursor-not-allowed mb-3">+ Agregar</button>
+      ) : (
+        <PrimaryBtn full onClick={crearYAgregar}>Crear y agregar</PrimaryBtn>
+      )}
+      <button type="button" onClick={onClose} className="w-full mt-1 bg-[#E8871E] text-[#2A2118] rounded-sm py-2.5 font-bold text-sm">Listo</button>
     </Modal>
   );
 }
@@ -5222,7 +5332,6 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
           setCore={setCore}
           empresaId={id}
           onClose={() => setShowObraLink(false)}
-          onLinked={() => setShowObraLink(false)}
         />
       )}
       {showPersonaLink && (
@@ -5231,7 +5340,6 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
           setCore={setCore}
           empresaId={id}
           onClose={() => setShowPersonaLink(false)}
-          onLinked={() => setShowPersonaLink(false)}
         />
       )}
       {editRel && (
@@ -5497,38 +5605,45 @@ function ObraDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
           setCore={setCore}
           obraId={id}
           onClose={() => setShowEmpresaLink(false)}
-          onLinked={() => setShowEmpresaLink(false)}
         />
       )}
     </div>
   );
 }
 
-// Vincula esta obra a una empresa (existente o nueva), desde la ficha de la obra.
-function VincularEmpresaDesdeObraForm({ core, setCore, obraId, onClose, onLinked }) {
+// Vincula esta obra a una o varias empresas (existentes o nuevas), desde la ficha de la obra.
+function VincularEmpresaDesdeObraForm({ core, setCore, obraId, onClose }) {
   const [modo, setModo] = useState("existente"); // 'existente' | 'nueva'
+  const [agregadas, setAgregadas] = useState([]);
   const yaVinculadas = new Set(core.empresaObra.filter((r) => r.obraId === obraId).map((r) => r.empresaId));
-  const disponibles = core.empresas.filter((e) => !yaVinculadas.has(e.id));
-  const [empresaId, setEmpresaId] = useState(disponibles[0]?.id || "");
+  const disponibles = core.empresas.filter((e) => !yaVinculadas.has(e.id) && !agregadas.includes(e.id));
+  const [empresaId, setEmpresaId] = useState("");
   const [nombreNueva, setNombreNueva] = useState("");
   const [direccionNueva, setDireccionNueva] = useState("");
   const [ciudadNueva, setCiudadNueva] = useState("");
 
-  const submit = () => {
-    if (modo === "existente") {
-      if (!empresaId) return;
-      setCore((prev) => ({ ...prev, empresaObra: [...prev.empresaObra, { id: uid("eo"), empresaId, obraId }] }));
-      onLinked(empresaId);
-    } else {
-      if (!nombreNueva.trim()) return;
-      const nueva = { id: uid("E"), denominacion: nombreNueva.trim(), direccion: direccionNueva, ciudad: ciudadNueva };
-      setCore((prev) => ({ ...prev, empresas: [nueva, ...prev.empresas], empresaObra: [...prev.empresaObra, { id: uid("eo"), empresaId: nueva.id, obraId }] }));
-      onLinked(nueva.id);
-    }
+  const agregarExistente = () => {
+    if (!empresaId) return;
+    setCore((prev) => ({ ...prev, empresaObra: [...prev.empresaObra, { id: uid("eo"), empresaId, obraId }] }));
+    setAgregadas((a) => [...a, empresaId]);
+    setEmpresaId("");
+  };
+  const crearYAgregar = () => {
+    if (!nombreNueva.trim()) return;
+    const nueva = { id: uid("E"), denominacion: nombreNueva.trim(), direccion: direccionNueva, ciudad: ciudadNueva, cabeceraId: null };
+    setCore((prev) => ({ ...prev, empresas: [nueva, ...prev.empresas], empresaObra: [...prev.empresaObra, { id: uid("eo"), empresaId: nueva.id, obraId }] }));
+    setAgregadas((a) => [...a, nueva.id]);
+    setNombreNueva(""); setDireccionNueva(""); setCiudadNueva("");
+    setModo("existente");
+  };
+  const quitarAgregada = (id) => {
+    setCore((prev) => ({ ...prev, empresaObra: prev.empresaObra.filter((r) => !(r.obraId === obraId && r.empresaId === id)) }));
+    setAgregadas((a) => a.filter((x) => x !== id));
   };
 
   return (
-    <Modal title="Vincular empresa a la obra" onClose={onClose}>
+    <Modal title="Vincular empresas a la obra" onClose={onClose}>
+      <ChipsAgregados items={agregadas} core={core} coleccion="empresas" labelKey="denominacion" onQuitar={quitarAgregada} />
       <div className="flex gap-2 mb-3">
         <button
           type="button"
@@ -5545,25 +5660,29 @@ function VincularEmpresaDesdeObraForm({ core, setCore, obraId, onClose, onLinked
       </div>
       {modo === "existente" ? (
         disponibles.length === 0 ? (
-          <p className="text-sm text-[#A69C88] mb-3">No hay más empresas disponibles para vincular — probá creando una nueva.</p>
+          <p className="text-sm text-[#A69C88] mb-3">No hay más empresas disponibles para vincular.</p>
         ) : (
-          <Field label="Empresa">
-            <BuscadorSelect
-              opciones={disponibles.map((e) => ({ id: e.id, label: e.denominacion }))}
-              value={empresaId}
-              onChange={setEmpresaId}
-              placeholder="Buscar empresa..."
-            />
-          </Field>
+          <>
+            <Field label="Empresa">
+              <BuscadorSelect
+                opciones={disponibles.map((e) => ({ id: e.id, label: e.denominacion }))}
+                value={empresaId}
+                onChange={setEmpresaId}
+                placeholder="Buscar empresa..."
+              />
+            </Field>
+            <button type="button" disabled={!empresaId} onClick={agregarExistente} className="w-full border border-[#E4DECF] rounded-sm py-2.5 font-bold text-sm text-[#2A2118] disabled:text-[#C9C1AE] disabled:cursor-not-allowed mb-3">+ Agregar</button>
+          </>
         )
       ) : (
         <>
           <Field label="Denominación *"><input className={inputCls} value={nombreNueva} onChange={(e) => setNombreNueva(e.target.value)} /></Field>
           <Field label="Dirección"><input className={inputCls} value={direccionNueva} onChange={(e) => setDireccionNueva(e.target.value)} /></Field>
           <Field label="Ciudad"><input className={inputCls} value={ciudadNueva} onChange={(e) => setCiudadNueva(e.target.value)} /></Field>
+          <PrimaryBtn full onClick={crearYAgregar}>Crear y agregar</PrimaryBtn>
         </>
       )}
-      <PrimaryBtn full onClick={submit}>Vincular</PrimaryBtn>
+      <button type="button" onClick={onClose} className="w-full mt-1 bg-[#E8871E] text-[#2A2118] rounded-sm py-2.5 font-bold text-sm">Listo</button>
     </Modal>
   );
 }
