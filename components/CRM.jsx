@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.6.0";
+const APP_VERSION = "2.7.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -2868,6 +2868,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   const [deletingAccionId, setDeletingAccionId] = useState(null);
   const [verVinculos, setVerVinculos] = useState(false);
   const [verTareasVinculadas, setVerTareasVinculadas] = useState(false);
+  const [verContextoPrimary, setVerContextoPrimary] = useState(false);
   const [verResumen, setVerResumen] = useState(false);
   const [verDetalle, setVerDetalle] = useState(false);
   const [confirmar, setConfirmar] = useState(null); // { texto, onConfirm }
@@ -2886,6 +2887,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   const primary = bucket[0] || null;
   const tipoPrimary = primary ? core.tiposAccion.find((tt) => tt.id === primary.tipoAccionId) : null;
   const historial = accionesDelHilo.filter((a) => a.estado === "Realizada").sort(compararRecientePrimero);
+  const origenPrimary = primary?.origenId ? accionesDelHilo.find((a) => a.id === primary.origenId) : null;
   const hiloRelacionado = hilo.hiloRelacionadoId ? core.hilos.find((h) => h.id === hilo.hiloRelacionadoId) : null;
   const tareasVinculadas = core.hilos.filter((h) => h.tipo === "tarea" && h.hiloRelacionadoId === id);
 
@@ -2944,16 +2946,23 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
     <p className="text-base font-extrabold text-[#2A2118] truncate" title={nombrePrincipal}>{nombrePrincipal}</p>
   );
 
-  const empresasObrasLine = (empresas.length > 0 || obras.length > 0) && (
+  // Si no hay persona, el título principal ya muestra la empresa (o si tampoco hay, la obra)
+  // vía etiquetaVinculoHilo — así que ese mismo dato no se repite acá abajo.
+  const esTituloEmpresa = !esTarea && personasDelHilo.length === 0 && empresas.length > 0;
+  const esTituloObra = !esTarea && personasDelHilo.length === 0 && empresas.length === 0 && obras.length > 0;
+  const empresasSubtitulo = esTituloEmpresa ? [] : empresas;
+  const obrasSubtitulo = esTituloObra ? [] : obras;
+
+  const empresasObrasLine = (empresasSubtitulo.length > 0 || obrasSubtitulo.length > 0) && (
     <p className="text-sm mt-0.5 truncate">
-      {empresas.map((e, i) => (
+      {empresasSubtitulo.map((e, i) => (
         <span key={e.id}>
           {i > 0 && ", "}
           <button onClick={() => onOpen("empresa", e.id)} className="font-bold text-[#2A2118] hover:underline underline-offset-2">{e.denominacion}</button>
         </span>
       ))}
-      {empresas.length > 0 && obras.length > 0 && <span className="text-[#8A8272]"> · </span>}
-      {obras.map((o, i) => (
+      {empresasSubtitulo.length > 0 && obrasSubtitulo.length > 0 && <span className="text-[#8A8272]"> · </span>}
+      {obrasSubtitulo.map((o, i) => (
         <span key={o.id}>
           {i > 0 && ", "}
           <button onClick={() => onOpen("obra", o.id)} className="text-[#6B6352] hover:underline underline-offset-2">{o.nombre}</button>
@@ -2995,12 +3004,41 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
         )}
       </div>
 
+      {/* Vínculos: al pie del encabezado, antes de la línea */}
+      <div className="mt-1.5">
+        <button onClick={() => setVerVinculos((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
+          {verVinculos ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verVinculos ? "Ocultar vínculos" : "Ver vínculos"}
+        </button>
+        {verVinculos && (
+          <div className="mt-2.5 space-y-3">
+            {esTarea && (
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-[10px] font-bold tracking-wide text-[#8A8272]">Hilo</p>
+                  {!hiloRelacionado && <button onClick={() => setShowVincularCliente(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>}
+                </div>
+                {hiloRelacionado ? (
+                  <div className="flex items-center justify-between gap-2 text-sm">
+                    <button onClick={() => onOpen("hilo", hiloRelacionado.id)} className="text-left flex-1 min-w-0 font-semibold text-[#2A2118]">{hiloRelacionado.titulo}</button>
+                    <IconBtn label="Desvincular" danger onClick={() => setConfirmar({ texto: "¿Desvincular esta tarea del hilo de cliente?", onConfirm: () => setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === id ? { ...h, hiloRelacionadoId: null } : h)) })) })}><X size={14} /></IconBtn>
+                  </div>
+                ) : (
+                  <p className="text-sm text-[#A69C88]">Sin hilo vinculado.</p>
+                )}
+              </div>
+            )}
+
+            <VinculosDeHilo hilo={hilo} hiloId={id} core={core} setCore={setCore} onOpen={onOpen} agregarPersona={agregarPersona} setConfirmar={setConfirmar} />
+          </div>
+        )}
+      </div>
+
       {/* Bloque 2: tema del hilo */}
       {!esTarea && (
         <div className="mt-2 pt-2 border-t border-dashed border-[#E4DECF]">
           <div className="flex items-center justify-between gap-2">
             <p className="text-[10px] font-bold tracking-wide text-[#A69C88] mb-0.5">Tema del hilo</p>
-            <IconBtn label="Editar título" onClick={() => setShowEditarTitulo(true)}><Pencil size={12} /></IconBtn>
+            <IconBtn label="Editar hilo" onClick={() => setShowEditarTitulo(true)}><Pencil size={12} /></IconBtn>
           </div>
           <p className="text-base font-extrabold text-[#2A2118]">{hilo.titulo}</p>
         </div>
@@ -3023,7 +3061,51 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
         </div>
       )}
 
-      {primary && <VerContextoOrigen accion={primary} acciones={accionesDelHilo} />}
+      {primary && (
+        <div className="mt-1.5">
+          <div className="flex items-center gap-3 flex-wrap">
+            <button onClick={() => setVerContextoPrimary((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
+              {verContextoPrimary ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verContextoPrimary ? "Ocultar contexto" : "Ver contexto"}
+            </button>
+            <button onClick={() => { setVerResumen((v) => !v); setVerDetalle(false); }} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
+              {verResumen ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verResumen ? "Ocultar resumen" : "Ver resumen"}
+            </button>
+          </div>
+          {verContextoPrimary && (
+            <p className="text-xs text-[#6B6352] mt-1">
+              <span className="font-bold text-[#8A8272]">Se generó a partir de:</span>{" "}
+              {origenPrimary ? (origenPrimary.notaHecho || "Sin registro.") : "Es la primera acción de este hilo."}
+            </p>
+          )}
+          {verResumen && (
+            <div className="mt-2">
+              {historial.length === 0 ? (
+                <p className="text-xs text-[#A69C88]">Todavía no hay acciones anteriores en este hilo.</p>
+              ) : (
+                <>
+                  {verDetalle ? (
+                    <div className="space-y-2">
+                      {historial.map((a) => <AccionCard key={a.id} accion={a} acciones={accionesDelHilo} core={core} onEdit={() => setEditingAccion(a)} onDelete={() => setDeletingAccionId(a.id)} />)}
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {historial.map((a) => (
+                        <div key={a.id} className="text-xs">
+                          <span className="font-mono text-[#8A8272]">{fmtDate(a.fechaRealizada)}</span>{" "}
+                          <span className="text-[#6B6352]">{a.notaHecho || core.tiposAccion.find((tt) => tt.id === a.tipoAccionId)?.nombre}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <button onClick={() => setVerDetalle((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5 mt-2">
+                    {verDetalle ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verDetalle ? "Ocultar resumen detallado" : "Ver resumen detallado"}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {bucket.length > 1 && (
         <p className="text-[10px] text-[#B0452E] font-bold tracking-wide mt-1.5">⚠ Este hilo tiene {bucket.length} acciones pendientes a la vez — revisalo, no debería pasar.</p>
@@ -3032,15 +3114,13 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-dashed border-[#E4DECF] flex-nowrap">
         {!esTarea && (
           <div className="shrink-0 flex items-center gap-1">
-            {tareasVinculadas.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setVerTareasVinculadas((v) => !v)}
-                className="inline-flex items-center gap-1 text-[11px] font-bold text-[#6B6352] bg-[#F7F5F0] border border-[#E4DECF] rounded-sm px-2 py-1"
-              >
-                <ListChecks size={11} /> {tareasVinculadas.length} tarea{tareasVinculadas.length === 1 ? "" : "s"}
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => setVerTareasVinculadas((v) => !v)}
+              className="inline-flex items-center gap-1 text-[11px] font-bold text-[#6B6352] bg-[#F7F5F0] border border-[#E4DECF] rounded-sm px-2 py-1"
+            >
+              <ListChecks size={11} /> {tareasVinculadas.length} tarea{tareasVinculadas.length === 1 ? "" : "s"}
+            </button>
             <IconBtn label="Agregar tarea" onClick={() => setShowAgregarTarea(true)}><Plus size={13} /></IconBtn>
           </div>
         )}
@@ -3106,71 +3186,6 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
         </>
       )}
 
-      {primary && <p className="text-right text-[9px] font-mono text-[#C9C1AE] mt-1">{fmtNumero(primary.numero)}</p>}
-
-      {/* Vínculos */}
-      <div className="mt-2 pt-2 border-t border-dashed border-[#E4DECF]">
-        <button onClick={() => setVerVinculos((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
-          {verVinculos ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verVinculos ? "Ocultar vínculos" : "Ver vínculos"}
-        </button>
-        {verVinculos && (
-          <div className="mt-2.5 space-y-3">
-            {esTarea && (
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <p className="text-[10px] font-bold tracking-wide text-[#8A8272]">Hilo</p>
-                  {!hiloRelacionado && <button onClick={() => setShowVincularCliente(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>}
-                </div>
-                {hiloRelacionado ? (
-                  <div className="flex items-center justify-between gap-2 text-sm">
-                    <button onClick={() => onOpen("hilo", hiloRelacionado.id)} className="text-left flex-1 min-w-0 font-semibold text-[#2A2118]">{hiloRelacionado.titulo}</button>
-                    <IconBtn label="Desvincular" danger onClick={() => setConfirmar({ texto: "¿Desvincular esta tarea del hilo de cliente?", onConfirm: () => setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === id ? { ...h, hiloRelacionadoId: null } : h)) })) })}><X size={14} /></IconBtn>
-                  </div>
-                ) : (
-                  <p className="text-sm text-[#A69C88]">Sin hilo vinculado.</p>
-                )}
-              </div>
-            )}
-
-            <VinculosDeHilo hilo={hilo} hiloId={id} core={core} setCore={setCore} onOpen={onOpen} agregarPersona={agregarPersona} setConfirmar={setConfirmar} />
-          </div>
-        )}
-      </div>
-
-      {/* Resumen en dos niveles: fecha + acciones, y detalle completo de cada acción */}
-      <div className="mt-2 pt-2 border-t border-dashed border-[#E4DECF]">
-        <button onClick={() => { setVerResumen((v) => !v); setVerDetalle(false); }} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
-          {verResumen ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verResumen ? "Ocultar resumen" : "Ver resumen"}
-        </button>
-        {verResumen && (
-          <div className="mt-2">
-            {historial.length === 0 ? (
-              <p className="text-xs text-[#A69C88]">Todavía no hay acciones anteriores en este hilo.</p>
-            ) : (
-              <>
-                {verDetalle ? (
-                  <div className="space-y-2">
-                    {historial.map((a) => <AccionCard key={a.id} accion={a} acciones={accionesDelHilo} core={core} onEdit={() => setEditingAccion(a)} onDelete={() => setDeletingAccionId(a.id)} />)}
-                  </div>
-                ) : (
-                  <div className="space-y-1.5">
-                    {historial.map((a) => (
-                      <div key={a.id} className="text-xs">
-                        <span className="font-mono text-[#8A8272]">{fmtDate(a.fechaRealizada)}</span>{" "}
-                        <span className="text-[#6B6352]">{a.notaHecho || core.tiposAccion.find((tt) => tt.id === a.tipoAccionId)?.nombre}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <button onClick={() => setVerDetalle((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5 mt-2">
-                  {verDetalle ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verDetalle ? "Ocultar resumen detallado" : "Ver resumen detallado"}
-                </button>
-              </>
-            )}
-          </div>
-        )}
-      </div>
-
       {showReprogramar && primary && (
         <ReprogramarModal
           fechaActual={primary.fechaProgramada}
@@ -3199,9 +3214,15 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       )}
 
       {showEditarTitulo && (
-        <Modal title="Editar título del hilo" onClose={() => setShowEditarTitulo(false)}>
-          <EditarTituloHiloForm hilo={hilo} onSave={(nuevoTitulo) => { setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === id ? { ...h, titulo: nuevoTitulo } : h)) })); setShowEditarTitulo(false); }} />
-        </Modal>
+        esTarea ? (
+          <Modal title="Editar título del hilo" onClose={() => setShowEditarTitulo(false)}>
+            <EditarTituloHiloForm hilo={hilo} onSave={(nuevoTitulo) => { setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === id ? { ...h, titulo: nuevoTitulo } : h)) })); setShowEditarTitulo(false); }} />
+          </Modal>
+        ) : (
+          <Modal title="Editar hilo" onClose={() => setShowEditarTitulo(false)}>
+            <EditarHiloPrincipalForm hilo={hilo} core={core} setCore={setCore} onClose={() => setShowEditarTitulo(false)} />
+          </Modal>
+        )
       )}
 
       {showVincularCliente && (
@@ -3902,24 +3923,6 @@ function HiloRow({ hilo, core, acciones, onOpen }) {
   );
 }
 
-function VerContextoOrigen({ accion, acciones }) {
-  const [ver, setVer] = useState(false);
-  const origen = accion.origenId ? (acciones || []).find((a) => a.id === accion.origenId) : null;
-  return (
-    <div className="mt-1.5">
-      <button onClick={() => setVer((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
-        {ver ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {ver ? "Ocultar contexto" : "Ver contexto"}
-      </button>
-      {ver && (
-        <p className="text-xs text-[#6B6352] mt-1">
-          <span className="font-bold text-[#8A8272]">Se generó a partir de:</span>{" "}
-          {origen ? (origen.notaHecho || "Sin registro.") : "Es la primera acción de este hilo."}
-        </p>
-      )}
-    </div>
-  );
-}
-
 function AccionCard({ accion, acciones, core, onEdit, onDelete }) {
   const [verContexto, setVerContexto] = useState(false);
   const tipo = core.tiposAccion.find((t) => t.id === accion.tipoAccionId);
@@ -4242,6 +4245,161 @@ function EditarTituloHiloForm({ hilo, onSave }) {
     <div>
       <Field label="Título"><input className={inputCls} value={titulo} onChange={(e) => setTitulo(e.target.value)} /></Field>
       <PrimaryBtn full onClick={() => titulo.trim() && onSave(titulo.trim())}>Guardar</PrimaryBtn>
+    </div>
+  );
+}
+
+// Edita el título y la persona/empresa(s)/obra(s) de un hilo de cliente ya existente, con
+// los mismos campos que al crearlo (ver NuevoHiloForm) — pero sin la parte de "primer
+// contacto", que no aplica a un hilo que ya tiene historial. Un seguimiento es siempre sobre
+// una persona; a veces nace solo con una empresa/obra porque es el único dato disponible, y
+// este formulario es el lugar para completarlo después.
+function EditarHiloPrincipalForm({ hilo, core, setCore, onClose }) {
+  const [titulo, setTitulo] = useState(hilo.titulo);
+  const [personaId, setPersonaId] = useState(() => personaPrincipalDeHilo(hilo, core)?.id || "");
+  const [empresaIds, setEmpresaIds] = useState(() => empresasDeHilo(hilo, core).map((e) => e.id));
+  const [empresaParaAgregar, setEmpresaParaAgregar] = useState("");
+  const [obraIds, setObraIds] = useState(() => obrasDeHilo(hilo, core).map((o) => o.id));
+  const [obraParaAgregar, setObraParaAgregar] = useState("");
+
+  const agregarEmpresa = (empresaId) => {
+    if (!empresaId) return;
+    setEmpresaIds((ids) => (ids.includes(empresaId) ? ids : [...ids, empresaId]));
+  };
+  const quitarEmpresa = (empresaId) => setEmpresaIds((ids) => ids.filter((x) => x !== empresaId));
+  const agregarObra = (obraId) => {
+    if (!obraId) return;
+    setObraIds((ids) => (ids.includes(obraId) ? ids : [...ids, obraId]));
+  };
+  const quitarObra = (obraId) => setObraIds((ids) => ids.filter((x) => x !== obraId));
+
+  const faltaVinculo = !personaId && empresaIds.length === 0 && obraIds.length === 0;
+
+  const guardar = () => {
+    if (!titulo.trim() || faltaVinculo) return;
+    const hoy = todayISO();
+    setCore((prev) => {
+      // Personas: se cierran (con historial) las activas y se agrega la elegida, si hay.
+      let vinculos = (prev.vinculos || []).map((v) => (esParticipanteActivoDeHilo(v, hilo.id) ? { ...v, hasta: hoy, principal: false } : v));
+      if (personaId) vinculos.push(vinc("Persona", personaId, "Hilo", hilo.id, null, true, hoy));
+
+      const empresasActuales = contrapartesDe(prev, "Hilo", hilo.id, "Empresa", true).map(({ c }) => c.id);
+      const empresasAQuitar = empresasActuales.filter((eid) => !empresaIds.includes(eid));
+      vinculos = vinculos.filter((v) => !empresasAQuitar.some((eid) => esVinculoEntreHiloYEntidad(v, hilo.id, "Empresa", eid)));
+      for (const eid of empresaIds.filter((eid) => !empresasActuales.includes(eid))) vinculos.push(vinc("Hilo", hilo.id, "Empresa", eid, null, false, hoy));
+
+      const obrasActuales = contrapartesDe(prev, "Hilo", hilo.id, "Obra", true).map(({ c }) => c.id);
+      const obrasAQuitar = obrasActuales.filter((oid) => !obraIds.includes(oid));
+      vinculos = vinculos.filter((v) => !obrasAQuitar.some((oid) => esVinculoEntreHiloYEntidad(v, hilo.id, "Obra", oid)));
+      for (const oid of obraIds.filter((oid) => !obrasActuales.includes(oid))) vinculos.push(vinc("Hilo", hilo.id, "Obra", oid, null, false, hoy));
+
+      return {
+        ...prev,
+        hilos: prev.hilos.map((h) => (h.id === hilo.id ? { ...h, titulo: titulo.trim() } : h)),
+        vinculos,
+      };
+    });
+    onClose();
+  };
+
+  return (
+    <div>
+      <Field label="Título del tema *"><input autoFocus className={inputCls} value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Ej: Presupuesto cables solares" /></Field>
+
+      <Field label="Persona">
+        <BuscadorSelect
+          opciones={core.personas.map((p) => ({ id: p.id, label: p.nombre }))}
+          value={personaId}
+          onChange={setPersonaId}
+          vacioLabel="— ninguna —"
+          placeholder="Buscar persona..."
+        />
+      </Field>
+
+      <Field label="Empresa(s)">
+        {empresaIds.length > 0 && (
+          <div className="space-y-1 mb-2">
+            {empresaIds.map((eid) => {
+              const e = core.empresas.find((ee) => ee.id === eid);
+              if (!e) return null;
+              return (
+                <div key={eid} className="flex items-center justify-between gap-2 bg-[#F7F5F0] border border-[#E4DECF] rounded-sm px-2.5 py-1.5 text-sm">
+                  <span className="font-semibold text-[#2A2118]">{e.denominacion}</span>
+                  <button type="button" onClick={() => quitarEmpresa(eid)} className="text-[#B0452E]"><X size={14} /></button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {core.empresas.filter((e) => !empresaIds.includes(e.id)).length > 0 && (
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <BuscadorSelect
+                opciones={core.empresas.filter((e) => !empresaIds.includes(e.id)).map((e) => ({ id: e.id, label: e.denominacion }))}
+                value={empresaParaAgregar}
+                onChange={setEmpresaParaAgregar}
+                placeholder="Buscar empresa..."
+              />
+            </div>
+            <button
+              type="button"
+              disabled={!empresaParaAgregar}
+              onClick={() => { agregarEmpresa(empresaParaAgregar); setEmpresaParaAgregar(""); }}
+              className="shrink-0 border border-[#E4DECF] rounded-sm px-3 text-sm font-bold text-[#2A2118] disabled:text-[#C9C1AE] disabled:cursor-not-allowed"
+            >
+              + Agregar
+            </button>
+          </div>
+        )}
+      </Field>
+
+      <Field label="Obra(s)">
+        {obraIds.length > 0 && (
+          <div className="space-y-1 mb-2">
+            {obraIds.map((oid) => {
+              const o = core.obras.find((oo) => oo.id === oid);
+              if (!o) return null;
+              return (
+                <div key={oid} className="flex items-center justify-between gap-2 bg-[#F7F5F0] border border-[#E4DECF] rounded-sm px-2.5 py-1.5 text-sm">
+                  <span className="font-semibold text-[#2A2118]">{o.nombre}</span>
+                  <button type="button" onClick={() => quitarObra(oid)} className="text-[#B0452E]"><X size={14} /></button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {core.obras.filter((o) => !obraIds.includes(o.id)).length > 0 && (
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <BuscadorSelect
+                opciones={core.obras.filter((o) => !obraIds.includes(o.id)).map((o) => ({ id: o.id, label: o.nombre }))}
+                value={obraParaAgregar}
+                onChange={setObraParaAgregar}
+                placeholder="Buscar obra..."
+              />
+            </div>
+            <button
+              type="button"
+              disabled={!obraParaAgregar}
+              onClick={() => { agregarObra(obraParaAgregar); setObraParaAgregar(""); }}
+              className="shrink-0 border border-[#E4DECF] rounded-sm px-3 text-sm font-bold text-[#2A2118] disabled:text-[#C9C1AE] disabled:cursor-not-allowed"
+            >
+              + Agregar
+            </button>
+          </div>
+        )}
+      </Field>
+
+      {faltaVinculo && (
+        <p className="text-xs text-[#A69C88] mb-3">Elegí al menos una — persona, empresa u obra.</p>
+      )}
+
+      <div className="flex gap-2">
+        <button onClick={onClose} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
+        <button onClick={guardar} disabled={!titulo.trim() || faltaVinculo} className={`flex-1 rounded-sm py-2.5 font-bold text-sm ${!titulo.trim() || faltaVinculo ? "bg-[#E7E2D8] text-[#A69C88] cursor-not-allowed" : "bg-[#E8871E] text-[#2A2118]"}`}>
+          Guardar cambios
+        </button>
+      </div>
     </div>
   );
 }
