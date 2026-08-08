@@ -49,7 +49,19 @@ mismo archivo).
 
 Criterio de fondo que se aplica a toda la app y que hay que tener presente cada
 vez que se toca una pantalla: quiero una app **navegable** y con **datos
-consistentes**. En concreto:
+consistentes**.
+
+Esto es más amplio que la lista de puntos concretos de abajo: la consistencia
+tiene que regir **cualquier tema, formato o comportamiento** de la app, no solo
+los que ya están explícitamente documentados acá. Si una pantalla resuelve algo
+de una manera (un patrón visual, un flujo de confirmación, un selector, un
+texto, lo que sea), y en otra pantalla aparece la misma situación, se resuelve
+**igual** — no se inventa una variante nueva. Cuando se detecta una
+inconsistencia (dos lugares que resuelven lo mismo de formas distintas), el
+criterio por defecto es unificarlas a un solo patrón, y preguntar cuál de las
+variantes existentes tomar como base solo si no es obvio cuál conviene.
+
+Puntos concretos ya identificados (no es una lista cerrada):
 
 - Repasar el código buscando **inconsistencias** y **eliminar cosas que hayan
   quedado en desuso** (código muerto, pantallas/campos/tablas huérfanas).
