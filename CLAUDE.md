@@ -93,17 +93,17 @@ completo" en `EmpresaDetail`) — eso es justamente la inconsistencia a
 corregir: unificarlas todas a un solo patrón visual, de acá en adelante y en
 lo existente que se toque.
 
-## Textos de botones y enlaces de acción: nunca todo en mayúsculas
+## Textos: nunca todo en mayúsculas
 
-Los textos de controles interactivos que ejecutan una acción — botones y
-enlaces tipo "+ Agregar", "+ Vincular", los desplegables "Ver X/Ocultar X",
-"Restablecer...", "Generar...", pestañas/filtros clicables, etc. — se
-escriben con la primera letra en mayúscula y el resto en minúscula. No usar
-la transformación visual "todo en mayúsculas" (clase `uppercase` de Tailwind)
-sobre estos textos, aunque sea el patrón visual que ya existe en gran parte
-de la app. Esto es específico de los textos de **acciones/controles**; no
-necesariamente aplica a etiquetas estáticas de campo o encabezados de sección
-(eso se evalúa caso a caso si se pide).
+Ningún texto de la app se muestra todo en mayúsculas: ni los controles
+interactivos (botones y enlaces tipo "+ Agregar", "+ Vincular", los
+desplegables "Ver X/Ocultar X", "Restablecer...", "Generar...",
+pestañas/filtros clicables, etc.) ni las etiquetas estáticas (título de campo
+en formularios, encabezados de sección, encabezados de tabla, etc.). Todos
+se escriben con la primera letra en mayúscula y el resto en minúscula — no
+usar la transformación visual "todo en mayúsculas" (clase `uppercase` de
+Tailwind), aunque sea el patrón visual que ya existe en gran parte de la
+app.
 
 ## Eliminar siempre con confirmación
 
