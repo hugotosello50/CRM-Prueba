@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.3.0";
+const APP_VERSION = "2.4.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -2025,11 +2025,32 @@ function EditarFechaTareaForm({ hilo, pendiente, setAcciones, onClose }) {
 
 function TareaCard({ hilo, core, setCore, acciones, setAcciones, onOpen, onIniciarDrag, arrastrando }) {
   const [showFecha, setShowFecha] = useState(false);
+  const [showNuevaSubtarea, setShowNuevaSubtarea] = useState(false);
+  const [editingSubtarea, setEditingSubtarea] = useState(null);
+  const [deletingSubtareaId, setDeletingSubtareaId] = useState(null);
   const accionesDelHilo = acciones.filter((a) => a.hiloId === hilo.id);
   const pendiente = accionesDelHilo.find((a) => a.estado === "Pendiente");
   const tipo = pendiente ? core.tiposAccion.find((t) => t.id === pendiente.tipoAccionId) : null;
   const finalizada = hilo.estado === "Cerrado";
   const hiloRelacionado = hilo.hiloRelacionadoId ? core.hilos.find((h) => h.id === hilo.hiloRelacionadoId) : null;
+  const subtareas = hilo.subtareas || [];
+
+  const toggleSubtarea = (subId) => setCore((prev) => ({
+    ...prev,
+    hilos: prev.hilos.map((h) => (h.id === hilo.id ? { ...h, subtareas: (h.subtareas || []).map((s) => (s.id === subId ? { ...s, hecha: !s.hecha } : s)) } : h)),
+  }));
+  const agregarSubtarea = (datos) => setCore((prev) => ({
+    ...prev,
+    hilos: prev.hilos.map((h) => (h.id === hilo.id ? { ...h, subtareas: [...(h.subtareas || []), { id: uid("ST"), hecha: false, ...datos }] } : h)),
+  }));
+  const editarSubtarea = (subId, datos) => setCore((prev) => ({
+    ...prev,
+    hilos: prev.hilos.map((h) => (h.id === hilo.id ? { ...h, subtareas: (h.subtareas || []).map((s) => (s.id === subId ? { ...s, ...datos } : s)) } : h)),
+  }));
+  const eliminarSubtarea = (subId) => setCore((prev) => ({
+    ...prev,
+    hilos: prev.hilos.map((h) => (h.id === hilo.id ? { ...h, subtareas: (h.subtareas || []).filter((s) => s.id !== subId) } : h)),
+  }));
 
   return (
     <div className="bg-white border border-[#E4DECF] rounded-sm p-3" style={{ opacity: arrastrando ? 0.35 : 1 }}>
@@ -2068,12 +2089,81 @@ function TareaCard({ hilo, core, setCore, acciones, setAcciones, onOpen, onInici
           </button>
         )}
       </div>
+
+      <div className="mt-2 pt-2 border-t border-dashed border-[#E4DECF] pl-[42px]">
+        {subtareas.map((s) => (
+          <div key={s.id} className="flex items-start gap-1.5 py-1">
+            <button
+              type="button"
+              onClick={() => toggleSubtarea(s.id)}
+              aria-label={s.hecha ? "Marcar subtarea como pendiente" : "Marcar subtarea como completada"}
+              className="shrink-0 rounded-full flex items-center justify-center mt-0.5"
+              style={{ width: 14, height: 14, backgroundColor: s.hecha ? "#3F6B4A" : "#FFFFFF", border: `2px solid ${s.hecha ? "#3F6B4A" : "#C9C1AE"}` }}
+            >
+              {s.hecha && <Check size={9} color="#FFFFFF" strokeWidth={3} />}
+            </button>
+            <div className="flex-1 min-w-0">
+              <p className={`text-xs ${s.hecha ? "line-through text-[#A69C88]" : "text-[#2A2118]"}`}>{s.texto}</p>
+              {(s.fecha || s.nota) && (
+                <p className="text-[10px] text-[#8A8272] mt-0.5">
+                  {s.fecha && fmtDateHora(s.fecha, s.hora)}
+                  {s.fecha && s.nota && " · "}
+                  {s.nota}
+                </p>
+              )}
+            </div>
+            <IconBtn label="Editar subtarea" onClick={() => setEditingSubtarea(s)}><Pencil size={11} /></IconBtn>
+            <IconBtn label="Eliminar subtarea" danger onClick={() => setDeletingSubtareaId(s.id)}><Trash2 size={11} /></IconBtn>
+          </div>
+        ))}
+        <button type="button" onClick={() => setShowNuevaSubtarea(true)} className="text-[10px] font-bold uppercase tracking-wide text-[#B0452E] mt-1">+ Agregar subtarea</button>
+      </div>
+
       {showFecha && (
         <Modal title="Fecha y hora de la tarea" onClose={() => setShowFecha(false)}>
           <EditarFechaTareaForm hilo={hilo} pendiente={pendiente} setAcciones={setAcciones} onClose={() => setShowFecha(false)} />
         </Modal>
       )}
+      {showNuevaSubtarea && (
+        <SubtareaForm onSave={(datos) => { agregarSubtarea(datos); setShowNuevaSubtarea(false); }} onClose={() => setShowNuevaSubtarea(false)} />
+      )}
+      {editingSubtarea && (
+        <SubtareaForm initial={editingSubtarea} onSave={(datos) => { editarSubtarea(editingSubtarea.id, datos); setEditingSubtarea(null); }} onClose={() => setEditingSubtarea(null)} />
+      )}
+      {deletingSubtareaId && (
+        <ConfirmDeleteModal
+          title="Eliminar subtarea"
+          texto="¿Eliminar esta subtarea? No se puede deshacer."
+          onCancel={() => setDeletingSubtareaId(null)}
+          onConfirm={() => { eliminarSubtarea(deletingSubtareaId); setDeletingSubtareaId(null); }}
+        />
+      )}
     </div>
+  );
+}
+
+function SubtareaForm({ initial, onSave, onClose }) {
+  const [texto, setTexto] = useState(initial?.texto || "");
+  const [fecha, setFecha] = useState(initial?.fecha || "");
+  const [hora, setHora] = useState(initial?.hora || "");
+  const [nota, setNota] = useState(initial?.nota || "");
+
+  const guardar = () => {
+    if (!texto.trim()) return;
+    onSave({ texto: texto.trim(), fecha: fecha || null, hora: hora || null, nota: nota.trim() || null });
+  };
+
+  return (
+    <Modal title={initial ? "Editar subtarea" : "Nueva subtarea"} onClose={onClose}>
+      <Field label="Texto">
+        <input autoFocus className={inputCls} value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="Ej: Llamar para confirmar horario" />
+      </Field>
+      <SelectorFechaHora fecha={fecha} hora={hora} onFecha={setFecha} onHora={setHora} labelFecha="Fecha (opcional)" />
+      <Field label="Nota (opcional)">
+        <textarea className={inputCls} rows={2} value={nota} onChange={(e) => setNota(e.target.value)} />
+      </Field>
+      <PrimaryBtn full disabled={!texto.trim()} onClick={guardar}>Guardar</PrimaryBtn>
+    </Modal>
   );
 }
 
