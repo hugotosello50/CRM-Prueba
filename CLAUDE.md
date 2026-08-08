@@ -45,6 +45,26 @@ mismo archivo).
 
 # Criterios de diseño de la App
 
+## Criterio general: app navegable y consistente
+
+Criterio de fondo que se aplica a toda la app y que hay que tener presente cada
+vez que se toca una pantalla: quiero una app **navegable** y con **datos
+consistentes**. En concreto:
+
+- Repasar el código buscando **inconsistencias** y **eliminar cosas que hayan
+  quedado en desuso** (código muerto, pantallas/campos/tablas huérfanas).
+- En los ABM se usan **los mismos formularios** (reutilizar, no duplicar
+  variantes casi iguales).
+- **Borrado con pre-confirmación** siempre (ver sección de abajo).
+- **Lápiz de edición** en los registros.
+- **Buscador** arriba.
+- **Botón con el signo "+"** arriba que además muestre, **dentro del botón**, el
+  **número indicador de la cantidad de registros**.
+
+Cuando se pida un repaso con este criterio: primero **investigar y hacer un
+resumen de lo que se va a hacer, y esperar** — no ejecutar hasta el "ejecutar"
+explícito (igual que la regla general de trabajo).
+
 ## Eliminar siempre con confirmación
 
 En toda la app, para eliminar un registro no alcanza con una "x" que borre
