@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.1.1";
+const APP_VERSION = "2.2.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -598,6 +598,46 @@ function Field({ label, children }) {
 }
 
 const inputCls = "w-full bg-white border border-[#D8D2C4] rounded-sm px-3 py-2 text-sm text-[#2A2118] placeholder-[#A69C88] focus:outline-none focus:ring-2 focus:ring-[#E8871E] focus:border-transparent";
+
+// Selector de fecha y hora usado en toda la app donde se programa una acción o tarea: la
+// fecha queda siempre a la vista, y la hora es opcional — se activa con "+ Establecer hora",
+// que abre el selector nativo (reloj) con un paso explícito de "Aceptar" antes de cerrarlo.
+// Ese paso evita el problema de algunos navegadores donde, al cerrar el selector nativo, el
+// primer toque siguiente no llega al botón de guardar del formulario.
+function SelectorFechaHora({ fecha, hora, onFecha, onHora, labelFecha = "Fecha" }) {
+  const [editandoHora, setEditandoHora] = useState(false);
+  const [horaTemp, setHoraTemp] = useState(hora || "");
+  const timeRef = useRef(null);
+
+  const abrirHora = () => { setHoraTemp(hora || ""); setEditandoHora(true); };
+  const aceptarHora = () => { onHora(horaTemp); timeRef.current?.blur(); setEditandoHora(false); };
+  const cancelarHora = () => setEditandoHora(false);
+  const quitarHora = () => { onHora(""); setEditandoHora(false); };
+
+  return (
+    <div className="mb-3">
+      <Field label={labelFecha}><input type="date" className={inputCls} value={fecha} onChange={(e) => onFecha(e.target.value)} /></Field>
+      {editandoHora ? (
+        <div className="mt-1.5">
+          <input ref={timeRef} type="time" autoFocus className={inputCls} value={horaTemp} onChange={(e) => setHoraTemp(e.target.value)} />
+          <div className="flex gap-2 mt-1.5">
+            <button type="button" onClick={cancelarHora} className="flex-1 border border-[#D8D2C4] rounded-sm py-1.5 text-xs font-bold text-[#6B6352]">Cancelar</button>
+            <button type="button" onClick={aceptarHora} className="flex-1 bg-[#E8871E] text-[#2A2118] rounded-sm py-1.5 text-xs font-bold">Aceptar</button>
+          </div>
+        </div>
+      ) : hora ? (
+        <div className="flex items-center justify-between mt-1.5">
+          <button type="button" onClick={abrirHora} className="flex items-center gap-1 text-sm font-semibold text-[#2A2118]">
+            <Clock3 size={13} className="text-[#8A8272]" /> {hora} hs
+          </button>
+          <IconBtn label="Quitar hora" danger onClick={quitarHora}><X size={14} /></IconBtn>
+        </div>
+      ) : (
+        <button type="button" onClick={abrirHora} className="text-xs font-bold text-[#B0452E]">+ Establecer hora</button>
+      )}
+    </div>
+  );
+}
 
 // Elige texto claro u oscuro según qué tan clara sea la variante de fondo (usado sobre
 // core.tema.botonActivo, que cambia mucho de tono entre paletas).
@@ -1671,12 +1711,12 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
                 </>
               ) : (
                 <>
-                  <Field label="Fecha">
-                    <input type="date" className={inputCls} value={fechaEspecifica} onChange={(e) => { setFechaEspecifica(e.target.value); setConfirmarEspecifica(false); }} />
-                  </Field>
-                  <Field label="Hora (opcional)">
-                    <input type="time" className={inputCls} value={horaEspecifica} onChange={(e) => setHoraEspecifica(e.target.value)} />
-                  </Field>
+                  <SelectorFechaHora
+                    fecha={fechaEspecifica}
+                    hora={horaEspecifica}
+                    onFecha={(v) => { setFechaEspecifica(v); setConfirmarEspecifica(false); }}
+                    onHora={setHoraEspecifica}
+                  />
                   {especificaInhabil && (
                     <div className="bg-[#FBEEE7] border border-[#E8871E] rounded-sm p-2.5 mb-3">
                       <p className="text-xs text-[#2A2118]">Ese día está marcado como no hábil. Si guardás de nuevo, se confirma igual.</p>
@@ -1863,11 +1903,18 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
           >
             <CalendarClock size={17} />
           </button>
+          <button
+            onClick={crearTareaRapida}
+            disabled={!tituloNuevo.trim()}
+            aria-label="Agregar tarea"
+            className="shrink-0 w-10 h-10 rounded-sm flex items-center justify-center bg-[#E8871E] text-[#2A2118] disabled:bg-[#E7E2D8] disabled:text-[#C9C1AE] disabled:cursor-not-allowed"
+          >
+            <Plus size={18} />
+          </button>
         </div>
         {mostrarFecha && (
-          <div className="flex gap-2 mt-2">
-            <input type="date" value={fechaNueva} onChange={(e) => setFechaNueva(e.target.value)} className={inputCls} />
-            <input type="time" value={horaNueva} onChange={(e) => setHoraNueva(e.target.value)} className={inputCls} />
+          <div className="mt-2">
+            <SelectorFechaHora fecha={fechaNueva} hora={horaNueva} onFecha={setFechaNueva} onHora={setHoraNueva} />
           </div>
         )}
         <p className="text-xs text-[#A69C88] mt-2">La fecha y hora son opcionales — si no las cargás, la tarea se guarda igual.</p>
@@ -1967,8 +2014,7 @@ function EditarFechaTareaForm({ hilo, pendiente, setAcciones, onClose }) {
 
   return (
     <div>
-      <Field label="Fecha"><input type="date" className={inputCls} value={fecha} onChange={(e) => setFecha(e.target.value)} /></Field>
-      <Field label="Hora (opcional)"><input type="time" className={inputCls} value={hora} onChange={(e) => setHora(e.target.value)} /></Field>
+      <SelectorFechaHora fecha={fecha} hora={hora} onFecha={setFecha} onHora={setHora} />
       <PrimaryBtn full onClick={guardar}>Guardar</PrimaryBtn>
       {pendiente && !pendiente.notaHecho && (
         <button onClick={quitarFecha} className="w-full text-center text-xs font-bold text-[#B0452E] mt-2">Quitar fecha (la tarea queda sin programar)</button>
@@ -4345,8 +4391,7 @@ function AgregarTareaAlHiloForm({ core, hiloClienteId, personasDelHilo, onVincul
               {columnas.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
             </select>
           </Field>
-          <Field label="Fecha (opcional)"><input type="date" className={inputCls} value={fecha} onChange={(e) => setFecha(e.target.value)} /></Field>
-          <Field label="Hora (opcional)"><input type="time" className={inputCls} value={hora} onChange={(e) => setHora(e.target.value)} /></Field>
+          <SelectorFechaHora fecha={fecha} hora={hora} onFecha={setFecha} onHora={setHora} labelFecha="Fecha (opcional)" />
           <p className="text-xs text-[#A69C88] mb-3">Si cargás fecha, se crea con esa acción pendiente. Si no, la tarea queda sin fecha hasta que la avances.</p>
           <PrimaryBtn full onClick={crear}>Crear tarea</PrimaryBtn>
         </>
@@ -4503,12 +4548,12 @@ function AvanzarHiloForm({ hilo, pendienteActual, core, setCore, acciones, setAc
               </>
             ) : (
               <>
-                <Field label="Fecha">
-                  <input type="date" className={inputCls} value={fechaEspecifica} onChange={(e) => { setFechaEspecifica(e.target.value); setConfirmarEspecifica(false); }} />
-                </Field>
-                <Field label="Hora (opcional)">
-                  <input type="time" className={inputCls} value={horaEspecifica} onChange={(e) => setHoraEspecifica(e.target.value)} />
-                </Field>
+                <SelectorFechaHora
+                  fecha={fechaEspecifica}
+                  hora={horaEspecifica}
+                  onFecha={(v) => { setFechaEspecifica(v); setConfirmarEspecifica(false); }}
+                  onHora={setHoraEspecifica}
+                />
                 {especificaInhabil && (
                   <div className="bg-[#FBEEE7] border border-[#E8871E] rounded-sm p-2.5 mb-3">
                     <p className="text-xs text-[#2A2118]">Ese día está marcado como no hábil. Si guardás de nuevo, se confirma igual.</p>
@@ -4613,8 +4658,13 @@ function EditAccionForm({ accion, core, setCore, otrasAccionesDelHilo = [], onCl
               <p className="text-xs text-[#2A2118]">Este hilo ya tiene otra acción pendiente. No se puede guardar como Pendiente hasta resolver esa — reprogramala o marcala como Realizada primero.</p>
             </div>
           )}
-          <Field label="Fecha programada"><input type="date" className={inputCls} value={fechaProgramada} onChange={(e) => { setFechaProgramada(e.target.value); setConfirmar(false); }} /></Field>
-          <Field label="Hora (opcional)"><input type="time" className={inputCls} value={horaProgramada} onChange={(e) => setHoraProgramada(e.target.value)} /></Field>
+          <SelectorFechaHora
+            fecha={fechaProgramada}
+            hora={horaProgramada}
+            onFecha={(v) => { setFechaProgramada(v); setConfirmar(false); }}
+            onHora={setHoraProgramada}
+            labelFecha="Fecha programada"
+          />
           {inhabil && (
             <div className="bg-[#FBEEE7] border border-[#E8871E] rounded-sm p-2.5 mb-3">
               <p className="text-xs text-[#2A2118]">Ese día está marcado como no hábil. Si guardás de nuevo, se confirma igual.</p>
