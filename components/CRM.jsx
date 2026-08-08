@@ -6,16 +6,35 @@ import {
   Plus, X, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Search, Settings, Users, Building2,
   HardHat, CalendarClock, Trash2, Pencil, Check, AlertTriangle,
   Tag, Star, Clock3, ListChecks, Repeat, ArrowLeft, ArrowDownAZ, ArrowUpAZ, GitBranch, Archive,
-  BarChart3, FileSpreadsheet, Download, Trello, GripVertical, LogOut, Menu, Tags, FolderKanban, Briefcase, Layers,
+  BarChart3, FileSpreadsheet, Download, Trello, GripVertical, LogOut, Menu, Tags, FolderKanban, Layers,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.24.0";
+const APP_VERSION = "2.0.0";
+
+// Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
+// la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
+const TR_DUENA = "TR_DUENA";
+const TR_CABECERA = "TR_CABECERA";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
+
+// Tipos de relación de ejemplo: los dos fijos (dueña / cabecera) + los que salen de los
+// cargos clásicos, ya convertidos a relación asimétrica ("{Cargo} de" / "Tiene como {Cargo} a").
+const seedTiposRelacion = () => [
+  { id: TR_DUENA, cualidad: "asimetrica", nombre: "Es dueña de", nombreInverso: "Pertenece a", implicaJerarquia: false },
+  { id: TR_CABECERA, cualidad: "asimetrica", nombre: "Es cabecera de", nombreInverso: "Es subsidiaria de", implicaJerarquia: true },
+  { id: "TRC_C01", cualidad: "asimetrica", nombre: "Dueño de", nombreInverso: "Tiene como Dueño a", implicaJerarquia: false },
+  { id: "TRC_C02", cualidad: "asimetrica", nombre: "Gerente de", nombreInverso: "Tiene como Gerente a", implicaJerarquia: false },
+  { id: "TRC_C03", cualidad: "asimetrica", nombre: "Jefe de Compras de", nombreInverso: "Tiene como Jefe de Compras a", implicaJerarquia: false },
+  { id: "TRC_C04", cualidad: "asimetrica", nombre: "Administración de", nombreInverso: "Tiene como Administración a", implicaJerarquia: false },
+];
+
+const vinc = (origenTipo, origenId, destinoTipo, destinoId, tipoRelacionId, principal, desde) =>
+  ({ id: uid("V"), origenTipo, origenId, destinoTipo, destinoId, tipoRelacionId: tipoRelacionId || null, principal: !!principal, desde: desde || todayISO(), hasta: null, nota: "" });
 
 const seedCore = () => ({
   personas: [
@@ -24,15 +43,8 @@ const seedCore = () => ({
     { id: "P003", nombre: "Roberto Díaz", whatsapp: "011 15-777-8899", direccion: "Av. Rivadavia 900", ciudad: "CABA", notas: "Dueño, muy ocupado, mejor mail primero" },
   ],
   empresas: [
-    { id: "E001", denominacion: "Constructora del Sur S.A.", direccion: "Ruta 20 Km 8", ciudad: "Córdoba" },
-    { id: "E002", denominacion: "Grupo Díaz Desarrollos", direccion: "Av. Rivadavia 900", ciudad: "CABA" },
-  ],
-  cargos: [
-    { id: "C01", nombre: "Dueño" },
-    { id: "C02", nombre: "Gerente" },
-    { id: "C03", nombre: "Jefe de Compras" },
-    { id: "C04", nombre: "Administración" },
-    { id: "C05", nombre: "Otro" },
+    { id: "E001", denominacion: "Constructora del Sur S.A.", cuit: "", direccion: "Ruta 20 Km 8", ciudad: "Córdoba" },
+    { id: "E002", denominacion: "Grupo Díaz Desarrollos", cuit: "", direccion: "Av. Rivadavia 900", ciudad: "CABA" },
   ],
   obras: [
     { id: "O001", nombre: "Anatonia Village", descripcion: "Barrio cerrado, 40 lotes", metros2: 12000, direccion: "Camino a Argüello s/n", ciudad: "Córdoba" },
@@ -54,22 +66,25 @@ const seedCore = () => ({
     { id: "CAT2", nombre: "Rubro" },
     { id: "CAT3", nombre: "Prioridad" },
   ],
-  tiposRelacion: [],
-  vinculos: [],
-  personaEmpresa: [
-    { id: uid("pe"), personaId: "P001", empresaId: "E001", cargoId: "C03", principal: true },
-    { id: uid("pe"), personaId: "P002", empresaId: "E001", cargoId: "C04", principal: false },
-    { id: uid("pe"), personaId: "P003", empresaId: "E002", cargoId: "C01", principal: true },
+  tiposRelacion: seedTiposRelacion(),
+  // Único sistema de relaciones de la app (Red de relaciones). Cada vínculo tiene origen y
+  // destino (Persona/Empresa/Obra/Hilo), un tipo de relación opcional (sin tipo = genérico,
+  // como los vínculos a un hilo), si es el vínculo "principal", y su vigencia (desde/hasta).
+  vinculos: [
+    vinc("Persona", "P001", "Empresa", "E001", "TRC_C03", true, todayISO()),
+    vinc("Persona", "P002", "Empresa", "E001", "TRC_C04", false, todayISO()),
+    vinc("Persona", "P003", "Empresa", "E002", "TRC_C01", true, todayISO()),
+    vinc("Empresa", "E001", "Obra", "O001", TR_DUENA, false, todayISO()),
+    vinc("Persona", "P001", "Hilo", "H001", null, true, addDaysISO(todayISO(), -15)),
+    vinc("Persona", "P001", "Hilo", "H002", null, true, addDaysISO(todayISO(), -20)),
+    vinc("Persona", "P002", "Hilo", "H003", null, true, addDaysISO(todayISO(), -6)),
+    vinc("Persona", "P003", "Hilo", "H004", null, true, addDaysISO(todayISO(), -10)),
+    vinc("Hilo", "H001", "Empresa", "E001", null, false, addDaysISO(todayISO(), -15)),
+    vinc("Hilo", "H002", "Empresa", "E001", null, false, addDaysISO(todayISO(), -20)),
+    vinc("Hilo", "H003", "Empresa", "E001", null, false, addDaysISO(todayISO(), -6)),
+    vinc("Hilo", "H004", "Empresa", "E002", null, false, addDaysISO(todayISO(), -10)),
+    vinc("Hilo", "H002", "Obra", "O001", null, false, addDaysISO(todayISO(), -20)),
   ],
-  empresaObra: [{ id: uid("eo"), empresaId: "E001", obraId: "O001" }],
-  personaObra: [],
-  hiloEmpresa: [
-    { id: uid("he"), hiloId: "H001", empresaId: "E001" },
-    { id: uid("he"), hiloId: "H002", empresaId: "E001" },
-    { id: uid("he"), hiloId: "H003", empresaId: "E001" },
-    { id: uid("he"), hiloId: "H004", empresaId: "E002" },
-  ],
-  hiloObra: [{ id: uid("ho"), hiloId: "H002", obraId: "O001" }],
   entidadEtiqueta: [
     { id: uid("et"), etiquetaId: "ET01", entidadTipo: "Empresa", entidadId: "E001" },
     { id: uid("et"), etiquetaId: "ET03", entidadTipo: "Empresa", entidadId: "E001" },
@@ -88,11 +103,11 @@ const seedCore = () => ({
     { id: "T3", nombre: "Hecho", orden: 2 },
   ],
   hilos: [
-    { id: "H001", participantes: [{ id: "part1", personaId: "P001", desde: addDaysISO(todayISO(), -15), hasta: null, principal: true }], titulo: "Presupuesto cables solares", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -15), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" },
-    { id: "H002", participantes: [{ id: "part2", personaId: "P001", desde: addDaysISO(todayISO(), -20), hasta: null, principal: true }], titulo: "Avance obra Anatonia Village", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -20), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" },
-    { id: "H003", participantes: [{ id: "part3", personaId: "P002", desde: addDaysISO(todayISO(), -6), hasta: null, principal: true }], titulo: "Datos de facturación", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -6), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" },
-    { id: "H004", participantes: [{ id: "part4", personaId: "P003", desde: addDaysISO(todayISO(), -10), hasta: null, principal: true }], titulo: "Propuesta anual", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -10), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" },
-    { id: "H005", participantes: [], titulo: "Comprar resma de hojas", estado: "Activo", fechaCreacion: todayISO(), tipo: "tarea", columnaTareaId: "T1", hiloRelacionadoId: null, notaCierre: "" },
+    { id: "H001", titulo: "Presupuesto cables solares", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -15), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" },
+    { id: "H002", titulo: "Avance obra Anatonia Village", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -20), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" },
+    { id: "H003", titulo: "Datos de facturación", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -6), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" },
+    { id: "H004", titulo: "Propuesta anual", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -10), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" },
+    { id: "H005", titulo: "Comprar resma de hojas", estado: "Activo", fechaCreacion: todayISO(), tipo: "tarea", columnaTareaId: "T1", hiloRelacionadoId: null, notaCierre: "" },
   ],
 });
 
@@ -109,12 +124,65 @@ const seedAcciones = () => {
   ];
 };
 
+// Migra el modelo viejo (tablas separadas: cargos, personaEmpresa, empresaObra, personaObra,
+// hiloEmpresa, hiloObra, empresa.cabeceraId, hilo.participantes) al sistema único de "vinculos".
+// Es idempotente: una vez migrado, las tablas viejas ya no están y no vuelve a migrar nada.
+function migrarAVinculos(out) {
+  const tipos = Array.isArray(out.tiposRelacion) ? [...out.tiposRelacion] : [];
+  const ensureTR = (t) => { if (!tipos.some((x) => x.id === t.id)) tipos.push(t); };
+  ensureTR({ id: TR_DUENA, cualidad: "asimetrica", nombre: "Es dueña de", nombreInverso: "Pertenece a", implicaJerarquia: false });
+  ensureTR({ id: TR_CABECERA, cualidad: "asimetrica", nombre: "Es cabecera de", nombreInverso: "Es subsidiaria de", implicaJerarquia: true });
+
+  // Cada cargo del catálogo viejo pasa a ser un tipo de relación asimétrico.
+  const cargoTR = {};
+  for (const c of (out.cargos || [])) {
+    const id = "TRC_" + c.id;
+    ensureTR({ id, cualidad: "asimetrica", nombre: `${c.nombre} de`, nombreInverso: `Tiene como ${c.nombre} a`, implicaJerarquia: false });
+    cargoTR[c.id] = id;
+  }
+
+  // Vínculos que ya existían (del sistema nuevo parcial): normaliza campos (fecha -> desde, etc.).
+  const yaV = (out.vinculos || []).map((v) => ({
+    id: v.id || uid("V"),
+    origenTipo: v.origenTipo, origenId: v.origenId,
+    destinoTipo: v.destinoTipo, destinoId: v.destinoId,
+    tipoRelacionId: v.tipoRelacionId ?? null,
+    principal: !!v.principal,
+    desde: v.desde || v.fecha || todayISO(),
+    hasta: v.hasta ?? null,
+    nota: v.nota || "",
+  }));
+
+  const nuevos = [];
+  const push = (o, oid, d, did, tr, principal, desde, hasta) =>
+    nuevos.push({ id: uid("V"), origenTipo: o, origenId: oid, destinoTipo: d, destinoId: did, tipoRelacionId: tr || null, principal: !!principal, desde: desde || todayISO(), hasta: hasta ?? null, nota: "" });
+
+  for (const r of (out.personaEmpresa || [])) push("Persona", r.personaId, "Empresa", r.empresaId, cargoTR[r.cargoId] || null, r.principal, r.desde);
+  for (const r of (out.empresaObra || [])) push("Empresa", r.empresaId, "Obra", r.obraId, TR_DUENA, false, r.desde);
+  for (const r of (out.personaObra || [])) push("Persona", r.personaId, "Obra", r.obraId, null, false, r.desde);
+  for (const e of (out.empresas || [])) if (e.cabeceraId) push("Empresa", e.cabeceraId, "Empresa", e.id, TR_CABECERA, false);
+  for (const h of (out.hilos || [])) for (const p of (h.participantes || [])) push("Persona", p.personaId, "Hilo", h.id, null, p.principal, p.desde || h.fechaCreacion, p.hasta);
+  for (const r of (out.hiloEmpresa || [])) push("Hilo", r.hiloId, "Empresa", r.empresaId, null, false);
+  for (const r of (out.hiloObra || [])) push("Hilo", r.hiloId, "Obra", r.obraId, null, false);
+
+  out.tiposRelacion = tipos;
+  out.vinculos = [...yaV, ...nuevos];
+  out.hilos = (out.hilos || []).map(({ participantes, empresaId, obraId, personaId, ...h }) => h);
+  out.empresas = (out.empresas || []).map(({ cabeceraId, ...e }) => e);
+  delete out.cargos;
+  delete out.personaEmpresa;
+  delete out.empresaObra;
+  delete out.personaObra;
+  delete out.hiloEmpresa;
+  delete out.hiloObra;
+  return out;
+}
+
 function normalizeCore(c) {
   const seed = seedCore();
   const out = { ...seed, ...c };
-  if (!Array.isArray(out.cargos) || out.cargos.length === 0) out.cargos = seed.cargos;
   if (!Array.isArray(out.categorias) || out.categorias.length === 0) out.categorias = seed.categorias;
-  out.empresas = (out.empresas || []).map((e) => ({ ciudad: "", cuit: "", cabeceraId: null, ...e }));
+  out.empresas = (out.empresas || []).map((e) => ({ ciudad: "", cuit: "", ...e }));
   out.etiquetas = (out.etiquetas || []).map((e) => {
     if (e.categoriaId) return e;
     // dato viejo: tenía "categoria" como texto libre -> lo mapeamos a una categoría de la tabla (o la creamos)
@@ -127,47 +195,16 @@ function normalizeCore(c) {
     const { categoria, ...rest } = e;
     return { ...rest, categoriaId: match ? match.id : out.categorias[0].id };
   });
-  out.personaEmpresa = (out.personaEmpresa || []).map((r) => {
-    if (r.cargoId) return r;
-    // dato viejo: tenía "cargo" como texto libre -> lo mapeamos a un cargo de la tabla, o "Otro"
-    const match = out.cargos.find((c2) => c2.nombre.toLowerCase() === (r.cargo || "").toLowerCase());
-    const { cargo, ...rest } = r;
-    return { ...rest, cargoId: match ? match.id : out.cargos[out.cargos.length - 1].id };
-  });
-  if (!Array.isArray(out.personaObra)) out.personaObra = [];
-  if (!Array.isArray(out.hiloEmpresa)) out.hiloEmpresa = [];
-  if (!Array.isArray(out.hiloObra)) out.hiloObra = [];
   if (!Array.isArray(out.hilos)) out.hilos = [];
-  const hiloEmpresaMigrada = [];
-  const hiloObraMigrada = [];
-  out.hilos = out.hilos.map((h) => {
-    const base = { tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "", ...h };
-    if (!Array.isArray(base.participantes)) {
-      base.participantes = base.personaId
-        ? [{ id: uid("part"), personaId: base.personaId, desde: base.fechaCreacion || todayISO(), hasta: null, principal: true }]
-        : [];
-    }
-    // dato viejo: tenía "empresaId" como campo único -> se migra a la relación hiloEmpresa (varias empresas por hilo)
-    if (base.empresaId) {
-      const yaExiste = out.hiloEmpresa.some((r) => r.hiloId === base.id && r.empresaId === base.empresaId);
-      if (!yaExiste) hiloEmpresaMigrada.push({ id: uid("he"), hiloId: base.id, empresaId: base.empresaId });
-    }
-    // dato viejo: tenía "obraId" como campo único -> se migra a la relación hiloObra (varias obras por hilo)
-    if (base.obraId) {
-      const yaExiste = out.hiloObra.some((r) => r.hiloId === base.id && r.obraId === base.obraId);
-      if (!yaExiste) hiloObraMigrada.push({ id: uid("ho"), hiloId: base.id, obraId: base.obraId });
-    }
-    const { empresaId, obraId, ...rest } = base;
-    return rest;
-  });
-  out.hiloEmpresa = [...out.hiloEmpresa, ...hiloEmpresaMigrada];
-  out.hiloObra = [...out.hiloObra, ...hiloObraMigrada];
+  out.hilos = out.hilos.map((h) => ({ tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "", ...h }));
+  if (!Array.isArray(out.tiposRelacion)) out.tiposRelacion = [];
+  if (!Array.isArray(out.vinculos)) out.vinculos = [];
+  // Unifica todo al sistema de vínculos (migra las tablas viejas si todavía están).
+  migrarAVinculos(out);
   out.parametros = { umbralDiaLleno: 8, diasHabiles: [1, 2, 3, 4, 5], fechasNoHabiles: [], diasUrgente: 3, diasProximos: 7, googleContactsLabel: "CRM", tituloApp: "Seguimiento comercial", nombreSinColumnaSeguimientos: "Sin columna", nombreSinColumnaTareas: "Sin columna", ...(out.parametros || {}) };
   out.tema = { ...{ botonActivo: "#1B4D2E", botonInactivo: "#D9F0DE", tarjeta: "#FFFFFF", linea: "#E4DECF", fondo: "#F7F5F0", ink: "#2A2118", mutedBase: "#6B6352" }, ...(out.tema || {}) };
   if (!Array.isArray(out.kanbanColumnas)) out.kanbanColumnas = seed.kanbanColumnas;
   if (!Array.isArray(out.kanbanColumnasTareas)) out.kanbanColumnasTareas = seed.kanbanColumnasTareas;
-  if (!Array.isArray(out.tiposRelacion)) out.tiposRelacion = [];
-  if (!Array.isArray(out.vinculos)) out.vinculos = [];
   return out;
 }
 
@@ -270,41 +307,101 @@ function fmtNumero(n) {
 function tipoDefaultId(core) {
   return core.tiposAccion.find((t) => t.nombre.toLowerCase().includes("whatsapp"))?.id || core.tiposAccion[0]?.id || "";
 }
-// -------- Helpers de participantes (personas vinculadas a un hilo, con historial) --------
-function participantesActivos(hilo) {
-  return (hilo.participantes || []).filter((p) => !p.hasta);
+// -------- Helpers de vínculos: consultas genéricas sobre core.vinculos --------
+// Todos los vínculos que tocan una entidad (como origen o destino).
+function vinculosDeEntidad(core, tipo, id, soloActivos = false) {
+  return (core.vinculos || []).filter((v) =>
+    ((v.origenTipo === tipo && v.origenId === id) || (v.destinoTipo === tipo && v.destinoId === id)) &&
+    (!soloActivos || !v.hasta));
+}
+// Dado un vínculo y una de sus puntas (la "ancla"), devuelve la otra punta y si la ancla era el origen.
+function contraparteVinculo(v, tipo, id) {
+  const esOrigen = v.origenTipo === tipo && v.origenId === id;
+  return esOrigen
+    ? { tipo: v.destinoTipo, id: v.destinoId, esOrigen: true }
+    : { tipo: v.origenTipo, id: v.origenId, esOrigen: false };
+}
+// Contrapartes de un tipo dado vinculadas a (tipo,id): [{ v, c }].
+function contrapartesDe(core, tipo, id, tipoDestino, soloActivos = false) {
+  return vinculosDeEntidad(core, tipo, id, soloActivos)
+    .map((v) => ({ v, c: contraparteVinculo(v, tipo, id) }))
+    .filter(({ c }) => c.tipo === tipoDestino);
+}
+
+// -------- Helpers de hilo (personas/empresas/obras derivadas de vínculos) --------
+// Participantes activos de un hilo (personas sin fecha "hasta"). id = id del vínculo.
+function participantesActivos(hilo, core) {
+  return contrapartesDe(core, "Hilo", hilo.id, "Persona", true)
+    .map(({ v, c }) => ({ id: v.id, personaId: c.id, desde: v.desde, hasta: v.hasta, principal: !!v.principal }));
+}
+// Todos los participantes (activos + históricos, con "hasta").
+function participantesDeHilo(hilo, core) {
+  return contrapartesDe(core, "Hilo", hilo.id, "Persona")
+    .map(({ v, c }) => ({ id: v.id, personaId: c.id, desde: v.desde, hasta: v.hasta, principal: !!v.principal }));
 }
 function personasActivasDeHilo(hilo, core) {
-  const activos = [...participantesActivos(hilo)].sort((a, b) => (b.principal ? 1 : 0) - (a.principal ? 1 : 0));
+  const activos = participantesActivos(hilo, core).sort((a, b) => (b.principal ? 1 : 0) - (a.principal ? 1 : 0));
   return activos.map((p) => core.personas.find((pp) => pp.id === p.personaId)).filter(Boolean);
 }
 function personaPrincipalDeHilo(hilo, core) {
-  const personas = personasActivasDeHilo(hilo, core);
-  return personas[0] || null;
+  return personasActivasDeHilo(hilo, core)[0] || null;
 }
-// Un hilo puede estar vinculado a varias empresas (vía la relación hiloEmpresa).
 function empresasDeHilo(hilo, core) {
-  return (core.hiloEmpresa || [])
-    .filter((r) => r.hiloId === hilo.id)
-    .map((r) => core.empresas.find((e) => e.id === r.empresaId))
-    .filter(Boolean);
+  return contrapartesDe(core, "Hilo", hilo.id, "Empresa", true)
+    .map(({ c }) => core.empresas.find((e) => e.id === c.id)).filter(Boolean);
 }
-// Jerarquía de empresas (un solo nivel): una empresa "cabecera" agrupa a otras.
-// Subsidiarias de una cabecera dada (empresas cuyo cabeceraId apunta a ella).
-function subsidiariasDeEmpresa(empresaId, core) {
-  return core.empresas.filter((e) => e.cabeceraId === empresaId);
-}
-// Empresas elegibles como cabecera para "empresaId": ni ella misma, ni empresas que ya
-// son subsidiarias de otra (evita más de un nivel).
-function candidatasACabecera(empresaId, core) {
-  return core.empresas.filter((e) => e.id !== empresaId && !e.cabeceraId);
-}
-// Un hilo puede estar vinculado a varias obras (vía la relación hiloObra).
 function obrasDeHilo(hilo, core) {
-  return (core.hiloObra || [])
-    .filter((r) => r.hiloId === hilo.id)
-    .map((r) => core.obras.find((o) => o.id === r.obraId))
-    .filter(Boolean);
+  return contrapartesDe(core, "Hilo", hilo.id, "Obra", true)
+    .map(({ c }) => core.obras.find((o) => o.id === c.id)).filter(Boolean);
+}
+// -------- Jerarquía de grupo (relación TR_CABECERA: cabecera = origen, subsidiaria = destino) --------
+function subsidiariasDeEmpresa(empresaId, core) {
+  return (core.vinculos || [])
+    .filter((v) => v.tipoRelacionId === TR_CABECERA && v.origenTipo === "Empresa" && v.origenId === empresaId && v.destinoTipo === "Empresa" && !v.hasta)
+    .map((v) => core.empresas.find((e) => e.id === v.destinoId)).filter(Boolean);
+}
+function cabecerasDeEmpresa(empresaId, core) {
+  return (core.vinculos || [])
+    .filter((v) => v.tipoRelacionId === TR_CABECERA && v.destinoTipo === "Empresa" && v.destinoId === empresaId && v.origenTipo === "Empresa" && !v.hasta)
+    .map((v) => core.empresas.find((e) => e.id === v.origenId)).filter(Boolean);
+}
+// Primera cabecera de una empresa (la app muestra "Grupo X" con esta).
+function cabeceraDeEmpresa(empresaId, core) {
+  return cabecerasDeEmpresa(empresaId, core)[0] || null;
+}
+// Multinivel libre: cualquier empresa distinta de ella misma puede ser su cabecera.
+function candidatasACabecera(empresaId, core) {
+  return core.empresas.filter((e) => e.id !== empresaId);
+}
+// -------- Consultas persona↔empresa y empresa↔obra (para cascadas e informes) --------
+function empresaIdsDePersona(core, personaId) {
+  return [...new Set(contrapartesDe(core, "Persona", personaId, "Empresa", true).map(({ c }) => c.id))];
+}
+function personaIdsDeEmpresa(core, empresaId) {
+  return [...new Set(contrapartesDe(core, "Empresa", empresaId, "Persona", true).map(({ c }) => c.id))];
+}
+function obraIdsDeEmpresa(core, empresaId) {
+  return (core.vinculos || [])
+    .filter((v) => v.tipoRelacionId === TR_DUENA && v.origenTipo === "Empresa" && v.origenId === empresaId && v.destinoTipo === "Obra" && !v.hasta)
+    .map((v) => v.destinoId);
+}
+function empresaDueñaDeObra(core, obraId) {
+  const v = (core.vinculos || []).find((x) => x.tipoRelacionId === TR_DUENA && x.destinoTipo === "Obra" && x.destinoId === obraId && x.origenTipo === "Empresa" && !x.hasta);
+  return v ? v.origenId : null;
+}
+function obraIdsDirectasDePersona(core, personaId) {
+  return contrapartesDe(core, "Persona", personaId, "Obra", true).map(({ c }) => c.id);
+}
+function hilosDePersona(core, personaId) {
+  const ids = new Set(contrapartesDe(core, "Persona", personaId, "Hilo").map(({ c }) => c.id));
+  return core.hilos.filter((h) => ids.has(h.id));
+}
+// ¿Existe ya un vínculo (activo) entre dos entidades, con un tipo de relación dado (o cualquiera)?
+function existeVinculo(core, oTipo, oId, dTipo, dId, tipoRelacionId = undefined) {
+  return (core.vinculos || []).some((v) => !v.hasta &&
+    (tipoRelacionId === undefined || (v.tipoRelacionId || null) === (tipoRelacionId || null)) &&
+    (((v.origenTipo === oTipo && v.origenId === oId && v.destinoTipo === dTipo && v.destinoId === dId)) ||
+     ((v.origenTipo === dTipo && v.origenId === dId && v.destinoTipo === oTipo && v.destinoId === oId))));
 }
 function etiquetaVinculoHilo(hilo, core) {
   const personas = personasActivasDeHilo(hilo, core);
@@ -323,16 +420,22 @@ function getIniciales(nombre) {
 }
 
 // -------- Helpers de vínculos (Red de relaciones) --------
+// Entidades que el usuario puede vincular con un "tipo de relación" en la pantalla de
+// Relaciones y en el "+ Vincular" de cada ficha. Los hilos NO están acá: se vinculan solo
+// de forma genérica (sin tipo) desde la propia ficha del hilo.
 const TIPOS_ENTIDAD_RELACION = [
   { tipo: "Persona", coleccion: "personas", labelKey: "nombre" },
   { tipo: "Empresa", coleccion: "empresas", labelKey: "denominacion" },
   { tipo: "Obra", coleccion: "obras", labelKey: "nombre" },
 ];
+// Para mostrar el nombre de cualquier punta de un vínculo (incluye Hilo, que no es
+// relacionable manualmente pero sí aparece como contraparte de vínculos genéricos).
+const ENTIDAD_LABEL = { Persona: ["personas", "nombre"], Empresa: ["empresas", "denominacion"], Obra: ["obras", "nombre"], Hilo: ["hilos", "titulo"] };
 function entidadLabel(tipo, id, core) {
-  const def = TIPOS_ENTIDAD_RELACION.find((t) => t.tipo === tipo);
+  const def = ENTIDAD_LABEL[tipo];
   if (!def) return null;
-  const item = (core[def.coleccion] || []).find((x) => x.id === id);
-  return item ? item[def.labelKey] : null;
+  const item = (core[def[0]] || []).find((x) => x.id === id);
+  return item ? item[def[1]] : null;
 }
 function todasLasEntidadesRelacionables(core) {
   return TIPOS_ENTIDAD_RELACION.flatMap((def) =>
@@ -345,13 +448,6 @@ function nombreRelacionLado(tipoRelacion, esOrigen) {
   if (!tipoRelacion) return "";
   if (tipoRelacion.cualidad !== "asimetrica") return tipoRelacion.nombre;
   return esOrigen ? tipoRelacion.nombre : (tipoRelacion.nombreInverso || tipoRelacion.nombre);
-}
-// Dado un vínculo y una de sus dos entidades (la "ancla"), devuelve la otra punta y si la
-// ancla era el origen (para saber qué nombre de la relación corresponde mostrar del lado de ella).
-function ladoOpuestoVinculo(vinculo, anclaTipo, anclaId) {
-  const esOrigen = vinculo.origenTipo === anclaTipo && vinculo.origenId === anclaId;
-  const otro = esOrigen ? { tipo: vinculo.destinoTipo, id: vinculo.destinoId } : { tipo: vinculo.origenTipo, id: vinculo.origenId };
-  return { otro, esOrigen };
 }
 
 function addPeriod(fromISO, value, unit) {
@@ -516,6 +612,20 @@ function Modal({ title, onClose, children }) {
         <div className="p-4 overflow-y-auto">{children}</div>
       </div>
     </div>
+  );
+}
+
+// Modal de confirmación de borrado reutilizable (criterio fijo de la app: nunca se borra
+// directo con una "x", siempre se pide confirmación).
+function ConfirmDeleteModal({ title, texto, onCancel, onConfirm, confirmLabel = "Sí, eliminar" }) {
+  return (
+    <Modal title={title} onClose={onCancel}>
+      <p className="text-sm text-[#2A2118] mb-4">{texto || "No se puede deshacer."}</p>
+      <div className="flex gap-2">
+        <button onClick={onCancel} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
+        <button onClick={onConfirm} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">{confirmLabel}</button>
+      </div>
+    </Modal>
   );
 }
 
@@ -940,7 +1050,6 @@ export default function CRM({ userId, onLogout }) {
     { id: "tiposAccion", label: "Tipos de acción", icon: Layers },
     { id: "etiquetas", label: "Etiquetas", icon: Tags },
     { id: "categorias", label: "Categorías de etiquetas", icon: FolderKanban },
-    { id: "cargos", label: "Cargos", icon: Briefcase },
     { id: "tiposRelacion", label: "Tipos de relación", icon: GitBranch },
   ];
 
@@ -1026,7 +1135,6 @@ export default function CRM({ userId, onLogout }) {
               {tab === "tiposAccion" && <TiposAccionView core={core} setCore={setCore} />}
               {tab === "etiquetas" && <EtiquetasView core={core} setCore={setCore} />}
               {tab === "categorias" && <CategoriasView core={core} setCore={setCore} />}
-              {tab === "cargos" && <CargosView core={core} setCore={setCore} />}
               {tab === "tiposRelacion" && <TiposRelacionView core={core} setCore={setCore} />}
               {tab === "relaciones" && <RelacionesView core={core} setCore={setCore} onOpen={openDetail} />}
               {tab === "informes" && <InformesView core={core} acciones={acciones} />}
@@ -1219,12 +1327,9 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
   // sobra que buscando lo que falta.
   const [empresaIds, setEmpresaIds] = useState(() => {
     let base = empresaFijaId ? [empresaFijaId] : [];
-    if (personaFija) {
-      const empresasDePersona = core.personaEmpresa.filter((r) => r.personaId === personaFija.id).map((r) => r.empresaId);
-      base = [...new Set([...base, ...empresasDePersona])];
-    }
+    if (personaFija) base = [...new Set([...base, ...empresaIdsDePersona(core, personaFija.id)])];
     if (obraFijaId) {
-      const dueña = core.empresaObra.find((r) => r.obraId === obraFijaId)?.empresaId;
+      const dueña = empresaDueñaDeObra(core, obraFijaId);
       if (dueña && !base.includes(dueña)) base.push(dueña);
     }
     return base;
@@ -1232,13 +1337,10 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
   const [empresaParaAgregar, setEmpresaParaAgregar] = useState("");
   const [obraIds, setObraIds] = useState(() => {
     let base = obraFijaId ? [obraFijaId] : [];
-    if (personaFija) {
-      const obrasDirectas = (core.personaObra || []).filter((r) => r.personaId === personaFija.id).map((r) => r.obraId);
-      base = [...new Set([...base, ...obrasDirectas])];
-    }
+    if (personaFija) base = [...new Set([...base, ...obraIdsDirectasDePersona(core, personaFija.id)])];
     const empresasBase = empresaFijaId ? [empresaFijaId] : [];
-    if (personaFija) empresasBase.push(...core.personaEmpresa.filter((r) => r.personaId === personaFija.id).map((r) => r.empresaId));
-    const obrasDeEmpresas = core.empresaObra.filter((r) => empresasBase.includes(r.empresaId)).map((r) => r.obraId);
+    if (personaFija) empresasBase.push(...empresaIdsDePersona(core, personaFija.id));
+    const obrasDeEmpresas = empresasBase.flatMap((eid) => obraIdsDeEmpresa(core, eid));
     return [...new Set([...base, ...obrasDeEmpresas])];
   });
   const [obraParaAgregar, setObraParaAgregar] = useState("");
@@ -1265,26 +1367,26 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
 
   const empresasDeLaPersona = useMemo(() => {
     if (!personaFija) return [];
-    const relEmpresas = core.personaEmpresa.filter((r) => r.personaId === personaFija.id);
-    return relEmpresas.map((r) => core.empresas.find((e) => e.id === r.empresaId)).filter(Boolean);
-  }, [personaFija, core.personaEmpresa, core.empresas]);
+    return empresaIdsDePersona(core, personaFija.id).map((eid) => core.empresas.find((e) => e.id === eid)).filter(Boolean);
+  }, [personaFija, core.vinculos, core.empresas]);
 
   const obrasDeLasEmpresas = useMemo(() => {
     if (empresaIds.length === 0) return [];
-    return core.empresaObra.filter((r) => empresaIds.includes(r.empresaId)).map((r) => core.obras.find((o) => o.id === r.obraId)).filter(Boolean);
-  }, [empresaIds, core.empresaObra, core.obras]);
+    const oids = [...new Set(empresaIds.flatMap((eid) => obraIdsDeEmpresa(core, eid)))];
+    return oids.map((oid) => core.obras.find((o) => o.id === oid)).filter(Boolean);
+  }, [empresaIds, core.vinculos, core.obras]);
 
   const agregarEmpresa = (empresaId) => {
     if (!empresaId) return;
     setEmpresaIds((ids) => (ids.includes(empresaId) ? ids : [...ids, empresaId]));
-    const obrasDeEsaEmpresa = core.empresaObra.filter((r) => r.empresaId === empresaId).map((r) => r.obraId);
+    const obrasDeEsaEmpresa = obraIdsDeEmpresa(core, empresaId);
     if (obrasDeEsaEmpresa.length > 0) setObraIds((ids) => [...new Set([...ids, ...obrasDeEsaEmpresa])]);
   };
   const quitarEmpresa = (empresaId) => setEmpresaIds((ids) => ids.filter((x) => x !== empresaId));
   const agregarObra = (nuevoObraId) => {
     if (!nuevoObraId) return;
     setObraIds((ids) => (ids.includes(nuevoObraId) ? ids : [...ids, nuevoObraId]));
-    const dueña = core.empresaObra.find((r) => r.obraId === nuevoObraId)?.empresaId;
+    const dueña = empresaDueñaDeObra(core, nuevoObraId);
     if (dueña) agregarEmpresa(dueña);
   };
   const quitarObra = (obraId) => setObraIds((ids) => ids.filter((x) => x !== obraId));
@@ -1293,9 +1395,9 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
   const elegirPersona = (nuevaPersonaId) => {
     setPersonaId(nuevaPersonaId);
     if (!nuevaPersonaId) return;
-    const empresasDeEsaPersona = core.personaEmpresa.filter((r) => r.personaId === nuevaPersonaId).map((r) => r.empresaId);
-    const obrasDirectas = (core.personaObra || []).filter((r) => r.personaId === nuevaPersonaId).map((r) => r.obraId);
-    const obrasDeEsasEmpresas = core.empresaObra.filter((r) => empresasDeEsaPersona.includes(r.empresaId)).map((r) => r.obraId);
+    const empresasDeEsaPersona = empresaIdsDePersona(core, nuevaPersonaId);
+    const obrasDirectas = obraIdsDirectasDePersona(core, nuevaPersonaId);
+    const obrasDeEsasEmpresas = empresasDeEsaPersona.flatMap((eid) => obraIdsDeEmpresa(core, eid));
     if (empresasDeEsaPersona.length > 0) setEmpresaIds((ids) => [...new Set([...ids, ...empresasDeEsaPersona])]);
     if (obrasDirectas.length + obrasDeEsasEmpresas.length > 0) setObraIds((ids) => [...new Set([...ids, ...obrasDirectas, ...obrasDeEsasEmpresas])]);
   };
@@ -1314,11 +1416,13 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
     if (!titulo.trim() || faltaVinculo) return;
     const hoy = todayISO();
     const personaIdFinal = personaFija ? personaFija.id : personaId;
-    const participantes = personaIdFinal ? [{ id: uid("part"), personaId: personaIdFinal, desde: hoy, hasta: null, principal: true }] : [];
-    const nuevoHilo = { id: uid("H"), participantes, titulo: titulo.trim(), estado: "Activo", fechaCreacion: hoy, tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" };
-    const nuevasRelacionesEmpresa = empresaIds.map((eid) => ({ id: uid("he"), hiloId: nuevoHilo.id, empresaId: eid }));
-    const nuevasRelacionesObra = obraIds.map((oid) => ({ id: uid("ho"), hiloId: nuevoHilo.id, obraId: oid }));
-    setCore((prev) => ({ ...prev, hilos: [nuevoHilo, ...prev.hilos], hiloEmpresa: [...(prev.hiloEmpresa || []), ...nuevasRelacionesEmpresa], hiloObra: [...(prev.hiloObra || []), ...nuevasRelacionesObra] }));
+    const nuevoHilo = { id: uid("H"), titulo: titulo.trim(), estado: "Activo", fechaCreacion: hoy, tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" };
+    const nuevosVinculos = [
+      ...(personaIdFinal ? [vinc("Persona", personaIdFinal, "Hilo", nuevoHilo.id, null, true, hoy)] : []),
+      ...empresaIds.map((eid) => vinc("Hilo", nuevoHilo.id, "Empresa", eid, null, false, hoy)),
+      ...obraIds.map((oid) => vinc("Hilo", nuevoHilo.id, "Obra", oid, null, false, hoy)),
+    ];
+    setCore((prev) => ({ ...prev, hilos: [nuevoHilo, ...prev.hilos], vinculos: [...(prev.vinculos || []), ...nuevosVinculos] }));
 
     if (showPrimerContacto && setAcciones) {
       setAcciones((prev) => {
@@ -1608,7 +1712,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
           excluirIds={empresasDeLaPersona.map((e) => e.id)}
           onClose={() => setShowVincularEmpresa(false)}
           onSave={(rel) => {
-            setCore((prev) => ({ ...prev, personaEmpresa: [...prev.personaEmpresa, { ...rel, personaId: personaFija.id, id: uid("pe") }] }));
+            setCore((prev) => ({ ...prev, vinculos: [...(prev.vinculos || []), vinc("Persona", personaFija.id, "Empresa", rel.empresaId, rel.tipoRelacionId || null, false, todayISO())] }));
             agregarEmpresa(rel.empresaId);
           }}
         />
@@ -2976,8 +3080,7 @@ function PersonasView({ core, setCore, onOpen }) {
     setCore((prev) => ({
       ...prev,
       personas: prev.personas.filter((p) => p.id !== id),
-      personaEmpresa: prev.personaEmpresa.filter((r) => r.personaId !== id),
-      personaObra: (prev.personaObra || []).filter((r) => r.personaId !== id),
+      vinculos: (prev.vinculos || []).filter((v) => !(v.origenTipo === "Persona" && v.origenId === id) && !(v.destinoTipo === "Persona" && v.destinoId === id)),
       entidadEtiqueta: prev.entidadEtiqueta.filter((r) => !(r.entidadTipo === "Persona" && r.entidadId === id)),
     }));
   };
@@ -3032,7 +3135,7 @@ function PersonasView({ core, setCore, onOpen }) {
       ) : (
         <div className="space-y-2">
           {list.map((p) => {
-            const empresas = core.personaEmpresa.filter((r) => r.personaId === p.id).map((r) => core.empresas.find((e) => e.id === r.empresaId)?.denominacion).filter(Boolean);
+            const empresas = empresaIdsDePersona(core, p.id).map((eid) => core.empresas.find((e) => e.id === eid)?.denominacion).filter(Boolean);
             return (
               <div key={p.id} className="w-full bg-white border border-[#E4DECF] rounded-sm p-3 flex items-center gap-3">
                 <button onClick={() => onOpen("persona", p.id)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
@@ -3107,17 +3210,16 @@ function PersonaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
     if (empresaIds.length > 0 || obraIds.length > 0) {
       setCore((prev) => {
         const empresaIdsYaLinkeadas = new Set(empresaIds);
-        const personaEmpresa = [...prev.personaEmpresa, ...empresaIds.map((empresaId) => ({ id: uid("pe"), personaId, empresaId }))];
-        const personaObra = [...(prev.personaObra || [])];
+        const nuevos = empresaIds.map((empresaId) => vinc("Persona", personaId, "Empresa", empresaId, null, false, todayISO()));
         for (const obraId of obraIds) {
-          personaObra.push({ id: uid("po"), personaId, obraId });
-          const dueña = core.empresaObra.find((r) => r.obraId === obraId)?.empresaId;
+          nuevos.push(vinc("Persona", personaId, "Obra", obraId, null, false, todayISO()));
+          const dueña = empresaDueñaDeObra(prev, obraId);
           if (dueña && !empresaIdsYaLinkeadas.has(dueña)) {
-            personaEmpresa.push({ id: uid("pe"), personaId, empresaId: dueña });
+            nuevos.push(vinc("Persona", personaId, "Empresa", dueña, null, false, todayISO()));
             empresaIdsYaLinkeadas.add(dueña);
           }
         }
-        return { ...prev, personaEmpresa, personaObra };
+        return { ...prev, vinculos: [...(prev.vinculos || []), ...nuevos] };
       });
     }
     onSave({ id: personaId, nombre: nombre.trim(), whatsapp, direccion, ciudad, notas });
@@ -3178,7 +3280,7 @@ function PersonaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
                 if (vinculoPersona?.personaId) {
                   setCore((prev) => ({
                     ...prev,
-                    personaEmpresa: [...prev.personaEmpresa, { id: uid("pe"), personaId: vinculoPersona.personaId, empresaId: data.id, cargoId: vinculoPersona.cargoId, principal: true }],
+                    vinculos: [...(prev.vinculos || []), vinc("Persona", vinculoPersona.personaId, "Empresa", data.id, vinculoPersona.tipoRelacionId || null, true, todayISO())],
                   }));
                 }
                 setShowNuevaEmpresa(false);
@@ -3235,7 +3337,7 @@ function PersonaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
                 if (vinculoEmpresa?.empresaId) {
                   setCore((prev) => ({
                     ...prev,
-                    empresaObra: [...prev.empresaObra, { id: uid("eo"), empresaId: vinculoEmpresa.empresaId, obraId: data.id }],
+                    vinculos: [...(prev.vinculos || []), vinc("Empresa", vinculoEmpresa.empresaId, "Obra", data.id, TR_DUENA, false, todayISO())],
                   }));
                 }
                 setShowNuevaObra(false);
@@ -3263,29 +3365,107 @@ function PersonaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
   );
 }
 
+// Sección "Vínculos" unificada de una ficha (Persona/Empresa/Obra). Lista todos los vínculos
+// activos de la entidad cuya contraparte es Persona/Empresa/Obra (los vínculos a hilos se ven
+// en la sección de hilos). Reutiliza el form genérico para "+ Vincular", con lápiz de editar y
+// papelera con confirmación en cada uno.
+function VinculosDeFicha({ core, setCore, entidadTipo, entidadId, onOpen }) {
+  const [showVincular, setShowVincular] = useState(false);
+  const [editVinculo, setEditVinculo] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
+
+  const items = vinculosDeEntidad(core, entidadTipo, entidadId, true)
+    .map((v) => ({ v, c: contraparteVinculo(v, entidadTipo, entidadId) }))
+    .filter(({ c }) => c.tipo !== "Hilo");
+  const del = (vinculoId) => setCore((prev) => ({ ...prev, vinculos: (prev.vinculos || []).filter((x) => x.id !== vinculoId) }));
+
+  return (
+    <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Vínculos</p>
+        <button onClick={() => setShowVincular(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>
+      </div>
+      {items.length === 0 ? (
+        <p className="text-sm text-[#A69C88]">Sin vínculos cargados.</p>
+      ) : (
+        <div className="space-y-1.5">
+          {items.map(({ v, c }) => {
+            const tr = (core.tiposRelacion || []).find((t) => t.id === v.tipoRelacionId);
+            const label = entidadLabel(c.tipo, c.id, core);
+            if (!label) return null;
+            const persona = c.tipo === "Persona" ? core.personas.find((p) => p.id === c.id) : null;
+            return (
+              <div key={v.id} className="flex items-center justify-between gap-2 text-sm">
+                <button onClick={() => onOpen(c.tipo.toLowerCase(), c.id)} className="text-left flex-1 min-w-0">
+                  <span className="font-semibold text-[#2A2118]">{label}</span>
+                  {tr && <span className="text-[#8A8272]"> · {nombreRelacionLado(tr, c.esOrigen)}</span>}
+                  {v.principal && <Star size={11} className="inline text-[#E8871E] ml-1" />}
+                </button>
+                {persona && <WhatsAppLink persona={persona} size={15} />}
+                <IconBtn label="Editar vínculo" onClick={() => setEditVinculo(v)}><Pencil size={14} /></IconBtn>
+                <IconBtn label="Eliminar vínculo" danger onClick={() => setDeletingId(v.id)}><Trash2 size={14} /></IconBtn>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {showVincular && (
+        <VincularRelacionForm core={core} setCore={setCore} entidadFija={{ tipo: entidadTipo, id: entidadId }} onClose={() => setShowVincular(false)} />
+      )}
+      {editVinculo && (
+        <EditVinculoForm core={core} setCore={setCore} vinculo={editVinculo} onClose={() => setEditVinculo(null)} />
+      )}
+      {deletingId && (
+        <ConfirmDeleteModal title="¿Eliminar este vínculo?" texto="Se quita la relación entre las dos entidades. No se puede deshacer." onCancel={() => setDeletingId(null)} onConfirm={() => { del(deletingId); setDeletingId(null); }} />
+      )}
+    </div>
+  );
+}
+
+// Edita un vínculo ya cargado: su tipo de relación (opcional), si es principal, la fecha y la nota.
+function EditVinculoForm({ core, setCore, vinculo, onClose }) {
+  const [tipoRelacionId, setTipoRelacionId] = useState(vinculo.tipoRelacionId || "");
+  const [principal, setPrincipal] = useState(!!vinculo.principal);
+  const [desde, setDesde] = useState(vinculo.desde || todayISO());
+  const [nota, setNota] = useState(vinculo.nota || "");
+  const origenLabel = entidadLabel(vinculo.origenTipo, vinculo.origenId, core);
+  const destinoLabel = entidadLabel(vinculo.destinoTipo, vinculo.destinoId, core);
+  const guardar = () => {
+    setCore((prev) => ({ ...prev, vinculos: (prev.vinculos || []).map((v) => (v.id === vinculo.id ? { ...v, tipoRelacionId: tipoRelacionId || null, principal, desde, nota: nota.trim() } : v)) }));
+    onClose();
+  };
+  return (
+    <Modal title="Editar vínculo" onClose={onClose}>
+      <p className="text-sm text-[#2A2118] mb-3"><b>{origenLabel}</b> <span className="text-[#8A8272]">↔</span> <b>{destinoLabel}</b></p>
+      <Field label="Tipo de relación (opcional)">
+        <BuscadorSelect
+          opciones={(core.tiposRelacion || []).map((t) => ({ id: t.id, label: t.cualidad === "asimetrica" ? `${t.nombre} / ${t.nombreInverso}` : t.nombre }))}
+          value={tipoRelacionId}
+          onChange={setTipoRelacionId}
+          vacioLabel="— Sin tipo (genérico) —"
+          placeholder="Buscar tipo de relación..."
+        />
+      </Field>
+      <label className="flex items-center gap-2 mb-3 text-sm text-[#2A2118]">
+        <input type="checkbox" checked={principal} onChange={(e) => setPrincipal(e.target.checked)} /> Marcar como vínculo principal
+      </label>
+      <Field label="Fecha"><input type="date" className={inputCls} value={desde} onChange={(e) => setDesde(e.target.value)} /></Field>
+      <Field label="Nota (opcional)"><textarea className={inputCls} rows={2} value={nota} onChange={(e) => setNota(e.target.value)} /></Field>
+      <PrimaryBtn full onClick={guardar}>Guardar</PrimaryBtn>
+    </Modal>
+  );
+}
+
 function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen }) {
   const persona = core.personas.find((p) => p.id === id);
-  const [showRel, setShowRel] = useState(false);
-  const [editRel, setEditRel] = useState(null);
-  const [showRelObra, setShowRelObra] = useState(false);
   const [showNuevoHilo, setShowNuevoHilo] = useState(false);
-  const [showVincularRelacion, setShowVincularRelacion] = useState(false);
   const [verCerrados, setVerCerrados] = useState(false);
 
   if (!persona) return <div><BackHeader onClose={onClose} /><p className="text-sm text-[#8A8272]">Esta persona ya no existe.</p></div>;
 
-  const relEmpresas = core.personaEmpresa.filter((r) => r.personaId === id);
-  const relObras = (core.personaObra || []).filter((r) => r.personaId === id);
-  const misVinculos = (core.vinculos || []).filter((v) => (v.origenTipo === "Persona" && v.origenId === id) || (v.destinoTipo === "Persona" && v.destinoId === id));
-
-  const hilosDePersona = core.hilos.filter((h) => participantesActivos(h).some((p) => p.personaId === id));
-  const hilosActivos = hilosDePersona.filter((h) => h.estado === "Activo");
-  const hilosCerrados = hilosDePersona.filter((h) => h.estado === "Cerrado");
-
-  const removeRel = (relId) => setCore((prev) => ({ ...prev, personaEmpresa: prev.personaEmpresa.filter((r) => r.id !== relId) }));
-  const updateRel = (relId, cambios) => setCore((prev) => ({ ...prev, personaEmpresa: prev.personaEmpresa.map((r) => (r.id === relId ? { ...r, ...cambios } : r)) }));
-  const removeRelObra = (relId) => setCore((prev) => ({ ...prev, personaObra: (prev.personaObra || []).filter((r) => r.id !== relId) }));
-  const quitarVinculo = (vinculoId) => setCore((prev) => ({ ...prev, vinculos: (prev.vinculos || []).filter((v) => v.id !== vinculoId) }));
+  const hilosDeLaPersona = hilosDePersona(core, id);
+  const hilosActivos = hilosDeLaPersona.filter((h) => h.estado === "Activo");
+  const hilosCerrados = hilosDeLaPersona.filter((h) => h.estado === "Cerrado");
 
   return (
     <div>
@@ -3305,87 +3485,7 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
         </div>
         {persona.notas && <p className="text-sm text-[#6B6352] mt-2 italic">"{persona.notas}"</p>}
         <TagsSection core={core} setCore={setCore} entidadTipo="Persona" entidadId={id} />
-
-        <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Empresas vinculadas</p>
-            <button onClick={() => setShowRel(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>
-          </div>
-          {relEmpresas.length === 0 ? (
-            <p className="text-sm text-[#A69C88]">Sin empresas vinculadas.</p>
-          ) : (
-            <div className="space-y-1.5">
-              {relEmpresas.map((r) => {
-                const emp = core.empresas.find((e) => e.id === r.empresaId);
-                if (!emp) return null;
-                return (
-                  <div key={r.id} className="flex items-center justify-between gap-2 text-sm">
-                    <button onClick={() => onOpen("empresa", emp.id)} className="text-left flex-1 min-w-0">
-                      <span className="font-semibold text-[#2A2118]">{emp.denominacion}</span>
-                      <span className="text-[#8A8272]"> · {(core.cargos || []).find((c) => c.id === r.cargoId)?.nombre || "sin cargo"}</span>
-                      {r.principal && <span className="ml-1"><Star size={11} className="inline text-[#E8871E]" /></span>}
-                    </button>
-                    <IconBtn label="Editar cargo" onClick={() => setEditRel(r)}><Pencil size={14} /></IconBtn>
-                    <IconBtn label="Quitar vínculo" danger onClick={() => removeRel(r.id)}><X size={14} /></IconBtn>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Obras vinculadas</p>
-            <button onClick={() => setShowRelObra(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>
-          </div>
-          {relObras.length === 0 ? (
-            <p className="text-sm text-[#A69C88]">Sin obras vinculadas.</p>
-          ) : (
-            <div className="space-y-1.5">
-              {relObras.map((r) => {
-                const obra = core.obras.find((o) => o.id === r.obraId);
-                if (!obra) return null;
-                return (
-                  <div key={r.id} className="flex items-center justify-between gap-2 text-sm">
-                    <button onClick={() => onOpen("obra", obra.id)} className="text-left flex-1 min-w-0">
-                      <span className="font-semibold text-[#2A2118]">{obra.nombre}</span>
-                    </button>
-                    <IconBtn label="Quitar vínculo" danger onClick={() => removeRelObra(r.id)}><X size={14} /></IconBtn>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Vínculos</p>
-            <button onClick={() => setShowVincularRelacion(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>
-          </div>
-          {misVinculos.length === 0 ? (
-            <p className="text-sm text-[#A69C88]">Sin vínculos cargados.</p>
-          ) : (
-            <div className="space-y-1.5">
-              {misVinculos.map((v) => {
-                const tr = (core.tiposRelacion || []).find((t) => t.id === v.tipoRelacionId);
-                const { otro, esOrigen } = ladoOpuestoVinculo(v, "Persona", id);
-                const label = entidadLabel(otro.tipo, otro.id, core);
-                if (!label) return null;
-                return (
-                  <div key={v.id} className="flex items-center justify-between gap-2 text-sm">
-                    <button onClick={() => onOpen(otro.tipo.toLowerCase(), otro.id)} className="text-left flex-1 min-w-0">
-                      <span className="font-semibold text-[#2A2118]">{label}</span>
-                      <span className="text-[#8A8272]"> · {nombreRelacionLado(tr, esOrigen)}{v.fecha ? ` · ${v.fecha}` : ""}</span>
-                    </button>
-                    <IconBtn label="Quitar vínculo" danger onClick={() => quitarVinculo(v.id)}><X size={14} /></IconBtn>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+        <VinculosDeFicha core={core} setCore={setCore} entidadTipo="Persona" entidadId={id} onOpen={onOpen} />
       </div>
 
       <div className="flex items-center justify-between mb-2">
@@ -3414,40 +3514,6 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
         </div>
       )}
 
-      {showRel && (
-        <VincularEmpresaForm
-          core={core}
-          setCore={setCore}
-          excluirIds={relEmpresas.map((r) => r.empresaId)}
-          onClose={() => setShowRel(false)}
-          onSave={(rel) => setCore((prev) => ({ ...prev, personaEmpresa: [...prev.personaEmpresa, { ...rel, personaId: id, id: uid("pe") }] }))}
-        />
-      )}
-      {showVincularRelacion && (
-        <VincularRelacionForm
-          core={core}
-          setCore={setCore}
-          entidadFija={{ tipo: "Persona", id }}
-          onClose={() => setShowVincularRelacion(false)}
-        />
-      )}
-      {editRel && (
-        <EditRelacionForm
-          core={core}
-          setCore={setCore}
-          relacion={editRel}
-          onClose={() => setEditRel(null)}
-          onSave={(cambios) => { updateRel(editRel.id, cambios); setEditRel(null); }}
-        />
-      )}
-      {showRelObra && (
-        <VincularObraAPersonaForm
-          core={core}
-          setCore={setCore}
-          personaId={id}
-          onClose={() => setShowRelObra(false)}
-        />
-      )}
       {showNuevoHilo && (
         <Modal title={`Nuevo hilo — ${persona.nombre}`} onClose={() => setShowNuevoHilo(false)}>
           <NuevoHiloForm
@@ -3493,31 +3559,6 @@ function HiloRow({ hilo, core, acciones, onOpen }) {
         )}
       </div>
     </button>
-  );
-}
-
-function EditRelacionForm({ core, setCore, relacion, onClose, onSave }) {
-  const [cargoId, setCargoId] = useState(relacion.cargoId || (core.cargos || [])[0]?.id || "");
-  const [principal, setPrincipal] = useState(!!relacion.principal);
-  return (
-    <Modal title="Editar vínculo" onClose={onClose}>
-      <SelectConCrear
-        label="Cargo"
-        opciones={core.cargos || []}
-        value={cargoId}
-        onChange={setCargoId}
-        placeholderCrear="Ej: Encargado de compras"
-        onCrear={(nombre) => {
-          const nuevo = { id: uid("C"), nombre };
-          setCore((prev) => ({ ...prev, cargos: [...(prev.cargos || []), nuevo] }));
-          return nuevo;
-        }}
-      />
-      <label className="flex items-center gap-2 mb-3 text-sm text-[#2A2118]">
-        <input type="checkbox" checked={principal} onChange={(e) => setPrincipal(e.target.checked)} /> Es el contacto principal de esta empresa
-      </label>
-      <PrimaryBtn full onClick={() => onSave({ cargoId, principal })}>Guardar</PrimaryBtn>
-    </Modal>
   );
 }
 
@@ -3586,16 +3627,14 @@ function VincularEmpresaForm({ core, setCore, onClose, onSave, excluirIds }) {
   const excluidas = new Set([...(excluirIds || []), ...agregadas]);
   const disponibles = core.empresas.filter((e) => !excluidas.has(e.id));
   const [empresaId, setEmpresaId] = useState("");
-  const [cargoId, setCargoId] = useState((core.cargos || [])[0]?.id || "");
-  const [principal, setPrincipal] = useState(false);
+  const [tipoRelacionId, setTipoRelacionId] = useState("");
   const [showNuevaEmpresa, setShowNuevaEmpresa] = useState(false);
 
   const agregarExistente = () => {
     if (!empresaId) return;
-    onSave({ empresaId, cargoId, principal });
+    onSave({ empresaId, tipoRelacionId: tipoRelacionId || null });
     setAgregadas((a) => [...a, empresaId]);
     setEmpresaId("");
-    setPrincipal(false);
   };
 
   return (
@@ -3616,21 +3655,15 @@ function VincularEmpresaForm({ core, setCore, onClose, onSave, excluirIds }) {
       )}
       <button type="button" onClick={() => setShowNuevaEmpresa(true)} className="w-full border border-[#E4DECF] rounded-sm py-2 font-bold text-xs text-[#2A2118] mb-3">+ Crear empresa nueva</button>
 
-      <SelectConCrear
-        label="Cargo"
-        opciones={core.cargos || []}
-        value={cargoId}
-        onChange={setCargoId}
-        placeholderCrear="Ej: Encargado de compras"
-        onCrear={(nombre) => {
-          const nuevo = { id: uid("C"), nombre };
-          setCore((prev) => ({ ...prev, cargos: [...(prev.cargos || []), nuevo] }));
-          return nuevo;
-        }}
-      />
-      <label className="flex items-center gap-2 mb-3 text-sm text-[#2A2118]">
-        <input type="checkbox" checked={principal} onChange={(e) => setPrincipal(e.target.checked)} /> Es el contacto principal de esta empresa
-      </label>
+      <Field label="Tipo de relación (opcional)">
+        <BuscadorSelect
+          opciones={(core.tiposRelacion || []).map((t) => ({ id: t.id, label: t.cualidad === "asimetrica" ? `${t.nombre} / ${t.nombreInverso}` : t.nombre }))}
+          value={tipoRelacionId}
+          onChange={setTipoRelacionId}
+          vacioLabel="— Sin tipo (genérico) —"
+          placeholder="Buscar tipo de relación..."
+        />
+      </Field>
       <button type="button" disabled={!empresaId} onClick={agregarExistente} className="w-full border border-[#E4DECF] rounded-sm py-2.5 font-bold text-sm text-[#2A2118] disabled:text-[#C9C1AE] disabled:cursor-not-allowed mb-3">+ Agregar</button>
       <button type="button" onClick={onClose} className="w-full mt-1 bg-[#E8871E] text-[#2A2118] rounded-sm py-2.5 font-bold text-sm">Listo</button>
 
@@ -3642,11 +3675,11 @@ function VincularEmpresaForm({ core, setCore, onClose, onSave, excluirIds }) {
           onClose={() => setShowNuevaEmpresa(false)}
           onSave={(data, vinculoPersona) => {
             setCore((prev) => ({ ...prev, empresas: [data, ...prev.empresas] }));
-            onSave({ empresaId: data.id, cargoId, principal });
+            onSave({ empresaId: data.id, tipoRelacionId: tipoRelacionId || null });
             if (vinculoPersona?.personaId) {
               setCore((prev) => ({
                 ...prev,
-                personaEmpresa: [...prev.personaEmpresa, { id: uid("pe"), personaId: vinculoPersona.personaId, empresaId: data.id, cargoId: vinculoPersona.cargoId, principal: true }],
+                vinculos: [...(prev.vinculos || []), vinc("Persona", vinculoPersona.personaId, "Empresa", data.id, vinculoPersona.tipoRelacionId || null, true, todayISO())],
               }));
             }
             setAgregadas((a) => [...a, data.id]);
@@ -3659,87 +3692,12 @@ function VincularEmpresaForm({ core, setCore, onClose, onSave, excluirIds }) {
 }
 
 // Vincula una obra (existente o nueva) directamente a una persona.
-function VincularObraAPersonaForm({ core, setCore, personaId, onClose }) {
-  const [agregadas, setAgregadas] = useState([]);
-  const yaVinculadas = new Set((core.personaObra || []).filter((r) => r.personaId === personaId).map((r) => r.obraId));
-  const disponibles = core.obras.filter((o) => !yaVinculadas.has(o.id) && !agregadas.includes(o.id));
-  const [obraId, setObraId] = useState("");
-  const [showNuevaObra, setShowNuevaObra] = useState(false);
-
-  const vincularConEmpresaDueña = (prev, obraId) => {
-    const dueña = core.empresaObra.find((r) => r.obraId === obraId)?.empresaId;
-    const yaVinculadaEmpresa = dueña && prev.personaEmpresa.some((r) => r.personaId === personaId && r.empresaId === dueña);
-    return dueña && !yaVinculadaEmpresa ? [...prev.personaEmpresa, { id: uid("pe"), personaId, empresaId: dueña }] : prev.personaEmpresa;
-  };
-
-  const vincularObra = (id) => {
-    setCore((prev) => ({
-      ...prev,
-      personaObra: [...(prev.personaObra || []), { id: uid("po"), personaId, obraId: id }],
-      personaEmpresa: vincularConEmpresaDueña(prev, id),
-    }));
-    setAgregadas((a) => [...a, id]);
-  };
-  const agregarExistente = () => {
-    if (!obraId) return;
-    vincularObra(obraId);
-    setObraId("");
-  };
-  const quitarAgregada = (id) => {
-    setCore((prev) => ({ ...prev, personaObra: (prev.personaObra || []).filter((r) => !(r.personaId === personaId && r.obraId === id)) }));
-    setAgregadas((a) => a.filter((x) => x !== id));
-  };
-
-  return (
-    <Modal title="Vincular obras" onClose={onClose}>
-      <ChipsAgregados items={agregadas} core={core} coleccion="obras" labelKey="nombre" onQuitar={quitarAgregada} />
-      {disponibles.length === 0 ? (
-        <p className="text-sm text-[#A69C88] mb-3">No hay más obras disponibles para vincular.</p>
-      ) : (
-        <>
-          <Field label="Obra">
-            <BuscadorSelect
-              opciones={disponibles.map((o) => ({ id: o.id, label: o.nombre }))}
-              value={obraId}
-              onChange={setObraId}
-              placeholder="Buscar obra..."
-            />
-          </Field>
-          <button type="button" disabled={!obraId} onClick={agregarExistente} className="w-full border border-[#E4DECF] rounded-sm py-2.5 font-bold text-sm text-[#2A2118] disabled:text-[#C9C1AE] disabled:cursor-not-allowed mb-3">+ Agregar</button>
-        </>
-      )}
-      <button type="button" onClick={() => setShowNuevaObra(true)} className="w-full border border-[#E4DECF] rounded-sm py-2 font-bold text-xs text-[#2A2118] mb-3">+ Crear obra nueva</button>
-      <button type="button" onClick={onClose} className="w-full mt-1 bg-[#E8871E] text-[#2A2118] rounded-sm py-2.5 font-bold text-sm">Listo</button>
-
-      {showNuevaObra && (
-        <ObraForm
-          initial={{}}
-          core={core}
-          setCore={setCore}
-          onClose={() => setShowNuevaObra(false)}
-          onSave={(data, vinculoEmpresa) => {
-            setCore((prev) => ({ ...prev, obras: [data, ...prev.obras] }));
-            vincularObra(data.id);
-            if (vinculoEmpresa?.empresaId) {
-              setCore((prev) => ({
-                ...prev,
-                empresaObra: [...prev.empresaObra, { id: uid("eo"), empresaId: vinculoEmpresa.empresaId, obraId: data.id }],
-              }));
-            }
-            setShowNuevaObra(false);
-          }}
-        />
-      )}
-    </Modal>
-  );
-}
-
 // Agrega una persona (existente o nueva) como participante de un hilo ya creado.
 function AgregarPersonaAlHiloForm({ core, hilo, personasDelHilo, setCore, agregarPersona, onClose }) {
   const [agregadas, setAgregadas] = useState([]); // personaIds agregadas en esta apertura del modal
   const [showNuevaPersona, setShowNuevaPersona] = useState(false);
   const [personaId, setPersonaId] = useState("");
-  const disponibles = core.personas.filter((p) => !participantesActivos(hilo).some((pa) => pa.personaId === p.id) && !agregadas.includes(p.id));
+  const disponibles = core.personas.filter((p) => !participantesActivos(hilo, core).some((pa) => pa.personaId === p.id) && !agregadas.includes(p.id));
 
   const agregarExistente = () => {
     if (!personaId) return;
@@ -3801,6 +3759,7 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
   const [showVincularEmpresaHilo, setShowVincularEmpresaHilo] = useState(false);
   const [showVincularObraHilo, setShowVincularObraHilo] = useState(false);
   const [verVinculos, setVerVinculos] = useState(false);
+  const [confirmar, setConfirmar] = useState(null); // { texto, onConfirm }
 
   if (!hilo) return <div><BackHeader onClose={onClose} /><p className="text-sm text-[#8A8272]">Este hilo ya no existe.</p></div>;
 
@@ -3817,16 +3776,20 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
   const tipoPendiente = pendienteActual ? core.tiposAccion.find((t) => t.id === pendienteActual.tipoAccionId) : null;
   const prioTone = pendienteActual?.prioridad === "Alta" ? "red" : pendienteActual?.prioridad === "Media" ? "amber" : "neutral";
 
-  const participantesInactivos = (hilo.participantes || []).filter((p) => p.hasta).sort((a, b) => (b.hasta || "").localeCompare(a.hasta || ""));
+  const participantesInactivos = participantesDeHilo(hilo, core).filter((p) => p.hasta).sort((a, b) => (b.hasta || "").localeCompare(a.hasta || ""));
+
+  // ¿El vínculo v es un participante (Persona) activo de este hilo?
+  const esParticipanteActivo = (v) => !v.hasta && ((v.origenTipo === "Hilo" && v.origenId === id && v.destinoTipo === "Persona") || (v.destinoTipo === "Hilo" && v.destinoId === id && v.origenTipo === "Persona"));
+  const esVinculoHiloCon = (v, tipo, otroId) => (v.origenTipo === "Hilo" && v.origenId === id && v.destinoTipo === tipo && v.destinoId === otroId) || (v.destinoTipo === "Hilo" && v.destinoId === id && v.origenTipo === tipo && v.origenId === otroId);
 
   const toggleEstadoHilo = () => setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === id ? { ...h, estado: h.estado === "Activo" ? "Cerrado" : "Activo" } : h)) }));
-  const marcarPrincipal = (partId) => setCore((prev) => ({
+  const marcarPrincipal = (vinculoId) => setCore((prev) => ({
     ...prev,
-    hilos: prev.hilos.map((h) => (h.id === id ? { ...h, participantes: h.participantes.map((p) => ({ ...p, principal: p.id === partId })) } : h)),
+    vinculos: (prev.vinculos || []).map((v) => (esParticipanteActivo(v) ? { ...v, principal: v.id === vinculoId } : v)),
   }));
-  const desvincularParticipante = (partId) => setCore((prev) => ({
+  const desvincularParticipante = (vinculoId) => setCore((prev) => ({
     ...prev,
-    hilos: prev.hilos.map((h) => (h.id === id ? { ...h, participantes: h.participantes.map((p) => (p.id === partId ? { ...p, hasta: todayISO(), principal: false } : p)) } : h)),
+    vinculos: (prev.vinculos || []).map((v) => (v.id === vinculoId ? { ...v, hasta: todayISO(), principal: false } : v)),
   }));
   const desvincularTarea = (tareaId) => setCore((prev) => ({
     ...prev,
@@ -3834,40 +3797,37 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
   }));
   const quitarEmpresaDelHilo = (empresaId) => setCore((prev) => ({
     ...prev,
-    hiloEmpresa: (prev.hiloEmpresa || []).filter((r) => !(r.hiloId === id && r.empresaId === empresaId)),
+    vinculos: (prev.vinculos || []).filter((v) => !esVinculoHiloCon(v, "Empresa", empresaId)),
   }));
   const quitarObraDelHilo = (obraId) => setCore((prev) => ({
     ...prev,
-    hiloObra: (prev.hiloObra || []).filter((r) => !(r.hiloId === id && r.obraId === obraId)),
+    vinculos: (prev.vinculos || []).filter((v) => !esVinculoHiloCon(v, "Obra", obraId)),
   }));
   // Agrega la persona al hilo y, si tiene empresas vinculadas, arrastra también esas
   // empresas y las obras de esas empresas (además de las obras vinculadas directamente
   // a la persona) — mismo criterio que al crear un hilo desde una persona.
   const agregarPersona = (personaId, comoPrincipal) => setCore((prev) => {
-    const hilo = prev.hilos.find((h) => h.id === id);
-    if (!hilo) return prev;
-    const yaActivo = participantesActivos(hilo).some((p) => p.personaId === personaId);
-    const hilos = yaActivo ? prev.hilos : prev.hilos.map((h) => {
-      if (h.id !== id) return h;
-      const nuevos = comoPrincipal ? h.participantes.map((p) => (p.hasta ? p : { ...p, principal: false })) : h.participantes;
-      return { ...h, participantes: [...nuevos, { id: uid("part"), personaId, desde: todayISO(), hasta: null, principal: comoPrincipal || participantesActivos(h).length === 0 }] };
-    });
-
-    const empresasDeEsaPersona = prev.personaEmpresa.filter((r) => r.personaId === personaId).map((r) => r.empresaId);
-    const yaVinculadasEmpresa = new Set((prev.hiloEmpresa || []).filter((r) => r.hiloId === id).map((r) => r.empresaId));
-    const nuevasEmpresaLinks = empresasDeEsaPersona.filter((eid) => !yaVinculadasEmpresa.has(eid)).map((eid) => ({ id: uid("he"), hiloId: id, empresaId: eid }));
-    const empresasParaObras = [...yaVinculadasEmpresa, ...nuevasEmpresaLinks.map((r) => r.empresaId)];
-    const obrasDirectas = (prev.personaObra || []).filter((r) => r.personaId === personaId).map((r) => r.obraId);
-    const obrasDeEmpresas = prev.empresaObra.filter((r) => empresasParaObras.includes(r.empresaId)).map((r) => r.obraId);
-    const yaVinculadasObra = new Set((prev.hiloObra || []).filter((r) => r.hiloId === id).map((r) => r.obraId));
-    const nuevasObraLinks = [...new Set([...obrasDirectas, ...obrasDeEmpresas])].filter((oid) => !yaVinculadasObra.has(oid)).map((oid) => ({ id: uid("ho"), hiloId: id, obraId: oid }));
-
-    return {
-      ...prev,
-      hilos,
-      hiloEmpresa: [...(prev.hiloEmpresa || []), ...nuevasEmpresaLinks],
-      hiloObra: [...(prev.hiloObra || []), ...nuevasObraLinks],
-    };
+    const hiloActual = prev.hilos.find((h) => h.id === id);
+    if (!hiloActual) return prev;
+    const activos = participantesActivos(hiloActual, prev);
+    const yaActivo = activos.some((p) => p.personaId === personaId);
+    let vinculos = [...(prev.vinculos || [])];
+    if (!yaActivo) {
+      const seraPrincipal = comoPrincipal || activos.length === 0;
+      if (seraPrincipal) vinculos = vinculos.map((v) => (esParticipanteActivo(v) ? { ...v, principal: false } : v));
+      vinculos.push(vinc("Persona", personaId, "Hilo", id, null, seraPrincipal, todayISO()));
+    }
+    const empresasDeEsaPersona = empresaIdsDePersona(prev, personaId);
+    const yaEmpresas = new Set(contrapartesDe(prev, "Hilo", id, "Empresa", true).map(({ c }) => c.id));
+    const nuevasEmpresas = empresasDeEsaPersona.filter((eid) => !yaEmpresas.has(eid));
+    for (const eid of nuevasEmpresas) vinculos.push(vinc("Hilo", id, "Empresa", eid, null, false, todayISO()));
+    const empresasParaObras = [...yaEmpresas, ...nuevasEmpresas];
+    const obrasDirectas = obraIdsDirectasDePersona(prev, personaId);
+    const obrasDeEmpresas = empresasParaObras.flatMap((eid) => obraIdsDeEmpresa(prev, eid));
+    const yaObras = new Set(contrapartesDe(prev, "Hilo", id, "Obra", true).map(({ c }) => c.id));
+    const nuevasObras = [...new Set([...obrasDirectas, ...obrasDeEmpresas])].filter((oid) => !yaObras.has(oid));
+    for (const oid of nuevasObras) vinculos.push(vinc("Hilo", id, "Obra", oid, null, false, todayISO()));
+    return { ...prev, vinculos };
   });
   const updateAccion = (accId, cambios) => setAcciones((prev) => prev.map((a) => (a.id === accId ? { ...a, ...cambios } : a)));
   const deleteAccion = (accId) => setAcciones((prev) => prev.filter((a) => a.id !== accId));
@@ -3947,7 +3907,7 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
                   <p className="text-sm text-[#A69C88]">Sin personas vinculadas.</p>
                 ) : (
                   <div className="space-y-1">
-                    {participantesActivos(hilo).sort((a, b) => (b.principal ? 1 : 0) - (a.principal ? 1 : 0)).map((part) => {
+                    {participantesActivos(hilo, core).sort((a, b) => (b.principal ? 1 : 0) - (a.principal ? 1 : 0)).map((part) => {
                       const p = core.personas.find((pp) => pp.id === part.personaId);
                       if (!p) return null;
                       return (
@@ -3961,7 +3921,7 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
                             {!part.principal && (
                               <IconBtn label="Marcar principal" onClick={() => marcarPrincipal(part.id)}><Star size={14} /></IconBtn>
                             )}
-                            <IconBtn label="Desvincular" danger onClick={() => desvincularParticipante(part.id)}><X size={14} /></IconBtn>
+                            <IconBtn label="Desvincular" danger onClick={() => setConfirmar({ texto: "¿Desvincular a esta persona del hilo? Queda en el historial de interlocutores.", onConfirm: () => desvincularParticipante(part.id) })}><X size={14} /></IconBtn>
                           </div>
                         </div>
                       );
@@ -4001,7 +3961,7 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
                     {empresas.map((emp) => (
                       <div key={emp.id} className="flex items-center justify-between gap-2 text-sm">
                         <button onClick={() => onOpen("empresa", emp.id)} className="text-left flex-1 min-w-0 font-semibold text-[#2A2118]">{emp.denominacion}</button>
-                        <IconBtn label="Quitar vínculo" danger onClick={() => quitarEmpresaDelHilo(emp.id)}><X size={14} /></IconBtn>
+                        <IconBtn label="Quitar vínculo" danger onClick={() => setConfirmar({ texto: "¿Quitar esta empresa del hilo?", onConfirm: () => quitarEmpresaDelHilo(emp.id) })}><X size={14} /></IconBtn>
                       </div>
                     ))}
                   </div>
@@ -4020,7 +3980,7 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
                     {obras.map((o) => (
                       <div key={o.id} className="flex items-center justify-between gap-2 text-sm">
                         <button onClick={() => onOpen("obra", o.id)} className="text-left flex-1 min-w-0 font-semibold text-[#2A2118]">{o.nombre}</button>
-                        <IconBtn label="Quitar vínculo" danger onClick={() => quitarObraDelHilo(o.id)}><X size={14} /></IconBtn>
+                        <IconBtn label="Quitar vínculo" danger onClick={() => setConfirmar({ texto: "¿Quitar esta obra del hilo?", onConfirm: () => quitarObraDelHilo(o.id) })}><X size={14} /></IconBtn>
                       </div>
                     ))}
                   </div>
@@ -4042,7 +4002,7 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
                           <span className={tv.estado === "Cerrado" ? "line-through text-[#A69C88]" : "text-[#2A2118] font-semibold"}>{tv.titulo}</span>
                           {tv.estado === "Cerrado" && <Chip tone="neutral">Cerrada</Chip>}
                         </button>
-                        <IconBtn label="Desvincular" danger onClick={() => desvincularTarea(tv.id)}><X size={14} /></IconBtn>
+                        <IconBtn label="Desvincular" danger onClick={() => setConfirmar({ texto: "¿Desvincular esta tarea del hilo?", onConfirm: () => desvincularTarea(tv.id) })}><X size={14} /></IconBtn>
                       </div>
                     ))}
                   </div>
@@ -4069,7 +4029,7 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
                 {hiloRelacionado ? (
                   <div className="flex items-center justify-between gap-2 text-sm">
                     <button onClick={() => onOpen("hilo", hiloRelacionado.id)} className="text-left flex-1 min-w-0 font-semibold text-[#2A2118]">{hiloRelacionado.titulo}</button>
-                    <IconBtn label="Desvincular" danger onClick={() => setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === id ? { ...h, hiloRelacionadoId: null } : h)) }))}><X size={14} /></IconBtn>
+                    <IconBtn label="Desvincular" danger onClick={() => setConfirmar({ texto: "¿Desvincular esta tarea del hilo de cliente?", onConfirm: () => setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === id ? { ...h, hiloRelacionadoId: null } : h)) })) })}><X size={14} /></IconBtn>
                   </div>
                 ) : (
                   <p className="text-sm text-[#A69C88]">Sin hilo vinculado.</p>
@@ -4083,13 +4043,13 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
                 </div>
                 {personasDelHilo.length === 0 ? <p className="text-sm text-[#A69C88]">Sin personas vinculadas.</p> : (
                   <div className="space-y-1">
-                    {participantesActivos(hilo).map((part) => {
+                    {participantesActivos(hilo, core).map((part) => {
                       const p = core.personas.find((pp) => pp.id === part.personaId);
                       if (!p) return null;
                       return (
                         <div key={part.id} className="flex items-center justify-between gap-2 text-sm">
                           <button onClick={() => onOpen("persona", p.id)} className="text-left flex-1 min-w-0 font-semibold text-[#2A2118]">{p.nombre}</button>
-                          <IconBtn label="Desvincular" danger onClick={() => desvincularParticipante(part.id)}><X size={14} /></IconBtn>
+                          <IconBtn label="Desvincular" danger onClick={() => setConfirmar({ texto: "¿Desvincular a esta persona del hilo? Queda en el historial de interlocutores.", onConfirm: () => desvincularParticipante(part.id) })}><X size={14} /></IconBtn>
                         </div>
                       );
                     })}
@@ -4107,7 +4067,7 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
                     {empresas.map((emp) => (
                       <div key={emp.id} className="flex items-center justify-between gap-2 text-sm">
                         <button onClick={() => onOpen("empresa", emp.id)} className="text-left flex-1 min-w-0 font-semibold text-[#2A2118]">{emp.denominacion}</button>
-                        <IconBtn label="Quitar vínculo" danger onClick={() => quitarEmpresaDelHilo(emp.id)}><X size={14} /></IconBtn>
+                        <IconBtn label="Quitar vínculo" danger onClick={() => setConfirmar({ texto: "¿Quitar esta empresa del hilo?", onConfirm: () => quitarEmpresaDelHilo(emp.id) })}><X size={14} /></IconBtn>
                       </div>
                     ))}
                   </div>
@@ -4124,7 +4084,7 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
                     {obras.map((o) => (
                       <div key={o.id} className="flex items-center justify-between gap-2 text-sm">
                         <button onClick={() => onOpen("obra", o.id)} className="text-left flex-1 min-w-0 font-semibold text-[#2A2118]">{o.nombre}</button>
-                        <IconBtn label="Quitar vínculo" danger onClick={() => quitarObraDelHilo(o.id)}><X size={14} /></IconBtn>
+                        <IconBtn label="Quitar vínculo" danger onClick={() => setConfirmar({ texto: "¿Quitar esta obra del hilo?", onConfirm: () => quitarObraDelHilo(o.id) })}><X size={14} /></IconBtn>
                       </div>
                     ))}
                   </div>
@@ -4299,6 +4259,9 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
           </div>
         </Modal>
       )}
+      {confirmar && (
+        <ConfirmDeleteModal title="¿Confirmás?" texto={confirmar.texto} confirmLabel="Sí" onCancel={() => setConfirmar(null)} onConfirm={() => { confirmar.onConfirm(); setConfirmar(null); }} />
+      )}
     </div>
   );
 }
@@ -4317,21 +4280,17 @@ function EditarTituloHiloForm({ hilo, onSave }) {
 // Un hilo puede tener varias empresas vinculadas a la vez.
 function VincularEmpresaAHiloForm({ core, setCore, hiloId, onClose }) {
   const [agregadas, setAgregadas] = useState([]); // empresaIds vinculados en esta apertura del modal
-  const yaVinculadas = new Set((core.hiloEmpresa || []).filter((r) => r.hiloId === hiloId).map((r) => r.empresaId));
+  const yaVinculadas = new Set(contrapartesDe(core, "Hilo", hiloId, "Empresa", true).map(({ c }) => c.id));
   const disponibles = core.empresas.filter((e) => !yaVinculadas.has(e.id) && !agregadas.includes(e.id));
   const [empresaId, setEmpresaId] = useState("");
   const [showNuevaEmpresa, setShowNuevaEmpresa] = useState(false);
 
   const vincularEmpresa = (id) => {
     setCore((prev) => {
-      const obrasDeEsaEmpresa = prev.empresaObra.filter((r) => r.empresaId === id).map((r) => r.obraId);
-      const yaVinculadasObra = new Set((prev.hiloObra || []).filter((r) => r.hiloId === hiloId).map((r) => r.obraId));
-      const nuevasObraLinks = obrasDeEsaEmpresa.filter((oid) => !yaVinculadasObra.has(oid)).map((oid) => ({ id: uid("ho"), hiloId, obraId: oid }));
-      return {
-        ...prev,
-        hiloEmpresa: [...(prev.hiloEmpresa || []), { id: uid("he"), hiloId, empresaId: id }],
-        hiloObra: [...(prev.hiloObra || []), ...nuevasObraLinks],
-      };
+      const obrasDeEsaEmpresa = obraIdsDeEmpresa(prev, id);
+      const yaVinculadasObra = new Set(contrapartesDe(prev, "Hilo", hiloId, "Obra", true).map(({ c }) => c.id));
+      const nuevasObraLinks = obrasDeEsaEmpresa.filter((oid) => !yaVinculadasObra.has(oid)).map((oid) => vinc("Hilo", hiloId, "Obra", oid, null, false, todayISO()));
+      return { ...prev, vinculos: [...(prev.vinculos || []), vinc("Hilo", hiloId, "Empresa", id, null, false, todayISO()), ...nuevasObraLinks] };
     });
     setAgregadas((a) => [...a, id]);
   };
@@ -4341,7 +4300,7 @@ function VincularEmpresaAHiloForm({ core, setCore, hiloId, onClose }) {
     setEmpresaId("");
   };
   const quitarAgregada = (id) => {
-    setCore((prev) => ({ ...prev, hiloEmpresa: (prev.hiloEmpresa || []).filter((r) => !(r.hiloId === hiloId && r.empresaId === id)) }));
+    setCore((prev) => ({ ...prev, vinculos: (prev.vinculos || []).filter((v) => !((v.origenTipo === "Hilo" && v.origenId === hiloId && v.destinoTipo === "Empresa" && v.destinoId === id) || (v.destinoTipo === "Hilo" && v.destinoId === hiloId && v.origenTipo === "Empresa" && v.origenId === id))) }));
     setAgregadas((a) => a.filter((x) => x !== id));
   };
 
@@ -4378,7 +4337,7 @@ function VincularEmpresaAHiloForm({ core, setCore, hiloId, onClose }) {
             if (vinculoPersona?.personaId) {
               setCore((prev) => ({
                 ...prev,
-                personaEmpresa: [...prev.personaEmpresa, { id: uid("pe"), personaId: vinculoPersona.personaId, empresaId: data.id, cargoId: vinculoPersona.cargoId, principal: true }],
+                vinculos: [...(prev.vinculos || []), vinc("Persona", vinculoPersona.personaId, "Empresa", data.id, vinculoPersona.tipoRelacionId || null, true, todayISO())],
               }));
             }
             setShowNuevaEmpresa(false);
@@ -4398,23 +4357,19 @@ function VincularEmpresaAHiloForm({ core, setCore, hiloId, onClose }) {
 // desvincular las que ya estaban.
 function VincularObraAHiloForm({ core, setCore, hiloId, onClose }) {
   const [agregadas, setAgregadas] = useState([]); // obraIds vinculadas en esta apertura del modal
-  const yaVinculadas = new Set((core.hiloObra || []).filter((r) => r.hiloId === hiloId).map((r) => r.obraId));
+  const yaVinculadas = new Set(contrapartesDe(core, "Hilo", hiloId, "Obra", true).map(({ c }) => c.id));
   const disponibles = core.obras.filter((o) => !yaVinculadas.has(o.id) && !agregadas.includes(o.id));
   const [obraId, setObraId] = useState("");
   const [showNuevaObra, setShowNuevaObra] = useState(false);
 
-  const vincularConEmpresaDueña = (prev, obraId) => {
-    const empresaDueña = core.empresaObra.find((r) => r.obraId === obraId)?.empresaId;
-    const yaVinculadaEmpresa = empresaDueña && (prev.hiloEmpresa || []).some((r) => r.hiloId === hiloId && r.empresaId === empresaDueña);
-    return empresaDueña && !yaVinculadaEmpresa ? [...(prev.hiloEmpresa || []), { id: uid("he"), hiloId, empresaId: empresaDueña }] : prev.hiloEmpresa;
+  const vinculoEmpresaDueña = (prev, obraId) => {
+    const empresaDueña = empresaDueñaDeObra(prev, obraId);
+    const yaVinculadaEmpresa = empresaDueña && contrapartesDe(prev, "Hilo", hiloId, "Empresa", true).some(({ c }) => c.id === empresaDueña);
+    return empresaDueña && !yaVinculadaEmpresa ? [vinc("Hilo", hiloId, "Empresa", empresaDueña, null, false, todayISO())] : [];
   };
 
   const vincularObra = (id) => {
-    setCore((prev) => ({
-      ...prev,
-      hiloObra: [...(prev.hiloObra || []), { id: uid("ho"), hiloId, obraId: id }],
-      hiloEmpresa: vincularConEmpresaDueña(prev, id),
-    }));
+    setCore((prev) => ({ ...prev, vinculos: [...(prev.vinculos || []), vinc("Hilo", hiloId, "Obra", id, null, false, todayISO()), ...vinculoEmpresaDueña(prev, id)] }));
     setAgregadas((a) => [...a, id]);
   };
   const agregarExistente = () => {
@@ -4423,7 +4378,7 @@ function VincularObraAHiloForm({ core, setCore, hiloId, onClose }) {
     setObraId("");
   };
   const quitarAgregada = (id) => {
-    setCore((prev) => ({ ...prev, hiloObra: (prev.hiloObra || []).filter((r) => !(r.hiloId === hiloId && r.obraId === id)) }));
+    setCore((prev) => ({ ...prev, vinculos: (prev.vinculos || []).filter((v) => !((v.origenTipo === "Hilo" && v.origenId === hiloId && v.destinoTipo === "Obra" && v.destinoId === id) || (v.destinoTipo === "Hilo" && v.destinoId === hiloId && v.origenTipo === "Obra" && v.origenId === id))) }));
     setAgregadas((a) => a.filter((x) => x !== id));
   };
 
@@ -4460,7 +4415,7 @@ function VincularObraAHiloForm({ core, setCore, hiloId, onClose }) {
             if (vinculoEmpresa?.empresaId) {
               setCore((prev) => ({
                 ...prev,
-                empresaObra: [...prev.empresaObra, { id: uid("eo"), empresaId: vinculoEmpresa.empresaId, obraId: data.id }],
+                vinculos: [...(prev.vinculos || []), vinc("Empresa", vinculoEmpresa.empresaId, "Obra", data.id, TR_DUENA, false, todayISO())],
               }));
             }
             setShowNuevaObra(false);
@@ -4500,7 +4455,7 @@ function AgregarTareaAlHiloForm({ core, hiloClienteId, personasDelHilo, onVincul
   const crear = () => {
     if (!titulo.trim()) return;
     const nuevoHilo = {
-      id: uid("H"), participantes: [], titulo: titulo.trim(),
+      id: uid("H"), titulo: titulo.trim(),
       estado: "Activo", fechaCreacion: todayISO(), tipo: "tarea",
       columnaTareaId: columnaId || null, hiloRelacionadoId: hiloClienteId, notaCierre: "",
     };
@@ -4869,13 +4824,13 @@ function EditAccionForm({ accion, core, setCore, otrasAccionesDelHilo = [], onCl
 
 function VincularObraForm({ core, setCore, empresaId, onClose, onVinculada }) {
   const [agregadas, setAgregadas] = useState([]);
-  const yaVinculadas = new Set(core.empresaObra.filter((r) => r.empresaId === empresaId).map((r) => r.obraId));
+  const yaVinculadas = new Set(obraIdsDeEmpresa(core, empresaId));
   const disponibles = core.obras.filter((o) => !yaVinculadas.has(o.id) && !agregadas.includes(o.id));
   const [obraId, setObraId] = useState("");
   const [showNuevaObra, setShowNuevaObra] = useState(false);
 
   const vincularObra = (id) => {
-    setCore((prev) => ({ ...prev, empresaObra: [...prev.empresaObra, { id: uid("eo"), empresaId, obraId: id }] }));
+    setCore((prev) => ({ ...prev, vinculos: [...(prev.vinculos || []), vinc("Empresa", empresaId, "Obra", id, TR_DUENA, false, todayISO())] }));
     setAgregadas((a) => [...a, id]);
     onVinculada?.(id);
   };
@@ -4885,7 +4840,7 @@ function VincularObraForm({ core, setCore, empresaId, onClose, onVinculada }) {
     setObraId("");
   };
   const quitarAgregada = (id) => {
-    setCore((prev) => ({ ...prev, empresaObra: prev.empresaObra.filter((r) => !(r.empresaId === empresaId && r.obraId === id)) }));
+    setCore((prev) => ({ ...prev, vinculos: (prev.vinculos || []).filter((v) => !(v.tipoRelacionId === TR_DUENA && v.origenTipo === "Empresa" && v.origenId === empresaId && v.destinoTipo === "Obra" && v.destinoId === id)) }));
     setAgregadas((a) => a.filter((x) => x !== id));
   };
 
@@ -4920,7 +4875,7 @@ function VincularObraForm({ core, setCore, empresaId, onClose, onVinculada }) {
             if (vinculoEmpresa?.empresaId && vinculoEmpresa.empresaId !== empresaId) {
               setCore((prev) => ({
                 ...prev,
-                empresaObra: [...prev.empresaObra, { id: uid("eo"), empresaId: vinculoEmpresa.empresaId, obraId: data.id }],
+                vinculos: [...(prev.vinculos || []), vinc("Empresa", vinculoEmpresa.empresaId, "Obra", data.id, TR_DUENA, false, todayISO())],
               }));
             }
             setShowNuevaObra(false);
@@ -4932,85 +4887,6 @@ function VincularObraForm({ core, setCore, empresaId, onClose, onVinculada }) {
   );
 }
 
-// Agrega una o varias personas de contacto a una empresa (existentes o nuevas), desde la ficha de la empresa.
-function VincularPersonaForm({ core, setCore, empresaId, onClose }) {
-  const [agregadas, setAgregadas] = useState([]);
-  const [showNuevaPersona, setShowNuevaPersona] = useState(false);
-  const yaVinculadas = new Set(core.personaEmpresa.filter((r) => r.empresaId === empresaId).map((r) => r.personaId));
-  const disponibles = core.personas.filter((p) => !yaVinculadas.has(p.id) && !agregadas.includes(p.id));
-  const [personaId, setPersonaId] = useState("");
-  const [cargoId, setCargoId] = useState((core.cargos || [])[0]?.id || "");
-  const [principal, setPrincipal] = useState(false);
-
-  const agregarExistente = () => {
-    if (!personaId) return;
-    setCore((prev) => ({ ...prev, personaEmpresa: [...prev.personaEmpresa, { id: uid("pe"), personaId, empresaId, cargoId, principal }] }));
-    setAgregadas((a) => [...a, personaId]);
-    setPersonaId("");
-    setPrincipal(false);
-  };
-  const quitarAgregada = (id) => {
-    setCore((prev) => ({ ...prev, personaEmpresa: prev.personaEmpresa.filter((r) => !(r.empresaId === empresaId && r.personaId === id)) }));
-    setAgregadas((a) => a.filter((x) => x !== id));
-  };
-
-  return (
-    <Modal title="Agregar personas de contacto" onClose={onClose}>
-      <ChipsAgregados items={agregadas} core={core} coleccion="personas" labelKey="nombre" onQuitar={quitarAgregada} />
-      {disponibles.length === 0 ? (
-        <p className="text-sm text-[#A69C88] mb-3">No hay más personas disponibles para vincular.</p>
-      ) : (
-        <Field label="Persona">
-          <BuscadorSelect
-            opciones={disponibles.map((p) => ({ id: p.id, label: p.nombre }))}
-            value={personaId}
-            onChange={setPersonaId}
-            placeholder="Buscar persona..."
-          />
-        </Field>
-      )}
-      <SelectConCrear
-        label="Cargo"
-        opciones={core.cargos || []}
-        value={cargoId}
-        onChange={setCargoId}
-        placeholderCrear="Ej: Encargado de compras"
-        onCrear={(nombre) => {
-          const nuevo = { id: uid("C"), nombre };
-          setCore((prev) => ({ ...prev, cargos: [...(prev.cargos || []), nuevo] }));
-          return nuevo;
-        }}
-      />
-      <label className="flex items-center gap-2 mb-3 text-sm text-[#2A2118]">
-        <input type="checkbox" checked={principal} onChange={(e) => setPrincipal(e.target.checked)} /> Es el contacto principal de esta empresa
-      </label>
-      <button type="button" disabled={!personaId} onClick={agregarExistente} className="w-full border border-[#E4DECF] rounded-sm py-2.5 font-bold text-sm text-[#2A2118] disabled:text-[#C9C1AE] disabled:cursor-not-allowed mb-2">+ Agregar</button>
-      <button type="button" onClick={() => setShowNuevaPersona(true)} className="w-full border border-[#E4DECF] rounded-sm py-2.5 font-bold text-sm text-[#2A2118] mb-3">+ Crear persona nueva</button>
-      <button type="button" onClick={onClose} className="w-full mt-1 bg-[#E8871E] text-[#2A2118] rounded-sm py-2.5 font-bold text-sm">Listo</button>
-      {showNuevaPersona && (
-        <PersonaForm
-          initial={{}}
-          core={core}
-          setCore={setCore}
-          onClose={() => setShowNuevaPersona(false)}
-          onSave={(data) => {
-            setCore((prev) => ({
-              ...prev,
-              personas: [data, ...prev.personas],
-              personaEmpresa: [...prev.personaEmpresa, { id: uid("pe"), personaId: data.id, empresaId, cargoId, principal }],
-            }));
-            setAgregadas((a) => [...a, data.id]);
-            setShowNuevaPersona(false);
-          }}
-        />
-      )}
-    </Modal>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Empresas
-// ---------------------------------------------------------------------------
 function EmpresasView({ core, setCore, onOpen }) {
   const [modal, setModal] = useState(null);
   const [q, setQ] = useState("");
@@ -5022,19 +4898,17 @@ function EmpresasView({ core, setCore, onOpen }) {
     setCore((prev) => {
       const exists = prev.empresas.some((e) => e.id === data.id);
       const empresas = exists ? prev.empresas.map((e) => (e.id === data.id ? data : e)) : [data, ...prev.empresas];
-      const personaEmpresa = vinculoPersona?.personaId
-        ? [...prev.personaEmpresa, { id: uid("pe"), personaId: vinculoPersona.personaId, empresaId: data.id, cargoId: vinculoPersona.cargoId, principal: true }]
-        : prev.personaEmpresa;
-      return { ...prev, empresas, personaEmpresa };
+      const vinculos = vinculoPersona?.personaId
+        ? [...(prev.vinculos || []), vinc("Persona", vinculoPersona.personaId, "Empresa", data.id, vinculoPersona.tipoRelacionId || null, true, todayISO())]
+        : prev.vinculos;
+      return { ...prev, empresas, vinculos };
     });
     setModal(null);
   };
   const del = (id) => setCore((prev) => ({
     ...prev,
-    empresas: prev.empresas.filter((e) => e.id !== id).map((e) => (e.cabeceraId === id ? { ...e, cabeceraId: null } : e)),
-    personaEmpresa: prev.personaEmpresa.filter((r) => r.empresaId !== id),
-    empresaObra: prev.empresaObra.filter((r) => r.empresaId !== id),
-    hiloEmpresa: (prev.hiloEmpresa || []).filter((r) => r.empresaId !== id),
+    empresas: prev.empresas.filter((e) => e.id !== id),
+    vinculos: (prev.vinculos || []).filter((v) => !(v.origenTipo === "Empresa" && v.origenId === id) && !(v.destinoTipo === "Empresa" && v.destinoId === id)),
     entidadEtiqueta: prev.entidadEtiqueta.filter((r) => !(r.entidadTipo === "Empresa" && r.entidadId === id)),
   }));
 
@@ -5059,9 +4933,9 @@ function EmpresasView({ core, setCore, onOpen }) {
       ) : (
         <div className="space-y-2">
           {list.map((e) => {
-            const nPersonas = core.personaEmpresa.filter((r) => r.empresaId === e.id).length;
+            const nPersonas = personaIdsDeEmpresa(core, e.id).length;
             const nSubsidiarias = subsidiariasDeEmpresa(e.id, core).length;
-            const cabecera = e.cabeceraId ? core.empresas.find((c) => c.id === e.cabeceraId) : null;
+            const cabecera = cabeceraDeEmpresa(e.id, core);
             return (
               <div key={e.id} className="w-full bg-white border border-[#E4DECF] rounded-sm p-3 flex items-center gap-3">
                 <button onClick={() => onOpen("empresa", e.id)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
@@ -5111,22 +4985,18 @@ function EmpresaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
   const [cuit, setCuit] = useState(initial.cuit || "");
   const [direccion, setDireccion] = useState(initial.direccion || "");
   const [ciudad, setCiudad] = useState(initial.ciudad || "");
-  const [cabeceraId, setCabeceraId] = useState(initial.cabeceraId || "");
   const [confirmarEliminar, setConfirmarEliminar] = useState(false);
 
   const [personaModo, setPersonaModo] = useState("existente"); // 'existente' | 'adefinir'
   const [personaId, setPersonaId] = useState(core?.personas?.[0]?.id || "");
-  const [cargoId, setCargoId] = useState((core?.cargos || [])[0]?.id || "");
+  const [tipoRelacionId, setTipoRelacionId] = useState("");
   const [showNuevaPersona, setShowNuevaPersona] = useState(false);
-
-  const esCabeceraDeGrupo = !esNueva && subsidiariasDeEmpresa(initial.id, core).length > 0;
-  const opcionesCabecera = candidatasACabecera(initial.id, core);
 
   const submit = () => {
     if (!denominacion.trim()) return;
-    const data = { id: initial.id || uid("E"), denominacion: denominacion.trim(), cuit: cuit.trim(), direccion, ciudad, cabeceraId: esCabeceraDeGrupo ? null : (cabeceraId || null) };
+    const data = { id: initial.id || uid("E"), denominacion: denominacion.trim(), cuit: cuit.trim(), direccion, ciudad };
     let vinculoPersona = null;
-    if (esNueva && personaModo === "existente" && personaId) vinculoPersona = { tipo: "existente", personaId, cargoId };
+    if (esNueva && personaModo === "existente" && personaId) vinculoPersona = { personaId, tipoRelacionId: tipoRelacionId || null };
     onSave(data, vinculoPersona);
   };
 
@@ -5136,20 +5006,7 @@ function EmpresaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
       <Field label="CUIT"><input className={inputCls} placeholder="30-12345678-9" value={cuit} onChange={(e) => setCuit(e.target.value)} /></Field>
       <Field label="Dirección"><input className={inputCls} value={direccion} onChange={(e) => setDireccion(e.target.value)} /></Field>
       <Field label="Ciudad"><input className={inputCls} value={ciudad} onChange={(e) => setCiudad(e.target.value)} /></Field>
-
-      {esCabeceraDeGrupo ? (
-        <p className="text-xs text-[#A69C88] mb-3">Esta empresa ya es cabecera de un grupo, por eso no puede tener a su vez su propia cabecera.</p>
-      ) : (
-        <Field label="Empresa cabecera (opcional)">
-          <BuscadorSelect
-            opciones={opcionesCabecera.map((e) => ({ id: e.id, label: e.denominacion }))}
-            value={cabeceraId}
-            onChange={setCabeceraId}
-            vacioLabel="— Ninguna —"
-            placeholder="Buscar empresa..."
-          />
-        </Field>
-      )}
+      {!esNueva && <p className="text-xs text-[#A69C88] mb-3">Los grupos (cabecera/subsidiaria) y demás relaciones se gestionan desde la sección "Vínculos" de la ficha.</p>}
 
       {esNueva && (
         <div className="border-t border-[#E4DECF] my-3 pt-3">
@@ -5177,18 +5034,15 @@ function EmpresaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
             <p className="text-sm text-[#A69C88] mb-3">La empresa va a quedar marcada como "A definir" hasta que le asignes una persona.</p>
           )}
           {personaModo !== "adefinir" && (
-            <SelectConCrear
-              label="Cargo"
-              opciones={core?.cargos || []}
-              value={cargoId}
-              onChange={setCargoId}
-              placeholderCrear="Ej: Encargado de compras"
-              onCrear={(nombre) => {
-                const nuevo = { id: uid("C"), nombre };
-                setCore((prev) => ({ ...prev, cargos: [...(prev.cargos || []), nuevo] }));
-                return nuevo;
-              }}
-            />
+            <Field label="Tipo de relación (opcional)">
+              <BuscadorSelect
+                opciones={(core?.tiposRelacion || []).map((t) => ({ id: t.id, label: t.cualidad === "asimetrica" ? `${t.nombre} / ${t.nombreInverso}` : t.nombre }))}
+                value={tipoRelacionId}
+                onChange={setTipoRelacionId}
+                vacioLabel="— Sin tipo (genérico) —"
+                placeholder="Buscar tipo de relación..."
+              />
+            </Field>
           )}
           {showNuevaPersona && (
             <PersonaForm
@@ -5305,7 +5159,7 @@ function ImportarEmpresasForm({ core, setCore, onClose }) {
           const clave = normalizarTexto(denominacion);
           if (nombresExistentes.has(clave)) { existentes++; continue; }
           nombresExistentes.add(clave);
-          const nueva = { id: uid("E"), denominacion, cuit, direccion, ciudad, cabeceraId: null };
+          const nueva = { id: uid("E"), denominacion, cuit, direccion, ciudad };
           nuevas.push(nueva);
           agregadas++;
           if (cuitValido) empresaIdPorCuit.set(cuit, nueva.id);
@@ -5368,29 +5222,18 @@ function ImportarEmpresasForm({ core, setCore, onClose }) {
 
 function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen }) {
   const empresa = core.empresas.find((e) => e.id === id);
-  const [showObraLink, setShowObraLink] = useState(false);
-  const [showPersonaLink, setShowPersonaLink] = useState(false);
-  const [editRel, setEditRel] = useState(null);
   const [showNuevoHiloEmpresa, setShowNuevoHiloEmpresa] = useState(false);
-  const [showVincularRelacion, setShowVincularRelacion] = useState(false);
   const [verGrupo, setVerGrupo] = useState(false);
   if (!empresa) return <div><BackHeader onClose={onClose} /><p className="text-sm text-[#8A8272]">Esta empresa ya no existe.</p></div>;
 
-  const cabecera = empresa.cabeceraId ? core.empresas.find((e) => e.id === empresa.cabeceraId) : null;
+  const cabecera = cabeceraDeEmpresa(id, core);
   const subsidiarias = subsidiariasDeEmpresa(id, core);
   const empresaIdsIncluidas = verGrupo && subsidiarias.length > 0 ? [id, ...subsidiarias.map((s) => s.id)] : [id];
 
-  const personas = core.personaEmpresa.filter((r) => r.empresaId === id);
-  const obras = core.empresaObra.filter((r) => r.empresaId === id);
-  const hilosIdsDeEmpresa = new Set((core.hiloEmpresa || []).filter((r) => empresaIdsIncluidas.includes(r.empresaId)).map((r) => r.hiloId));
+  const hilosIdsDeEmpresa = new Set(empresaIdsIncluidas.flatMap((eid) => contrapartesDe(core, "Empresa", eid, "Hilo").map(({ c }) => c.id)));
   const hilosDeEmpresa = core.hilos.filter((h) => hilosIdsDeEmpresa.has(h.id)).map((h) => h.id);
   const hilosDeEstaEmpresa = core.hilos.filter((h) => hilosIdsDeEmpresa.has(h.id) && h.estado === "Activo");
   const accCount = acciones.filter((a) => hilosDeEmpresa.includes(a.hiloId)).length;
-  const misVinculos = (core.vinculos || []).filter((v) => (v.origenTipo === "Empresa" && v.origenId === id) || (v.destinoTipo === "Empresa" && v.destinoId === id));
-
-  const updateRel = (relId, cambios) => setCore((prev) => ({ ...prev, personaEmpresa: prev.personaEmpresa.map((r) => (r.id === relId ? { ...r, ...cambios } : r)) }));
-  const unlinkObra = (relId) => setCore((prev) => ({ ...prev, empresaObra: prev.empresaObra.filter((r) => r.id !== relId) }));
-  const quitarVinculo = (vinculoId) => setCore((prev) => ({ ...prev, vinculos: (prev.vinculos || []).filter((v) => v.id !== vinculoId) }));
 
   return (
     <div>
@@ -5438,32 +5281,6 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
 
         <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Personas de contacto</p>
-            <button onClick={() => setShowPersonaLink(true)} className="text-xs font-bold text-[#B0452E]">+ Agregar</button>
-          </div>
-          {personas.length === 0 ? <Chip tone="amber">A definir</Chip> : (
-            <div className="space-y-1.5">
-              {personas.map((r) => {
-                const p = core.personas.find((pp) => pp.id === r.personaId);
-                if (!p) return null;
-                return (
-                  <div key={r.id} className="flex items-center justify-between text-sm">
-                    <button onClick={() => onOpen("persona", p.id)} className="text-left flex-1 min-w-0">
-                      <span className="font-semibold text-[#2A2118]">{p.nombre}</span>
-                      <span className="text-[#8A8272]"> · {(core.cargos || []).find((c) => c.id === r.cargoId)?.nombre || "sin cargo"}</span>
-                      {r.principal && <Star size={11} className="inline text-[#E8871E] ml-1" />}
-                    </button>
-                    <WhatsAppLink persona={p} size={15} />
-                    <IconBtn label="Editar cargo" onClick={() => setEditRel(r)}><Pencil size={14} /></IconBtn>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-          <div className="flex items-center justify-between mb-2">
             <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">{verGrupo && subsidiarias.length > 0 ? "Hilos del grupo" : "Hilos de esta empresa"}</p>
             <button onClick={() => setShowNuevoHiloEmpresa(true)} className="text-xs font-bold text-[#B0452E]">+ Nuevo hilo</button>
           </div>
@@ -5481,54 +5298,7 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
           )}
         </div>
 
-        <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Obras vinculadas</p>
-            <button onClick={() => setShowObraLink(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>
-          </div>
-          {obras.length === 0 ? <p className="text-sm text-[#A69C88]">Sin obras vinculadas.</p> : (
-            <div className="space-y-1.5">
-              {obras.map((r) => {
-                const o = core.obras.find((oo) => oo.id === r.obraId);
-                if (!o) return null;
-                return (
-                  <div key={r.id} className="flex items-center justify-between text-sm">
-                    <button onClick={() => onOpen("obra", o.id)} className="font-semibold text-[#2A2118] text-left">{o.nombre}</button>
-                    <IconBtn danger label="Desvincular" onClick={() => unlinkObra(r.id)}><X size={14} /></IconBtn>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Vínculos</p>
-            <button onClick={() => setShowVincularRelacion(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>
-          </div>
-          {misVinculos.length === 0 ? (
-            <p className="text-sm text-[#A69C88]">Sin vínculos cargados.</p>
-          ) : (
-            <div className="space-y-1.5">
-              {misVinculos.map((v) => {
-                const tr = (core.tiposRelacion || []).find((t) => t.id === v.tipoRelacionId);
-                const { otro, esOrigen } = ladoOpuestoVinculo(v, "Empresa", id);
-                const label = entidadLabel(otro.tipo, otro.id, core);
-                if (!label) return null;
-                return (
-                  <div key={v.id} className="flex items-center justify-between gap-2 text-sm">
-                    <button onClick={() => onOpen(otro.tipo.toLowerCase(), otro.id)} className="text-left flex-1 min-w-0">
-                      <span className="font-semibold text-[#2A2118]">{label}</span>
-                      <span className="text-[#8A8272]"> · {nombreRelacionLado(tr, esOrigen)}{v.fecha ? ` · ${v.fecha}` : ""}</span>
-                    </button>
-                    <IconBtn label="Quitar vínculo" danger onClick={() => quitarVinculo(v.id)}><X size={14} /></IconBtn>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+        <VinculosDeFicha core={core} setCore={setCore} entidadTipo="Empresa" entidadId={id} onOpen={onOpen} />
       </div>
 
       {showNuevoHiloEmpresa && (
@@ -5544,39 +5314,6 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
           />
         </Modal>
       )}
-      {showObraLink && (
-        <VincularObraForm
-          core={core}
-          setCore={setCore}
-          empresaId={id}
-          onClose={() => setShowObraLink(false)}
-        />
-      )}
-      {showPersonaLink && (
-        <VincularPersonaForm
-          core={core}
-          setCore={setCore}
-          empresaId={id}
-          onClose={() => setShowPersonaLink(false)}
-        />
-      )}
-      {editRel && (
-        <EditRelacionForm
-          core={core}
-          setCore={setCore}
-          relacion={editRel}
-          onClose={() => setEditRel(null)}
-          onSave={(cambios) => { updateRel(editRel.id, cambios); setEditRel(null); }}
-        />
-      )}
-      {showVincularRelacion && (
-        <VincularRelacionForm
-          core={core}
-          setCore={setCore}
-          entidadFija={{ tipo: "Empresa", id }}
-          onClose={() => setShowVincularRelacion(false)}
-        />
-      )}
     </div>
   );
 }
@@ -5587,42 +5324,46 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
 function ObrasView({ core, setCore, onOpen }) {
   const [modal, setModal] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const [q, setQ] = useState("");
+  const list = core.obras.filter((o) => o.nombre.toLowerCase().includes(q.toLowerCase()));
   const save = (data, vinculoEmpresa) => {
     setCore((prev) => {
       const exists = prev.obras.some((o) => o.id === data.id);
       const obras = exists ? prev.obras.map((o) => (o.id === data.id ? data : o)) : [data, ...prev.obras];
-      const empresaObra = vinculoEmpresa?.empresaId
-        ? [...prev.empresaObra, { id: uid("eo"), empresaId: vinculoEmpresa.empresaId, obraId: data.id }]
-        : prev.empresaObra;
-      return { ...prev, obras, empresaObra };
+      const vinculos = vinculoEmpresa?.empresaId
+        ? [...(prev.vinculos || []), vinc("Empresa", vinculoEmpresa.empresaId, "Obra", data.id, TR_DUENA, false, todayISO())]
+        : prev.vinculos;
+      return { ...prev, obras, vinculos };
     });
     setModal(null);
   };
   const del = (id) => setCore((prev) => ({
     ...prev,
     obras: prev.obras.filter((o) => o.id !== id),
-    empresaObra: prev.empresaObra.filter((r) => r.obraId !== id),
-    personaObra: (prev.personaObra || []).filter((r) => r.obraId !== id),
-    hiloObra: (prev.hiloObra || []).filter((r) => r.obraId !== id),
+    vinculos: (prev.vinculos || []).filter((v) => !(v.origenTipo === "Obra" && v.origenId === id) && !(v.destinoTipo === "Obra" && v.destinoId === id)),
     entidadEtiqueta: prev.entidadEtiqueta.filter((r) => !(r.entidadTipo === "Obra" && r.entidadId === id)),
   }));
 
   return (
     <div>
     <div className="sticky top-0 z-10 bg-[#F7F5F0]">
-      <div className="flex justify-end mb-3">
+      <div className="flex gap-2 mb-3">
+        <div className="relative flex-1">
+          <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#A69C88]" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar obra..." className={`${inputCls} pl-8`} />
+        </div>
         <button onClick={() => setModal({})} className="shrink-0 bg-[#E8871E] text-[#2A2118] rounded-sm px-3 py-1 flex flex-col items-center justify-center gap-0.5 leading-none">
           <span className="text-[9px] font-bold">{core.obras.length}</span>
           <Plus size={16} />
         </button>
       </div>
     </div>
-      {core.obras.length === 0 ? (
+      {list.length === 0 ? (
         <EmptyState icon={<HardHat size={26} />} text="No hay obras cargadas todavía." />
       ) : (
         <div className="space-y-2">
-          {core.obras.map((o) => {
-            const empresas = core.empresaObra.filter((r) => r.obraId === o.id).map((r) => core.empresas.find((e) => e.id === r.empresaId)?.denominacion).filter(Boolean);
+          {list.map((o) => {
+            const empresas = contrapartesDe(core, "Obra", o.id, "Empresa", true).map(({ c }) => core.empresas.find((e) => e.id === c.id)?.denominacion).filter(Boolean);
             return (
               <div key={o.id} className="w-full bg-white border border-[#E4DECF] rounded-sm p-3 flex items-center gap-3">
                 <button onClick={() => onOpen("obra", o.id)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
@@ -5725,7 +5466,7 @@ function ObraForm({ initial, core, setCore, onSave, onDelete, onClose }) {
                 if (vinculoPersona?.personaId) {
                   setCore((prev) => ({
                     ...prev,
-                    personaEmpresa: [...prev.personaEmpresa, { id: uid("pe"), personaId: vinculoPersona.personaId, empresaId: data.id, cargoId: vinculoPersona.cargoId, principal: true }],
+                    vinculos: [...(prev.vinculos || []), vinc("Persona", vinculoPersona.personaId, "Empresa", data.id, vinculoPersona.tipoRelacionId || null, true, todayISO())],
                   }));
                 }
                 setShowNuevaEmpresa(false);
@@ -5756,14 +5497,9 @@ function ObraForm({ initial, core, setCore, onSave, onDelete, onClose }) {
 function ObraDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen }) {
   const obra = core.obras.find((o) => o.id === id);
   const [showNuevoHiloObra, setShowNuevoHiloObra] = useState(false);
-  const [showEmpresaLink, setShowEmpresaLink] = useState(false);
-  const [showVincularRelacion, setShowVincularRelacion] = useState(false);
   if (!obra) return <div><BackHeader onClose={onClose} /><p className="text-sm text-[#8A8272]">Esta obra ya no existe.</p></div>;
-  const empresas = core.empresaObra.filter((r) => r.obraId === id);
-  const hilosIdsDeEstaObra = new Set((core.hiloObra || []).filter((r) => r.obraId === id).map((r) => r.hiloId));
+  const hilosIdsDeEstaObra = new Set(contrapartesDe(core, "Obra", id, "Hilo").map(({ c }) => c.id));
   const hilosDeEstaObra = core.hilos.filter((h) => hilosIdsDeEstaObra.has(h.id) && h.estado === "Activo");
-  const misVinculos = (core.vinculos || []).filter((v) => (v.origenTipo === "Obra" && v.origenId === id) || (v.destinoTipo === "Obra" && v.destinoId === id));
-  const quitarVinculo = (vinculoId) => setCore((prev) => ({ ...prev, vinculos: (prev.vinculos || []).filter((v) => v.id !== vinculoId) }));
   return (
     <div>
       <BackHeader onClose={onClose} />
@@ -5779,22 +5515,6 @@ function ObraDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
           </div>
         </div>
         <TagsSection core={core} setCore={setCore} entidadTipo="Obra" entidadId={id} />
-
-        <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Empresas vinculadas</p>
-            <button onClick={() => setShowEmpresaLink(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>
-          </div>
-          {empresas.length === 0 ? <Chip tone="amber">A definir</Chip> : (
-            <div className="space-y-1.5">
-              {empresas.map((r) => {
-                const e = core.empresas.find((ee) => ee.id === r.empresaId);
-                if (!e) return null;
-                return <button key={r.id} onClick={() => onOpen("empresa", e.id)} className="w-full text-left text-sm font-semibold text-[#2A2118]">{e.denominacion}</button>;
-              })}
-            </div>
-          )}
-        </div>
 
         <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
           <div className="flex items-center justify-between mb-2">
@@ -5815,33 +5535,7 @@ function ObraDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
           )}
         </div>
 
-        <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Vínculos</p>
-            <button onClick={() => setShowVincularRelacion(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>
-          </div>
-          {misVinculos.length === 0 ? (
-            <p className="text-sm text-[#A69C88]">Sin vínculos cargados.</p>
-          ) : (
-            <div className="space-y-1.5">
-              {misVinculos.map((v) => {
-                const tr = (core.tiposRelacion || []).find((t) => t.id === v.tipoRelacionId);
-                const { otro, esOrigen } = ladoOpuestoVinculo(v, "Obra", id);
-                const label = entidadLabel(otro.tipo, otro.id, core);
-                if (!label) return null;
-                return (
-                  <div key={v.id} className="flex items-center justify-between gap-2 text-sm">
-                    <button onClick={() => onOpen(otro.tipo.toLowerCase(), otro.id)} className="text-left flex-1 min-w-0">
-                      <span className="font-semibold text-[#2A2118]">{label}</span>
-                      <span className="text-[#8A8272]"> · {nombreRelacionLado(tr, esOrigen)}{v.fecha ? ` · ${v.fecha}` : ""}</span>
-                    </button>
-                    <IconBtn label="Quitar vínculo" danger onClick={() => quitarVinculo(v.id)}><X size={14} /></IconBtn>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+        <VinculosDeFicha core={core} setCore={setCore} entidadTipo="Obra" entidadId={id} onOpen={onOpen} />
       </div>
       {showNuevoHiloObra && (
         <Modal title="Nuevo hilo" onClose={() => setShowNuevoHiloObra(false)}>
@@ -5856,89 +5550,7 @@ function ObraDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
           />
         </Modal>
       )}
-      {showEmpresaLink && (
-        <VincularEmpresaDesdeObraForm
-          core={core}
-          setCore={setCore}
-          obraId={id}
-          onClose={() => setShowEmpresaLink(false)}
-        />
-      )}
-      {showVincularRelacion && (
-        <VincularRelacionForm
-          core={core}
-          setCore={setCore}
-          entidadFija={{ tipo: "Obra", id }}
-          onClose={() => setShowVincularRelacion(false)}
-        />
-      )}
     </div>
-  );
-}
-
-// Vincula esta obra a una o varias empresas (existentes o nuevas), desde la ficha de la obra.
-function VincularEmpresaDesdeObraForm({ core, setCore, obraId, onClose }) {
-  const [agregadas, setAgregadas] = useState([]);
-  const yaVinculadas = new Set(core.empresaObra.filter((r) => r.obraId === obraId).map((r) => r.empresaId));
-  const disponibles = core.empresas.filter((e) => !yaVinculadas.has(e.id) && !agregadas.includes(e.id));
-  const [empresaId, setEmpresaId] = useState("");
-  const [showNuevaEmpresa, setShowNuevaEmpresa] = useState(false);
-
-  const vincularEmpresa = (id) => {
-    setCore((prev) => ({ ...prev, empresaObra: [...prev.empresaObra, { id: uid("eo"), empresaId: id, obraId }] }));
-    setAgregadas((a) => [...a, id]);
-  };
-  const agregarExistente = () => {
-    if (!empresaId) return;
-    vincularEmpresa(empresaId);
-    setEmpresaId("");
-  };
-  const quitarAgregada = (id) => {
-    setCore((prev) => ({ ...prev, empresaObra: prev.empresaObra.filter((r) => !(r.obraId === obraId && r.empresaId === id)) }));
-    setAgregadas((a) => a.filter((x) => x !== id));
-  };
-
-  return (
-    <Modal title="Vincular empresas a la obra" onClose={onClose}>
-      <ChipsAgregados items={agregadas} core={core} coleccion="empresas" labelKey="denominacion" onQuitar={quitarAgregada} />
-      {disponibles.length === 0 ? (
-        <p className="text-sm text-[#A69C88] mb-3">No hay más empresas disponibles para vincular.</p>
-      ) : (
-        <>
-          <Field label="Empresa">
-            <BuscadorSelect
-              opciones={disponibles.map((e) => ({ id: e.id, label: e.denominacion }))}
-              value={empresaId}
-              onChange={setEmpresaId}
-              placeholder="Buscar empresa..."
-            />
-          </Field>
-          <button type="button" disabled={!empresaId} onClick={agregarExistente} className="w-full border border-[#E4DECF] rounded-sm py-2.5 font-bold text-sm text-[#2A2118] disabled:text-[#C9C1AE] disabled:cursor-not-allowed mb-3">+ Agregar</button>
-        </>
-      )}
-      <button type="button" onClick={() => setShowNuevaEmpresa(true)} className="w-full border border-[#E4DECF] rounded-sm py-2 font-bold text-xs text-[#2A2118] mb-3">+ Crear empresa nueva</button>
-      <button type="button" onClick={onClose} className="w-full mt-1 bg-[#E8871E] text-[#2A2118] rounded-sm py-2.5 font-bold text-sm">Listo</button>
-
-      {showNuevaEmpresa && (
-        <EmpresaForm
-          initial={{}}
-          core={core}
-          setCore={setCore}
-          onClose={() => setShowNuevaEmpresa(false)}
-          onSave={(data, vinculoPersona) => {
-            setCore((prev) => ({ ...prev, empresas: [data, ...prev.empresas] }));
-            vincularEmpresa(data.id);
-            if (vinculoPersona?.personaId) {
-              setCore((prev) => ({
-                ...prev,
-                personaEmpresa: [...prev.personaEmpresa, { id: uid("pe"), personaId: vinculoPersona.personaId, empresaId: data.id, cargoId: vinculoPersona.cargoId, principal: true }],
-              }));
-            }
-            setShowNuevaEmpresa(false);
-          }}
-        />
-      )}
-    </Modal>
   );
 }
 
@@ -5954,8 +5566,9 @@ function BuscarView({ core, search, setSearch, onOpen }) {
   const empresasIds = new Set(empresasDirectas.map((e) => e.id));
   const empresas = [...empresasDirectas];
   for (const e of empresasDirectas) {
-    const relacionadas = e.cabeceraId
-      ? [core.empresas.find((c) => c.id === e.cabeceraId), ...subsidiariasDeEmpresa(e.cabeceraId, core)]
+    const cab = cabeceraDeEmpresa(e.id, core);
+    const relacionadas = cab
+      ? [cab, ...subsidiariasDeEmpresa(cab.id, core)]
       : subsidiariasDeEmpresa(e.id, core);
     for (const r of relacionadas) {
       if (r && !empresasIds.has(r.id)) { empresasIds.add(r.id); empresas.push(r); }
@@ -5981,7 +5594,7 @@ function BuscarView({ core, search, setSearch, onOpen }) {
           {personas.length > 0 && <ResultGroup title="Personas" items={personas.map((p) => ({ id: p.id, label: p.nombre, type: "persona", persona: p }))} onOpen={onOpen} />}
           {empresas.length > 0 && <ResultGroup title="Empresas" items={empresas.map((e) => {
             const nSub = subsidiariasDeEmpresa(e.id, core).length;
-            const cab = e.cabeceraId ? core.empresas.find((c) => c.id === e.cabeceraId) : null;
+            const cab = cabeceraDeEmpresa(e.id, core);
             const sub = nSub > 0 ? `Cabecera · ${nSub} empresa${nSub !== 1 ? "s" : ""} del grupo` : cab ? `Grupo ${cab.denominacion}` : null;
             return { id: e.id, label: e.denominacion, type: "empresa", sub };
           })} onOpen={onOpen} />}
@@ -6024,7 +5637,7 @@ function exportarExcel(nombreArchivo, headers, rows) {
 }
 
 function ultimoContactoPorPersona(persona, core, acciones) {
-  const hilosIds = core.hilos.filter((h) => (h.participantes || []).some((p) => p.personaId === persona.id)).map((h) => h.id);
+  const hilosIds = hilosDePersona(core, persona.id).map((h) => h.id);
   const realizadas = acciones.filter((a) => hilosIds.includes(a.hiloId) && a.estado === "Realizada" && a.fechaRealizada);
   if (realizadas.length === 0) return null;
   return realizadas.reduce((max, a) => (a.fechaRealizada > max ? a.fechaRealizada : max), realizadas[0].fechaRealizada);
@@ -6083,7 +5696,7 @@ function TableroControl({ core, acciones }) {
   const realizadasEsteMes = acciones.filter((a) => a.estado === "Realizada" && a.fechaRealizada >= inicioMes).length;
 
   const sinContacto = core.personas.filter((p) => {
-    if (!core.hilos.some((h) => (h.participantes || []).some((pa) => pa.personaId === p.id))) return false;
+    if (hilosDePersona(core, p.id).length === 0) return false;
     const ultimo = ultimoContactoPorPersona(p, core, acciones);
     if (!ultimo) return true;
     return diasEntre(ultimo, t) > umbralSinContacto;
@@ -6138,7 +5751,7 @@ function ReportesView({ core, acciones }) {
 
 function InformeObrasSinEmpresa({ core }) {
   const rows = core.obras
-    .filter((o) => !core.empresaObra.some((r) => r.obraId === o.id))
+    .filter((o) => contrapartesDe(core, "Obra", o.id, "Empresa", true).length === 0)
     .map((o) => [o.nombre, o.ciudad || "—"]);
   return (
     <ReportTable
@@ -6152,7 +5765,7 @@ function InformeObrasSinEmpresa({ core }) {
 
 function InformeEmpresasSinPersona({ core }) {
   const rows = core.empresas
-    .filter((e) => !core.personaEmpresa.some((r) => r.empresaId === e.id))
+    .filter((e) => personaIdsDeEmpresa(core, e.id).length === 0)
     .map((e) => [e.denominacion, e.ciudad || "—"]);
   return (
     <ReportTable
@@ -6252,13 +5865,13 @@ function InformeHilosPorEmpresa({ core, acciones }) {
   for (const h of hilosFiltrados) {
     const empresas = empresasDeHilo(h, core);
     const keys = empresas.length > 0
-      ? empresas.map((e) => (agruparPorCabecera && e.cabeceraId ? e.cabeceraId : e.id))
+      ? empresas.map((e) => { const cab = agruparPorCabecera ? cabeceraDeEmpresa(e.id, core) : null; return cab ? cab.id : e.id; })
       : ["__sin_empresa__"];
     for (const key of keys) {
       if (!porEmpresa[key]) porEmpresa[key] = { hilos: 0, acciones: 0, empresaIds: new Set() };
       porEmpresa[key].hilos += 1;
       porEmpresa[key].acciones += acciones.filter((a) => a.hiloId === h.id).length;
-      const empresaOrigen = empresas.find((e) => (agruparPorCabecera && e.cabeceraId ? e.cabeceraId : e.id) === key);
+      const empresaOrigen = empresas.find((e) => { const cab = agruparPorCabecera ? cabeceraDeEmpresa(e.id, core) : null; return (cab ? cab.id : e.id) === key; });
       if (empresaOrigen) porEmpresa[key].empresaIds.add(empresaOrigen.id);
     }
   }
@@ -6301,11 +5914,11 @@ function InformeSinContacto({ core, acciones }) {
   const t = todayISO();
 
   const filas = core.personas
-    .filter((p) => core.hilos.some((h) => (h.participantes || []).some((pa) => pa.personaId === p.id)))
+    .filter((p) => hilosDePersona(core, p.id).length > 0)
     .map((p) => {
       const ultimo = ultimoContactoPorPersona(p, core, acciones);
       const dias = ultimo ? diasEntre(ultimo, t) : Infinity;
-      const empresas = core.personaEmpresa.filter((r) => r.personaId === p.id).map((r) => core.empresas.find((e) => e.id === r.empresaId)?.denominacion).filter(Boolean).join(", ");
+      const empresas = empresaIdsDePersona(core, p.id).map((eid) => core.empresas.find((e) => e.id === eid)?.denominacion).filter(Boolean).join(", ");
       return { persona: p.nombre, empresas: empresas || "—", ultimo: ultimo ? fmtDate(ultimo) : "Nunca", dias };
     })
     .filter((r) => r.dias > umbral)
@@ -6335,6 +5948,8 @@ function InformeSinContacto({ core, acciones }) {
 function TiposAccionView({ core, setCore }) {
   const [modal, setModal] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const [q, setQ] = useState("");
+  const list = core.tiposAccion.filter((t) => t.nombre.toLowerCase().includes(q.toLowerCase()));
   const saveTipo = (data) => {
     setCore((prev) => {
       const exists = prev.tiposAccion.some((t) => t.id === data.id);
@@ -6347,10 +5962,19 @@ function TiposAccionView({ core, setCore }) {
   return (
     <div>
     <div className="sticky top-0 z-10 bg-[#F7F5F0]">
-      <div className="flex justify-end mb-2"><button onClick={() => setModal({})} className="bg-[#E8871E] text-[#2A2118] rounded-sm px-3 py-1.5 font-bold text-sm flex items-center gap-1"><Plus size={14} /> Agregar</button></div>
+      <div className="flex gap-2 mb-3">
+        <div className="relative flex-1">
+          <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#A69C88]" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar tipo de acción..." className={`${inputCls} pl-8`} />
+        </div>
+        <button onClick={() => setModal({})} className="shrink-0 bg-[#E8871E] text-[#2A2118] rounded-sm px-3 py-1 flex flex-col items-center justify-center gap-0.5 leading-none">
+          <span className="text-[9px] font-bold">{core.tiposAccion.length}</span>
+          <Plus size={16} />
+        </button>
+      </div>
     </div>
       <div className="space-y-1.5">
-        {core.tiposAccion.map((t) => (
+        {list.map((t) => (
           <div key={t.id} className="bg-white border border-[#E4DECF] rounded-sm p-2.5 flex items-center justify-between text-sm">
             <span className="font-semibold text-[#2A2118]">{t.nombre}</span>
             <div className="flex gap-1">
@@ -6388,6 +6012,8 @@ function EtiquetasView({ core, setCore }) {
     });
     setModal(null);
   };
+  const [q, setQ] = useState("");
+  const list = core.etiquetas.filter((t) => t.etiqueta.toLowerCase().includes(q.toLowerCase()));
   const delEtiqueta = (id) => setCore((prev) => ({
     ...prev,
     etiquetas: prev.etiquetas.filter((t) => t.id !== id),
@@ -6397,10 +6023,19 @@ function EtiquetasView({ core, setCore }) {
   return (
     <div>
     <div className="sticky top-0 z-10 bg-[#F7F5F0]">
-      <div className="flex justify-end mb-2"><button onClick={() => setModal({})} className="bg-[#E8871E] text-[#2A2118] rounded-sm px-3 py-1.5 font-bold text-sm flex items-center gap-1"><Plus size={14} /> Agregar</button></div>
+      <div className="flex gap-2 mb-3">
+        <div className="relative flex-1">
+          <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#A69C88]" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar etiqueta..." className={`${inputCls} pl-8`} />
+        </div>
+        <button onClick={() => setModal({})} className="shrink-0 bg-[#E8871E] text-[#2A2118] rounded-sm px-3 py-1 flex flex-col items-center justify-center gap-0.5 leading-none">
+          <span className="text-[9px] font-bold">{core.etiquetas.length}</span>
+          <Plus size={16} />
+        </button>
+      </div>
     </div>
       <div className="space-y-1.5">
-        {core.etiquetas.map((t) => (
+        {list.map((t) => (
           <div key={t.id} className="bg-white border border-[#E4DECF] rounded-sm p-2.5 flex items-center justify-between text-sm">
             <div>
               <span className="font-semibold text-[#2A2118]">{t.etiqueta}</span>
@@ -6441,15 +6076,26 @@ function CategoriasView({ core, setCore }) {
     });
     setModal(null);
   };
+  const [q, setQ] = useState("");
+  const list = (core.categorias || []).filter((c) => c.nombre.toLowerCase().includes(q.toLowerCase()));
   const delCategoria = (id) => setCore((prev) => ({ ...prev, categorias: (prev.categorias || []).filter((c) => c.id !== id) }));
 
   return (
     <div>
     <div className="sticky top-0 z-10 bg-[#F7F5F0]">
-      <div className="flex justify-end mb-2"><button onClick={() => setModal({})} className="bg-[#E8871E] text-[#2A2118] rounded-sm px-3 py-1.5 font-bold text-sm flex items-center gap-1"><Plus size={14} /> Agregar</button></div>
+      <div className="flex gap-2 mb-3">
+        <div className="relative flex-1">
+          <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#A69C88]" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar categoría..." className={`${inputCls} pl-8`} />
+        </div>
+        <button onClick={() => setModal({})} className="shrink-0 bg-[#E8871E] text-[#2A2118] rounded-sm px-3 py-1 flex flex-col items-center justify-center gap-0.5 leading-none">
+          <span className="text-[9px] font-bold">{(core.categorias || []).length}</span>
+          <Plus size={16} />
+        </button>
+      </div>
     </div>
       <div className="space-y-1.5">
-        {(core.categorias || []).map((c) => (
+        {list.map((c) => (
           <div key={c.id} className="bg-white border border-[#E4DECF] rounded-sm p-2.5 flex items-center justify-between text-sm">
             <span className="font-semibold text-[#2A2118]">{c.nombre}</span>
             <div className="flex gap-1">
@@ -6477,52 +6123,6 @@ function CategoriasView({ core, setCore }) {
   );
 }
 
-function CargosView({ core, setCore }) {
-  const [modal, setModal] = useState(null);
-  const [deletingId, setDeletingId] = useState(null);
-  const saveCargo = (data) => {
-    setCore((prev) => {
-      const exists = prev.cargos.some((c) => c.id === data.id);
-      return { ...prev, cargos: exists ? prev.cargos.map((c) => (c.id === data.id ? data : c)) : [...prev.cargos, data] };
-    });
-    setModal(null);
-  };
-  const delCargo = (id) => setCore((prev) => ({ ...prev, cargos: prev.cargos.filter((c) => c.id !== id) }));
-
-  return (
-    <div>
-    <div className="sticky top-0 z-10 bg-[#F7F5F0]">
-      <div className="flex justify-end mb-2"><button onClick={() => setModal({})} className="bg-[#E8871E] text-[#2A2118] rounded-sm px-3 py-1.5 font-bold text-sm flex items-center gap-1"><Plus size={14} /> Agregar</button></div>
-    </div>
-      <div className="space-y-1.5">
-        {(core.cargos || []).map((c) => (
-          <div key={c.id} className="bg-white border border-[#E4DECF] rounded-sm p-2.5 flex items-center justify-between text-sm">
-            <span className="font-semibold text-[#2A2118]">{c.nombre}</span>
-            <div className="flex gap-1">
-              <IconBtn label="Editar" onClick={() => setModal(c)}><Pencil size={14} /></IconBtn>
-              <IconBtn label="Eliminar" danger onClick={() => setDeletingId(c.id)}><Trash2 size={14} /></IconBtn>
-            </div>
-          </div>
-        ))}
-      </div>
-      {modal !== null && (
-        <Modal title={modal.id ? "Editar cargo" : "Nuevo cargo"} onClose={() => setModal(null)}>
-          <CargoForm data={modal} onSave={saveCargo} />
-        </Modal>
-      )}
-      {deletingId && (
-        <Modal title="¿Eliminar este cargo?" onClose={() => setDeletingId(null)}>
-          <p className="text-sm text-[#2A2118] mb-4">No se puede deshacer.</p>
-          <div className="flex gap-2">
-            <button onClick={() => setDeletingId(null)} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
-            <button onClick={() => { delCargo(deletingId); setDeletingId(null); }} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, eliminar</button>
-          </div>
-        </Modal>
-      )}
-    </div>
-  );
-}
-
 // Catálogo de tipos de relación para la Red de relaciones (ver TipoRelacionForm para el
 // significado de cualidad simétrica/asimétrica y de "implica jerarquía").
 function TiposRelacionView({ core, setCore }) {
@@ -6536,6 +6136,9 @@ function TiposRelacionView({ core, setCore }) {
     });
     setModal(null);
   };
+  const [q, setQ] = useState("");
+  const qq = q.trim().toLowerCase();
+  const list = (core.tiposRelacion || []).filter((t) => t.nombre.toLowerCase().includes(qq) || (t.nombreInverso || "").toLowerCase().includes(qq));
   const delTipo = (id) => setCore((prev) => ({
     ...prev,
     tiposRelacion: (prev.tiposRelacion || []).filter((t) => t.id !== id),
@@ -6545,13 +6148,22 @@ function TiposRelacionView({ core, setCore }) {
   return (
     <div>
     <div className="sticky top-0 z-10 bg-[#F7F5F0]">
-      <div className="flex justify-end mb-2"><button onClick={() => setModal({})} className="bg-[#E8871E] text-[#2A2118] rounded-sm px-3 py-1.5 font-bold text-sm flex items-center gap-1"><Plus size={14} /> Agregar</button></div>
+      <div className="flex gap-2 mb-3">
+        <div className="relative flex-1">
+          <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#A69C88]" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar tipo de relación..." className={`${inputCls} pl-8`} />
+        </div>
+        <button onClick={() => setModal({})} className="shrink-0 bg-[#E8871E] text-[#2A2118] rounded-sm px-3 py-1 flex flex-col items-center justify-center gap-0.5 leading-none">
+          <span className="text-[9px] font-bold">{(core.tiposRelacion || []).length}</span>
+          <Plus size={16} />
+        </button>
+      </div>
     </div>
-      {(core.tiposRelacion || []).length === 0 ? (
+      {list.length === 0 ? (
         <EmptyState icon={<GitBranch size={22} />} text="Todavía no hay tipos de relación cargados." />
       ) : (
         <div className="space-y-1.5">
-          {core.tiposRelacion.map((t) => (
+          {list.map((t) => (
             <div key={t.id} className="bg-white border border-[#E4DECF] rounded-sm p-2.5 flex items-center justify-between text-sm">
               <div className="min-w-0">
                 <span className="font-semibold text-[#2A2118]">{t.nombre}{t.cualidad === "asimetrica" ? ` / ${t.nombreInverso}` : ""}</span>
@@ -6598,9 +6210,7 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
       let personas = prev.personas;
       let empresas = prev.empresas;
       let obras = prev.obras;
-      let personaEmpresa = prev.personaEmpresa;
-      let empresaObra = prev.empresaObra;
-      const cargoId = (prev.cargos.find((c) => c.nombre.toLowerCase() === "otro") || prev.cargos[prev.cargos.length - 1])?.id;
+      let vinculos = [...(prev.vinculos || [])];
 
       for (let i = 1; i <= 3; i++) {
         const nombrePersona = `Persona Prueba ${i}`;
@@ -6609,20 +6219,17 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
 
         const nombreEmpresa = `Empresa Prueba ${i}`;
         let empresa = empresas.find((e) => e.denominacion === nombreEmpresa);
-        if (!empresa) { empresa = { id: uid("E"), denominacion: nombreEmpresa, cuit: "", direccion: "", ciudad: "", cabeceraId: null }; empresas = [empresa, ...empresas]; }
+        if (!empresa) { empresa = { id: uid("E"), denominacion: nombreEmpresa, cuit: "", direccion: "", ciudad: "" }; empresas = [empresa, ...empresas]; }
 
         const nombreObra = `Obra Prueba ${i}`;
         let obra = obras.find((o) => o.nombre === nombreObra);
         if (!obra) { obra = { id: uid("O"), nombre: nombreObra, descripcion: "", metros2: null, direccion: "", ciudad: "" }; obras = [obra, ...obras]; }
 
-        if (!personaEmpresa.some((r) => r.personaId === persona.id && r.empresaId === empresa.id)) {
-          personaEmpresa = [...personaEmpresa, { id: uid("pe"), personaId: persona.id, empresaId: empresa.id, cargoId, principal: true }];
-        }
-        if (!empresaObra.some((r) => r.empresaId === empresa.id && r.obraId === obra.id)) {
-          empresaObra = [...empresaObra, { id: uid("eo"), empresaId: empresa.id, obraId: obra.id }];
-        }
+        const hayVinc = (oT, oI, dT, dI) => vinculos.some((v) => v.origenTipo === oT && v.origenId === oI && v.destinoTipo === dT && v.destinoId === dI);
+        if (!hayVinc("Persona", persona.id, "Empresa", empresa.id)) vinculos.push(vinc("Persona", persona.id, "Empresa", empresa.id, null, true, todayISO()));
+        if (!hayVinc("Empresa", empresa.id, "Obra", obra.id)) vinculos.push(vinc("Empresa", empresa.id, "Obra", obra.id, TR_DUENA, false, todayISO()));
       }
-      return { ...prev, personas, empresas, obras, personaEmpresa, empresaObra };
+      return { ...prev, personas, empresas, obras, vinculos };
     });
   };
 
@@ -6635,9 +6242,9 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
     const empresaPruebaIds = new Set(core.empresas.filter((e) => esNombreDePrueba(e.denominacion, "empresa prueba")).map((e) => e.id));
     const obraPruebaIds = new Set(core.obras.filter((o) => esNombreDePrueba(o.nombre, "obra prueba")).map((o) => o.id));
     const hiloTocaPruebaDirecto = (h) =>
-      (h.participantes || []).some((pa) => personaPruebaIds.has(pa.personaId)) ||
-      (core.hiloEmpresa || []).some((r) => r.hiloId === h.id && empresaPruebaIds.has(r.empresaId)) ||
-      (core.hiloObra || []).some((r) => r.hiloId === h.id && obraPruebaIds.has(r.obraId));
+      participantesActivos(h, core).some((pa) => personaPruebaIds.has(pa.personaId)) ||
+      empresasDeHilo(h, core).some((e) => empresaPruebaIds.has(e.id)) ||
+      obrasDeHilo(h, core).some((o) => obraPruebaIds.has(o.id));
     const hilosDirectosPruebaIds = new Set(core.hilos.filter(hiloTocaPruebaDirecto).map((h) => h.id));
     // Una tarea no tiene el vínculo propio: cuelga de su hilo padre vía hiloRelacionadoId,
     // así que si ese padre toca una entidad de prueba, la tarea también se considera de prueba.
@@ -6648,15 +6255,14 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
     setCore((prev) => ({
       ...prev,
       hilos: prev.hilos.filter((h) => !hilosABorrarIds.has(h.id)),
-      hiloEmpresa: (prev.hiloEmpresa || []).filter((r) => !hilosABorrarIds.has(r.hiloId)),
-      hiloObra: (prev.hiloObra || []).filter((r) => !hilosABorrarIds.has(r.hiloId)),
+      vinculos: (prev.vinculos || []).filter((v) => !(v.origenTipo === "Hilo" && hilosABorrarIds.has(v.origenId)) && !(v.destinoTipo === "Hilo" && hilosABorrarIds.has(v.destinoId))),
     }));
     setAcciones((prev) => prev.filter((a) => !hilosABorrarIds.has(a.hiloId)));
     setConfirmBorrarMovimientosPrueba(false);
   };
 
-  // Borra personas, empresas, obras, hilos (seguimientos y tareas) y acciones,
-  // sin tocar etiquetas, categorías, cargos, tipos de acción, parámetros ni apariencia.
+  // Borra personas, empresas, obras, hilos (seguimientos y tareas), vínculos y acciones,
+  // sin tocar etiquetas, categorías, tipos de relación, tipos de acción, parámetros ni apariencia.
   const vaciarDatos = () => {
     setCore((prev) => ({
       ...prev,
@@ -6664,11 +6270,7 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
       empresas: [],
       obras: [],
       hilos: [],
-      personaEmpresa: [],
-      empresaObra: [],
-      personaObra: [],
-      hiloEmpresa: [],
-      hiloObra: [],
+      vinculos: [],
       entidadEtiqueta: [],
     }));
     setAcciones([]);
@@ -6929,7 +6531,7 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
         <button onClick={() => setConfirmVaciar(true)} className="text-xs font-bold uppercase tracking-wide text-[#B0452E] flex items-center gap-1.5">
           <AlertTriangle size={13} /> Vaciar todos los datos cargados
         </button>
-        <p className="text-xs text-[#A69C88] mt-1">Borra personas, empresas, obras, seguimientos, tareas y acciones. No toca etiquetas, categorías, cargos, tipos de acción ni la apariencia.</p>
+        <p className="text-xs text-[#A69C88] mt-1">Borra personas, empresas, obras, seguimientos, tareas, vínculos y acciones. No toca etiquetas, categorías, tipos de relación, tipos de acción ni la apariencia.</p>
       </div>
 
       <p className="text-center text-[10px] font-mono text-[#C9C1AE] mt-6">Versión {APP_VERSION}</p>
@@ -6946,7 +6548,7 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
 
       {confirmVaciar && (
         <Modal title="¿Vaciar todos los datos cargados?" onClose={() => setConfirmVaciar(false)}>
-          <p className="text-sm text-[#2A2118] mb-4">Esto borra permanentemente todas las personas, empresas, obras, seguimientos, tareas y acciones. Las etiquetas, categorías, cargos, tipos de acción y la apariencia quedan como están. No se puede deshacer.</p>
+          <p className="text-sm text-[#2A2118] mb-4">Esto borra permanentemente todas las personas, empresas, obras, seguimientos, tareas, vínculos y acciones. Las etiquetas, categorías, tipos de relación, tipos de acción y la apariencia quedan como están. No se puede deshacer.</p>
           <div className="flex gap-2">
             <button onClick={() => setConfirmVaciar(false)} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
             <button onClick={vaciarDatos} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, vaciar todo</button>
@@ -6954,16 +6556,6 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
         </Modal>
       )}
 
-    </div>
-  );
-}
-
-function CargoForm({ data, onSave }) {
-  const [nombre, setNombre] = useState(data.nombre || "");
-  return (
-    <div>
-      <Field label="Nombre"><input className={inputCls} value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Ej: Gerente de Compras" /></Field>
-      <PrimaryBtn full onClick={() => nombre.trim() && onSave({ id: data.id || uid("C"), nombre: nombre.trim() })}>Guardar</PrimaryBtn>
     </div>
   );
 }
@@ -7078,7 +6670,7 @@ function RelacionForm({ core, setCore, entidadFija, onCreado }) {
   const clave = (e) => `${e.tipo}:${e.id}`;
   const [origenes, setOrigenes] = useState(entidadFija ? [entidadFija] : []);
   const [origenSel, setOrigenSel] = useState("");
-  const [tipoRelacionId, setTipoRelacionId] = useState((core.tiposRelacion || [])[0]?.id || "");
+  const [tipoRelacionId, setTipoRelacionId] = useState("");
   const [showNuevoTipo, setShowNuevoTipo] = useState(false);
   const [destinos, setDestinos] = useState([]);
   const [destinoSel, setDestinoSel] = useState("");
@@ -7113,10 +6705,8 @@ function RelacionForm({ core, setCore, entidadFija, onCreado }) {
   const pares = origenes.flatMap((o) => destinos.filter((d) => clave(d) !== clave(o)).map((d) => [o, d]));
 
   const crearVinculos = () => {
-    if (pares.length === 0 || !tipoRelacionId || !fecha) return;
-    const nuevos = pares.map(([o, d]) => ({
-      id: uid("V"), origenTipo: o.tipo, origenId: o.id, destinoTipo: d.tipo, destinoId: d.id, tipoRelacionId, fecha, nota: nota.trim(),
-    }));
+    if (pares.length === 0 || !fecha) return;
+    const nuevos = pares.map(([o, d]) => ({ ...vinc(o.tipo, o.id, d.tipo, d.id, tipoRelacionId || null, false, fecha), nota: nota.trim() }));
     setCore((prev) => ({ ...prev, vinculos: [...(prev.vinculos || []), ...nuevos] }));
     setFeedback(nuevos.length === 1 ? "Se creó 1 vínculo." : `Se crearon ${nuevos.length} vínculos.`);
     setTimeout(() => setFeedback(""), 2500);
@@ -7144,11 +6734,12 @@ function RelacionForm({ core, setCore, entidadFija, onCreado }) {
         </div>
       </Field>
 
-      <Field label="Tipo de relación">
+      <Field label="Tipo de relación (opcional)">
         <BuscadorSelect
           opciones={(core.tiposRelacion || []).map((t) => ({ id: t.id, label: t.cualidad === "asimetrica" ? `${t.nombre} / ${t.nombreInverso}` : t.nombre }))}
           value={tipoRelacionId}
           onChange={setTipoRelacionId}
+          vacioLabel="— Sin tipo (genérico) —"
           placeholder="Buscar tipo de relación..."
         />
       </Field>
@@ -7175,7 +6766,7 @@ function RelacionForm({ core, setCore, entidadFija, onCreado }) {
       <Field label="Nota (opcional)"><textarea className={inputCls} rows={2} value={nota} onChange={(e) => setNota(e.target.value)} /></Field>
 
       {feedback && <p className="text-xs font-bold text-[#1B4D2E] mb-2">{feedback}</p>}
-      <PrimaryBtn full disabled={pares.length === 0 || !tipoRelacionId} onClick={crearVinculos}>
+      <PrimaryBtn full disabled={pares.length === 0} onClick={crearVinculos}>
         {pares.length > 1 ? `Crear ${pares.length} vínculos` : "Crear vínculo"}
       </PrimaryBtn>
 
@@ -7208,8 +6799,11 @@ function VincularRelacionForm({ core, setCore, entidadFija, onClose }) {
 
 function RelacionesView({ core, setCore, onOpen }) {
   const [q, setQ] = useState("");
-  const vinculos = [...(core.vinculos || [])].sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""));
-  const quitarVinculo = (id) => setCore((prev) => ({ ...prev, vinculos: (prev.vinculos || []).filter((v) => v.id !== id) }));
+  const [showNuevo, setShowNuevo] = useState(false);
+  const [editVinculo, setEditVinculo] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
+  const vinculos = [...(core.vinculos || [])].sort((a, b) => (b.desde || "").localeCompare(a.desde || ""));
+  const del = (id) => setCore((prev) => ({ ...prev, vinculos: (prev.vinculos || []).filter((v) => v.id !== id) }));
 
   const qq = q.trim().toLowerCase();
   const visibles = qq
@@ -7222,14 +6816,19 @@ function RelacionesView({ core, setCore, onOpen }) {
 
   return (
     <div>
-      <div className="bg-white border border-[#E4DECF] rounded-sm p-3 mb-4">
-        <RelacionForm core={core} setCore={setCore} />
+      <div className="sticky top-0 z-10 bg-[#F7F5F0]">
+        <div className="flex gap-2 mb-3">
+          <div className="relative flex-1">
+            <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#A69C88]" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por nombre..." className={`${inputCls} pl-8`} />
+          </div>
+          <button onClick={() => setShowNuevo(true)} className="shrink-0 bg-[#E8871E] text-[#2A2118] rounded-sm px-3 py-1 flex flex-col items-center justify-center gap-0.5 leading-none">
+            <span className="text-[9px] font-bold">{vinculos.length}</span>
+            <Plus size={16} />
+          </button>
+        </div>
       </div>
 
-      <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352] mb-2">Vínculos cargados</p>
-      {vinculos.length > 0 && (
-        <Field label="Buscar"><input className={inputCls} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por nombre..." /></Field>
-      )}
       {visibles.length === 0 ? (
         <EmptyState icon={<GitBranch size={22} />} text="Todavía no hay vínculos cargados." />
       ) : (
@@ -7244,16 +6843,29 @@ function RelacionesView({ core, setCore, onOpen }) {
                 <div className="min-w-0 flex-1">
                   <p className="truncate">
                     <button onClick={() => onOpen(v.origenTipo.toLowerCase(), v.origenId)} className="font-semibold text-[#2A2118]">{origenLabel}</button>
-                    <span className="text-[#8A8272]"> {nombreRelacionLado(tr, true) || "—"} </span>
+                    <span className="text-[#8A8272]"> {nombreRelacionLado(tr, true) || "— vinculado a —"} </span>
                     <button onClick={() => onOpen(v.destinoTipo.toLowerCase(), v.destinoId)} className="font-semibold text-[#2A2118]">{destinoLabel}</button>
+                    {v.principal && <Star size={11} className="inline text-[#E8871E] ml-1" />}
                   </p>
-                  <p className="text-xs text-[#8A8272]">{v.fecha}{v.nota ? ` · ${v.nota}` : ""}</p>
+                  <p className="text-xs text-[#8A8272]">{v.desde}{v.nota ? ` · ${v.nota}` : ""}</p>
                 </div>
-                <IconBtn label="Quitar vínculo" danger onClick={() => quitarVinculo(v.id)}><X size={14} /></IconBtn>
+                <IconBtn label="Editar vínculo" onClick={() => setEditVinculo(v)}><Pencil size={14} /></IconBtn>
+                <IconBtn label="Eliminar vínculo" danger onClick={() => setDeletingId(v.id)}><Trash2 size={14} /></IconBtn>
               </div>
             );
           })}
         </div>
+      )}
+
+      {showNuevo && (
+        <Modal title="Nuevo vínculo" onClose={() => setShowNuevo(false)}>
+          <RelacionForm core={core} setCore={setCore} />
+          <button type="button" onClick={() => setShowNuevo(false)} className="w-full mt-1 bg-[#E8871E] text-[#2A2118] rounded-sm py-2.5 font-bold text-sm">Listo</button>
+        </Modal>
+      )}
+      {editVinculo && <EditVinculoForm core={core} setCore={setCore} vinculo={editVinculo} onClose={() => setEditVinculo(null)} />}
+      {deletingId && (
+        <ConfirmDeleteModal title="¿Eliminar este vínculo?" texto="Se quita la relación entre las dos entidades. No se puede deshacer." onCancel={() => setDeletingId(null)} onConfirm={() => { del(deletingId); setDeletingId(null); }} />
       )}
     </div>
   );
