@@ -65,6 +65,22 @@ Cuando se pida un repaso con este criterio: primero **investigar y hacer un
 resumen de lo que se va a hacer, y esperar** — no ejecutar hasta el "ejecutar"
 explícito (igual que la regla general de trabajo).
 
+## Desplegables "ver/ocultar" con formato único
+
+Toda la app usa el mismo patrón para secciones que se pliegan/despliegan
+(ej: "Ver contexto" / "Ocultar contexto", "Ver resumen" / "Ocultar resumen",
+"Ver vínculos" / "Ocultar vínculos", "Ver historial de interlocutores" /
+"Ocultar historial de interlocutores"). Tienen que compartir **el mismo
+formato, color y comportamiento** en toda la app: mismo tamaño de texto,
+mismo color, misma posición del ícono de flecha (chevron) respecto al texto,
+y el texto tiene que cambiar entre "Ver X" y "Ocultar X" (no dejar un título
+fijo con solo el ícono cambiando). Al día de hoy hay variantes distintas
+conviviendo (comparar por ejemplo "Ver contexto" en `AccionCard`/
+`VerContextoOrigen` vs. "Vínculos" con chevron en `HiloDetail` vs. "Ver grupo
+completo" en `EmpresaDetail`) — eso es justamente la inconsistencia a
+corregir: unificarlas todas a un solo patrón visual, de acá en adelante y en
+lo existente que se toque.
+
 ## Eliminar siempre con confirmación
 
 En toda la app, para eliminar un registro no alcanza con una "x" que borre
