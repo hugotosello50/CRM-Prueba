@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.1.0";
+const APP_VERSION = "2.1.1";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -3382,6 +3382,7 @@ function PersonaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
 // en la sección de hilos). Reutiliza el form genérico para "+ Vincular", con lápiz de editar y
 // papelera con confirmación en cada uno.
 function VinculosDeFicha({ core, setCore, entidadTipo, entidadId, onOpen }) {
+  const [verVinculos, setVerVinculos] = useState(false);
   const [showVincular, setShowVincular] = useState(false);
   const [editVinculo, setEditVinculo] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
@@ -3393,32 +3394,44 @@ function VinculosDeFicha({ core, setCore, entidadTipo, entidadId, onOpen }) {
 
   return (
     <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Vínculos</p>
-        <button onClick={() => setShowVincular(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>
-      </div>
-      {items.length === 0 ? (
-        <p className="text-sm text-[#A69C88]">Sin vínculos cargados.</p>
-      ) : (
-        <div className="space-y-1.5">
-          {items.map(({ v, c }) => {
-            const tr = (core.tiposRelacion || []).find((t) => t.id === v.tipoRelacionId);
-            const label = entidadLabel(c.tipo, c.id, core);
-            if (!label) return null;
-            const persona = c.tipo === "Persona" ? core.personas.find((p) => p.id === c.id) : null;
-            return (
-              <div key={v.id} className="flex items-center justify-between gap-2 text-sm">
-                <button onClick={() => onOpen(c.tipo.toLowerCase(), c.id)} className="text-left flex-1 min-w-0">
-                  <span className="font-semibold text-[#2A2118]">{label}</span>
-                  {tr && <span className="text-[#8A8272]"> · {nombreRelacionLado(tr, c.esOrigen)}</span>}
-                  {v.principal && <Star size={11} className="inline text-[#E8871E] ml-1" />}
-                </button>
-                {persona && <WhatsAppLink persona={persona} size={15} />}
-                <IconBtn label="Editar vínculo" onClick={() => setEditVinculo(v)}><Pencil size={14} /></IconBtn>
-                <IconBtn label="Eliminar vínculo" danger onClick={() => setDeletingId(v.id)}><Trash2 size={14} /></IconBtn>
-              </div>
-            );
-          })}
+      <button onClick={() => setVerVinculos((v) => !v)} className="text-[10px] font-bold uppercase tracking-wide text-[#B0452E] flex items-center gap-0.5">
+        {verVinculos ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verVinculos ? "Ocultar vínculos" : "Ver vínculos"}
+      </button>
+      {verVinculos && (
+        <div className="mt-2.5">
+          <div className="flex justify-end mb-1.5">
+            <button onClick={() => setShowVincular(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>
+          </div>
+          {items.length === 0 ? (
+            <p className="text-sm text-[#A69C88]">Sin vínculos cargados.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {items.map(({ v, c }) => {
+                const tr = (core.tiposRelacion || []).find((t) => t.id === v.tipoRelacionId);
+                const label = entidadLabel(c.tipo, c.id, core);
+                if (!label) return null;
+                const persona = c.tipo === "Persona" ? core.personas.find((p) => p.id === c.id) : null;
+                return (
+                  <div key={v.id} className="flex items-center justify-between gap-2 text-sm">
+                    <button onClick={() => onOpen(c.tipo.toLowerCase(), c.id)} className="text-left flex-1 min-w-0">
+                      {tr ? (
+                        <>
+                          <span className="text-[#8A8272]">{nombreRelacionLado(tr, c.esOrigen)} </span>
+                          <span className="font-semibold text-[#2A2118]">{label}</span>
+                        </>
+                      ) : (
+                        <span className="font-semibold text-[#2A2118]">{label}</span>
+                      )}
+                      {v.principal && <Star size={11} className="inline text-[#E8871E] ml-1" />}
+                    </button>
+                    {persona && <WhatsAppLink persona={persona} size={15} />}
+                    <IconBtn label="Editar vínculo" onClick={() => setEditVinculo(v)}><Pencil size={14} /></IconBtn>
+                    <IconBtn label="Eliminar vínculo" danger onClick={() => setDeletingId(v.id)}><Trash2 size={14} /></IconBtn>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
       {showVincular && (
