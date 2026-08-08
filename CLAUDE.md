@@ -43,7 +43,7 @@ preguntar:
 No aplica a cambios que no toquen código de la app (por ejemplo, editar este
 mismo archivo).
 
-# Criterios de diseño de la App
+# Fundamentos de la App
 
 ## Criterio general: app navegable y consistente
 
