@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.0.2";
+const APP_VERSION = "2.1.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -329,6 +329,14 @@ function contrapartesDe(core, tipo, id, tipoDestino, soloActivos = false) {
 }
 
 // -------- Helpers de hilo (personas/empresas/obras derivadas de vínculos) --------
+// ¿El vínculo "v" es un participante (Persona) activo del hilo "hiloId"?
+function esParticipanteActivoDeHilo(v, hiloId) {
+  return !v.hasta && ((v.origenTipo === "Hilo" && v.origenId === hiloId && v.destinoTipo === "Persona") || (v.destinoTipo === "Hilo" && v.destinoId === hiloId && v.origenTipo === "Persona"));
+}
+// ¿El vínculo "v" conecta al hilo "hiloId" con la entidad (tipo, entId) dada?
+function esVinculoEntreHiloYEntidad(v, hiloId, tipo, entId) {
+  return (v.origenTipo === "Hilo" && v.origenId === hiloId && v.destinoTipo === tipo && v.destinoId === entId) || (v.destinoTipo === "Hilo" && v.destinoId === hiloId && v.origenTipo === tipo && v.origenId === entId);
+}
 // Participantes activos de un hilo (personas sin fecha "hasta"). id = id del vínculo.
 function participantesActivos(hilo, core) {
   return contrapartesDe(core, "Hilo", hilo.id, "Persona", true)
@@ -424,9 +432,9 @@ function getIniciales(nombre) {
 // Relaciones y en el "+ Vincular" de cada ficha. Los hilos NO están acá: se vinculan solo
 // de forma genérica (sin tipo) desde la propia ficha del hilo.
 const TIPOS_ENTIDAD_RELACION = [
-  { tipo: "Persona", coleccion: "personas", labelKey: "nombre" },
-  { tipo: "Empresa", coleccion: "empresas", labelKey: "denominacion" },
-  { tipo: "Obra", coleccion: "obras", labelKey: "nombre" },
+  { tipo: "Persona", coleccion: "personas", labelKey: "nombre", plural: "Personas" },
+  { tipo: "Empresa", coleccion: "empresas", labelKey: "denominacion", plural: "Empresas" },
+  { tipo: "Obra", coleccion: "obras", labelKey: "nombre", plural: "Obras" },
 ];
 // Para mostrar el nombre de cualquier punta de un vínculo (incluye Hilo, que no es
 // relacionable manualmente pero sí aparece como contraparte de vínculos genéricos).
@@ -669,7 +677,10 @@ function BuscadorSelect({ opciones, value, onChange, placeholder, vacioLabel }) 
         onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
       />
       {open && (
-        <div className="absolute z-20 left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-white border border-[#E4DECF] rounded-sm shadow-lg">
+        // No es "absolute": si flotara por encima del contenido, un modal chico (con poco
+        // alto) lo recortaría en vez de mostrarlo — al quedar en el flujo normal, el modal
+        // simplemente crece o hace scroll para que la lista se vea completa.
+        <div className="relative z-20 mt-1 max-h-48 overflow-y-auto bg-white border border-[#E4DECF] rounded-sm shadow-lg">
           {vacioLabel && (
             <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => elegir("")} className="w-full text-left px-3 py-2 text-sm text-[#8A8272] border-b border-[#E4DECF]">{vacioLabel}</button>
           )}
@@ -3707,56 +3718,208 @@ function VincularEmpresaForm({ core, setCore, onClose, onSave, excluirIds }) {
   );
 }
 
-// Vincula una obra (existente o nueva) directamente a una persona.
-// Agrega una persona (existente o nueva) como participante de un hilo ya creado.
-function AgregarPersonaAlHiloForm({ core, hilo, personasDelHilo, setCore, agregarPersona, onClose }) {
-  const [agregadas, setAgregadas] = useState([]); // personaIds agregadas en esta apertura del modal
-  const [showNuevaPersona, setShowNuevaPersona] = useState(false);
-  const [personaId, setPersonaId] = useState("");
-  const disponibles = core.personas.filter((p) => !participantesActivos(hilo, core).some((pa) => pa.personaId === p.id) && !agregadas.includes(p.id));
+// Vincula una o varias entidades (Persona/Empresa/Obra, o cualquier tipo que se sume a
+// TIPOS_ENTIDAD_RELACION en el futuro) a un hilo, con un único buscador — se agregan una a
+// una, acumulando, hasta tocar "Listo" (mismo patrón que los demás formularios de vincular).
+function VincularEntidadAHiloForm({ core, setCore, vinculadasKeys, onVincular, onClose }) {
+  const clave = (tipo, entId) => `${tipo}:${entId}`;
+  const [agregadas, setAgregadas] = useState([]);
+  const agregadasKeys = new Set(agregadas.map((e) => clave(e.tipo, e.id)));
+  const disponibles = todasLasEntidadesRelacionables(core).filter((e) => !vinculadasKeys.has(clave(e.tipo, e.id)) && !agregadasKeys.has(clave(e.tipo, e.id)));
+  const [sel, setSel] = useState("");
+  const [crear, setCrear] = useState(null); // "Persona" | "Empresa" | "Obra" | null
 
-  const agregarExistente = () => {
-    if (!personaId) return;
-    agregarPersona(personaId, personasDelHilo.length === 0 && agregadas.length === 0);
-    setAgregadas((a) => [...a, personaId]);
-    setPersonaId("");
+  const agregarExistente = (tipo, entId, label) => {
+    onVincular(tipo, entId);
+    setAgregadas((a) => [...a, { tipo, id: entId, label }]);
+  };
+  const agregar = () => {
+    if (!sel) return;
+    const [tipo, entId] = sel.split(":");
+    const item = disponibles.find((e) => e.tipo === tipo && e.id === entId);
+    if (!item) return;
+    agregarExistente(tipo, entId, item.label);
+    setSel("");
   };
 
   return (
-    <>
-      <ChipsAgregados items={agregadas} core={core} coleccion="personas" labelKey="nombre" />
-      {disponibles.length === 0 ? (
-        <p className="text-sm text-[#A69C88] mb-3">No hay más personas para agregar (o ya están todas vinculadas) — probá creando una nueva.</p>
-      ) : (
-        <>
-          <Field label="Persona">
-            <BuscadorSelect
-              opciones={disponibles.map((p) => ({ id: p.id, label: p.nombre }))}
-              value={personaId}
-              onChange={setPersonaId}
-              placeholder="Buscar persona..."
-            />
-          </Field>
-          <button type="button" disabled={!personaId} onClick={agregarExistente} className="w-full border border-[#E4DECF] rounded-sm py-2.5 font-bold text-sm text-[#2A2118] disabled:text-[#C9C1AE] disabled:cursor-not-allowed mb-2">+ Agregar</button>
-        </>
+    <Modal title="Vincular al hilo" onClose={onClose}>
+      {agregadas.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {agregadas.map((e) => (
+            <span key={clave(e.tipo, e.id)} className="bg-[#D9F0DE] text-[#1B4D2E] text-xs font-bold px-2 py-1 rounded-sm">
+              {e.label} <span className="opacity-60 font-normal">({e.tipo})</span>
+            </span>
+          ))}
+        </div>
       )}
-      <button type="button" onClick={() => setShowNuevaPersona(true)} className="w-full border border-[#E4DECF] rounded-sm py-2.5 font-bold text-sm text-[#2A2118] mb-3">+ Crear persona nueva</button>
+      {disponibles.length === 0 ? (
+        <p className="text-sm text-[#A69C88] mb-3">No hay más personas, empresas u obras disponibles para vincular.</p>
+      ) : (
+        <Field label="Persona, empresa u obra">
+          <BuscadorSelect
+            opciones={disponibles.map((e) => ({ id: clave(e.tipo, e.id), label: `${e.label} (${e.tipo})` }))}
+            value={sel}
+            onChange={setSel}
+            placeholder="Buscar..."
+          />
+        </Field>
+      )}
+      <button type="button" disabled={!sel} onClick={agregar} className="w-full border border-[#E4DECF] rounded-sm py-2.5 font-bold text-sm text-[#2A2118] disabled:text-[#C9C1AE] disabled:cursor-not-allowed mb-3">+ Agregar</button>
+
+      <div className="grid grid-cols-3 gap-1.5 mb-3">
+        <button type="button" onClick={() => setCrear("Persona")} className="border border-[#E4DECF] rounded-sm py-2 font-bold text-[11px] text-[#2A2118]">+ Persona</button>
+        <button type="button" onClick={() => setCrear("Empresa")} className="border border-[#E4DECF] rounded-sm py-2 font-bold text-[11px] text-[#2A2118]">+ Empresa</button>
+        <button type="button" onClick={() => setCrear("Obra")} className="border border-[#E4DECF] rounded-sm py-2 font-bold text-[11px] text-[#2A2118]">+ Obra</button>
+      </div>
+
       <button type="button" onClick={onClose} className="w-full mt-1 bg-[#E8871E] text-[#2A2118] rounded-sm py-2.5 font-bold text-sm">Listo</button>
-      {showNuevaPersona && (
+
+      {crear === "Persona" && (
         <PersonaForm
           initial={{}}
           core={core}
           setCore={setCore}
-          onClose={() => setShowNuevaPersona(false)}
+          onClose={() => setCrear(null)}
           onSave={(data) => {
             setCore((prev) => ({ ...prev, personas: [data, ...prev.personas] }));
-            agregarPersona(data.id, personasDelHilo.length === 0 && agregadas.length === 0);
-            setAgregadas((a) => [...a, data.id]);
-            setShowNuevaPersona(false);
+            agregarExistente("Persona", data.id, data.nombre);
+            setCrear(null);
           }}
         />
       )}
-    </>
+      {crear === "Empresa" && (
+        <EmpresaForm
+          initial={{}}
+          core={core}
+          setCore={setCore}
+          onClose={() => setCrear(null)}
+          onSave={(data, vinculoPersona) => {
+            setCore((prev) => ({ ...prev, empresas: [data, ...prev.empresas] }));
+            agregarExistente("Empresa", data.id, data.denominacion);
+            if (vinculoPersona?.personaId) {
+              setCore((prev) => ({ ...prev, vinculos: [...(prev.vinculos || []), vinc("Persona", vinculoPersona.personaId, "Empresa", data.id, vinculoPersona.tipoRelacionId || null, true, todayISO())] }));
+            }
+            setCrear(null);
+          }}
+        />
+      )}
+      {crear === "Obra" && (
+        <ObraForm
+          initial={{}}
+          core={core}
+          setCore={setCore}
+          onClose={() => setCrear(null)}
+          onSave={(data, vinculoEmpresa) => {
+            setCore((prev) => ({ ...prev, obras: [data, ...prev.obras] }));
+            agregarExistente("Obra", data.id, data.nombre);
+            if (vinculoEmpresa?.empresaId) {
+              setCore((prev) => ({ ...prev, vinculos: [...(prev.vinculos || []), vinc("Empresa", vinculoEmpresa.empresaId, "Obra", data.id, TR_DUENA, false, todayISO())] }));
+            }
+            setCrear(null);
+          }}
+        />
+      )}
+    </Modal>
+  );
+}
+
+// Vínculos genéricos de un hilo con Personas/Empresas/Obras (y cualquier entidad nueva que
+// se sume después a TIPOS_ENTIDAD_RELACION): un solo botón "+ Vincular" y la lista se agrupa
+// sola por tipo. Personas conserva el marcado de "principal" y el historial de interlocutores
+// (desvincular no borra, guarda "hasta" para no perder el legajo). El resto de los tipos se
+// quita directo, con confirmación.
+function VinculosDeHilo({ hilo, hiloId, core, setCore, onOpen, agregarPersona, setConfirmar }) {
+  const [showVincular, setShowVincular] = useState(false);
+  const [verHistorialPersonas, setVerHistorialPersonas] = useState(false);
+
+  const marcarPrincipal = (vinculoId) => setCore((prev) => ({
+    ...prev,
+    vinculos: (prev.vinculos || []).map((v) => (esParticipanteActivoDeHilo(v, hiloId) ? { ...v, principal: v.id === vinculoId } : v)),
+  }));
+  const desvincularParticipante = (vinculoId) => setCore((prev) => ({
+    ...prev,
+    vinculos: (prev.vinculos || []).map((v) => (v.id === vinculoId ? { ...v, hasta: todayISO(), principal: false } : v)),
+  }));
+  const quitarDelHilo = (tipo, entId) => setCore((prev) => ({
+    ...prev,
+    vinculos: (prev.vinculos || []).filter((v) => !esVinculoEntreHiloYEntidad(v, hiloId, tipo, entId)),
+  }));
+  const vincularEntidad = (tipo, entId) => {
+    if (tipo === "Persona") { agregarPersona(entId, false); return; }
+    setCore((prev) => ({ ...prev, vinculos: [...(prev.vinculos || []), vinc("Hilo", hiloId, tipo, entId, null, false, todayISO())] }));
+  };
+
+  const participantesInactivos = participantesDeHilo(hilo, core).filter((p) => p.hasta).sort((a, b) => (b.hasta || "").localeCompare(a.hasta || ""));
+  const grupos = TIPOS_ENTIDAD_RELACION.map((def) => ({
+    def,
+    items: contrapartesDe(core, "Hilo", hiloId, def.tipo, true)
+      .map(({ v, c }) => ({ v, item: (core[def.coleccion] || []).find((x) => x.id === c.id) }))
+      .filter((x) => x.item),
+  })).filter((g) => g.items.length > 0);
+  const vinculadasKeys = new Set(grupos.flatMap((g) => g.items.map(({ item }) => `${g.def.tipo}:${item.id}`)));
+
+  return (
+    <div>
+      <div className="flex justify-end mb-1.5">
+        <button onClick={() => setShowVincular(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>
+      </div>
+      {grupos.length === 0 ? (
+        <p className="text-sm text-[#A69C88]">Sin vínculos cargados.</p>
+      ) : (
+        <div className="space-y-2.5">
+          {grupos.map(({ def, items }) => (
+            <div key={def.tipo}>
+              <p className="text-[10px] font-bold uppercase tracking-wide text-[#A69C88] mb-1">{def.plural}</p>
+              <div className="space-y-1">
+                {def.tipo === "Persona"
+                  ? [...items].sort((a, b) => (b.v.principal ? 1 : 0) - (a.v.principal ? 1 : 0)).map(({ v, item }) => (
+                      <div key={v.id} className="flex items-center justify-between gap-2 text-sm">
+                        <button onClick={() => onOpen("persona", item.id)} className="text-left flex-1 min-w-0">
+                          <span className="font-semibold text-[#2A2118]">{item.nombre}</span>
+                          {v.principal && <Star size={11} className="inline text-[#E8871E] ml-1" />}
+                          <span className="text-xs text-[#A69C88]"> · desde {fmtDate(v.desde)}</span>
+                        </button>
+                        <div className="flex items-center gap-1">
+                          {!v.principal && <IconBtn label="Marcar principal" onClick={() => marcarPrincipal(v.id)}><Star size={14} /></IconBtn>}
+                          <IconBtn label="Desvincular" danger onClick={() => setConfirmar({ texto: "¿Desvincular a esta persona del hilo? Queda en el historial de interlocutores.", onConfirm: () => desvincularParticipante(v.id) })}><X size={14} /></IconBtn>
+                        </div>
+                      </div>
+                    ))
+                  : items.map(({ item }) => (
+                      <div key={item.id} className="flex items-center justify-between gap-2 text-sm">
+                        <button onClick={() => onOpen(def.tipo.toLowerCase(), item.id)} className="text-left flex-1 min-w-0 font-semibold text-[#2A2118]">{item[def.labelKey]}</button>
+                        <IconBtn label="Quitar vínculo" danger onClick={() => setConfirmar({ texto: `¿Quitar el vínculo con "${item[def.labelKey]}"?`, onConfirm: () => quitarDelHilo(def.tipo, item.id) })}><X size={14} /></IconBtn>
+                      </div>
+                    ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {participantesInactivos.length > 0 && (
+        <div className="mt-2">
+          <button onClick={() => setVerHistorialPersonas((v) => !v)} className="text-[10px] font-bold uppercase tracking-wide text-[#B0452E] flex items-center gap-0.5">
+            {verHistorialPersonas ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verHistorialPersonas ? "Ocultar historial de interlocutores" : "Ver historial de interlocutores"} ({participantesInactivos.length})
+          </button>
+          {verHistorialPersonas && (
+            <div className="mt-1.5 space-y-1">
+              {participantesInactivos.map((part) => {
+                const p = core.personas.find((pp) => pp.id === part.personaId);
+                return (
+                  <p key={part.id} className="text-xs text-[#8A8272]">
+                    {p?.nombre || "(persona eliminada)"} · {fmtDate(part.desde)} – {fmtDate(part.hasta)}
+                  </p>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+      {showVincular && (
+        <VincularEntidadAHiloForm core={core} setCore={setCore} vinculadasKeys={vinculadasKeys} onVincular={vincularEntidad} onClose={() => setShowVincular(false)} />
+      )}
+    </div>
   );
 }
 
@@ -3770,10 +3933,6 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
   const [editingAccion, setEditingAccion] = useState(null);
   const [deletingAccionId, setDeletingAccionId] = useState(null);
   const [showFechaTarea, setShowFechaTarea] = useState(false);
-  const [showAgregarPersona, setShowAgregarPersona] = useState(false);
-  const [verHistorialPersonas, setVerHistorialPersonas] = useState(false);
-  const [showVincularEmpresaHilo, setShowVincularEmpresaHilo] = useState(false);
-  const [showVincularObraHilo, setShowVincularObraHilo] = useState(false);
   const [verVinculos, setVerVinculos] = useState(false);
   const [confirmar, setConfirmar] = useState(null); // { texto, onConfirm }
 
@@ -3792,32 +3951,10 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
   const tipoPendiente = pendienteActual ? core.tiposAccion.find((t) => t.id === pendienteActual.tipoAccionId) : null;
   const prioTone = pendienteActual?.prioridad === "Alta" ? "red" : pendienteActual?.prioridad === "Media" ? "amber" : "neutral";
 
-  const participantesInactivos = participantesDeHilo(hilo, core).filter((p) => p.hasta).sort((a, b) => (b.hasta || "").localeCompare(a.hasta || ""));
-
-  // ¿El vínculo v es un participante (Persona) activo de este hilo?
-  const esParticipanteActivo = (v) => !v.hasta && ((v.origenTipo === "Hilo" && v.origenId === id && v.destinoTipo === "Persona") || (v.destinoTipo === "Hilo" && v.destinoId === id && v.origenTipo === "Persona"));
-  const esVinculoHiloCon = (v, tipo, otroId) => (v.origenTipo === "Hilo" && v.origenId === id && v.destinoTipo === tipo && v.destinoId === otroId) || (v.destinoTipo === "Hilo" && v.destinoId === id && v.origenTipo === tipo && v.origenId === otroId);
-
   const toggleEstadoHilo = () => setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === id ? { ...h, estado: h.estado === "Activo" ? "Cerrado" : "Activo" } : h)) }));
-  const marcarPrincipal = (vinculoId) => setCore((prev) => ({
-    ...prev,
-    vinculos: (prev.vinculos || []).map((v) => (esParticipanteActivo(v) ? { ...v, principal: v.id === vinculoId } : v)),
-  }));
-  const desvincularParticipante = (vinculoId) => setCore((prev) => ({
-    ...prev,
-    vinculos: (prev.vinculos || []).map((v) => (v.id === vinculoId ? { ...v, hasta: todayISO(), principal: false } : v)),
-  }));
   const desvincularTarea = (tareaId) => setCore((prev) => ({
     ...prev,
     hilos: prev.hilos.map((h) => (h.id === tareaId ? { ...h, hiloRelacionadoId: null } : h)),
-  }));
-  const quitarEmpresaDelHilo = (empresaId) => setCore((prev) => ({
-    ...prev,
-    vinculos: (prev.vinculos || []).filter((v) => !esVinculoHiloCon(v, "Empresa", empresaId)),
-  }));
-  const quitarObraDelHilo = (obraId) => setCore((prev) => ({
-    ...prev,
-    vinculos: (prev.vinculos || []).filter((v) => !esVinculoHiloCon(v, "Obra", obraId)),
   }));
   // Agrega la persona al hilo y, si tiene empresas vinculadas, arrastra también esas
   // empresas y las obras de esas empresas (además de las obras vinculadas directamente
@@ -3830,7 +3967,7 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
     let vinculos = [...(prev.vinculos || [])];
     if (!yaActivo) {
       const seraPrincipal = comoPrincipal || activos.length === 0;
-      if (seraPrincipal) vinculos = vinculos.map((v) => (esParticipanteActivo(v) ? { ...v, principal: false } : v));
+      if (seraPrincipal) vinculos = vinculos.map((v) => (esParticipanteActivoDeHilo(v, id) ? { ...v, principal: false } : v));
       vinculos.push(vinc("Persona", personaId, "Hilo", id, null, seraPrincipal, todayISO()));
     }
     const empresasDeEsaPersona = empresaIdsDePersona(prev, personaId);
@@ -3906,103 +4043,32 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
           </button>
         </div>
 
-      {hilo.tipo === "cliente" && (
-        <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-          <button onClick={() => setVerVinculos((v) => !v)} className="w-full flex items-center justify-between">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Vínculos</p>
-            {verVinculos ? <ChevronUp size={14} className="text-[#8A8272]" /> : <ChevronDown size={14} className="text-[#8A8272]" />}
-          </button>
-          {verVinculos && (
-            <div className="mt-2.5 space-y-3">
+      <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
+        <button onClick={() => setVerVinculos((v) => !v)} className="text-[10px] font-bold uppercase tracking-wide text-[#B0452E] flex items-center gap-0.5">
+          {verVinculos ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verVinculos ? "Ocultar vínculos" : "Ver vínculos"}
+        </button>
+        {verVinculos && (
+          <div className="mt-2.5 space-y-3">
+            {esTarea && (
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#8A8272]">Personas</p>
-                  <button onClick={() => setShowAgregarPersona(true)} className="text-xs font-bold text-[#B0452E]">+ Agregar</button>
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#8A8272]">Hilo</p>
+                  {!hiloRelacionado && <button onClick={() => setShowVincularCliente(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>}
                 </div>
-                {personasDelHilo.length === 0 ? (
-                  <p className="text-sm text-[#A69C88]">Sin personas vinculadas.</p>
+                {hiloRelacionado ? (
+                  <div className="flex items-center justify-between gap-2 text-sm">
+                    <button onClick={() => onOpen("hilo", hiloRelacionado.id)} className="text-left flex-1 min-w-0 font-semibold text-[#2A2118]">{hiloRelacionado.titulo}</button>
+                    <IconBtn label="Desvincular" danger onClick={() => setConfirmar({ texto: "¿Desvincular esta tarea del hilo de cliente?", onConfirm: () => setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === id ? { ...h, hiloRelacionadoId: null } : h)) })) })}><X size={14} /></IconBtn>
+                  </div>
                 ) : (
-                  <div className="space-y-1">
-                    {participantesActivos(hilo, core).sort((a, b) => (b.principal ? 1 : 0) - (a.principal ? 1 : 0)).map((part) => {
-                      const p = core.personas.find((pp) => pp.id === part.personaId);
-                      if (!p) return null;
-                      return (
-                        <div key={part.id} className="flex items-center justify-between gap-2 text-sm">
-                          <button onClick={() => onOpen("persona", p.id)} className="text-left flex-1 min-w-0">
-                            <span className="font-semibold text-[#2A2118]">{p.nombre}</span>
-                            {part.principal && <Star size={11} className="inline text-[#E8871E] ml-1" />}
-                            <span className="text-xs text-[#A69C88]"> · desde {fmtDate(part.desde)}</span>
-                          </button>
-                          <div className="flex items-center gap-1">
-                            {!part.principal && (
-                              <IconBtn label="Marcar principal" onClick={() => marcarPrincipal(part.id)}><Star size={14} /></IconBtn>
-                            )}
-                            <IconBtn label="Desvincular" danger onClick={() => setConfirmar({ texto: "¿Desvincular a esta persona del hilo? Queda en el historial de interlocutores.", onConfirm: () => desvincularParticipante(part.id) })}><X size={14} /></IconBtn>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-                {participantesInactivos.length > 0 && (
-                  <div className="mt-2">
-                    <button onClick={() => setVerHistorialPersonas((v) => !v)} className="text-[11px] font-bold text-[#6B6352] flex items-center gap-1">
-                      {verHistorialPersonas ? <ChevronUp size={12} /> : <ChevronDown size={12} />} {verHistorialPersonas ? "Ocultar" : "Ver"} historial de interlocutores ({participantesInactivos.length})
-                    </button>
-                    {verHistorialPersonas && (
-                      <div className="mt-1.5 space-y-1">
-                        {participantesInactivos.map((part) => {
-                          const p = core.personas.find((pp) => pp.id === part.personaId);
-                          return (
-                            <p key={part.id} className="text-xs text-[#8A8272]">
-                              {p?.nombre || "(persona eliminada)"} · {fmtDate(part.desde)} – {fmtDate(part.hasta)}
-                            </p>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
+                  <p className="text-sm text-[#A69C88]">Sin hilo vinculado.</p>
                 )}
               </div>
+            )}
 
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#8A8272]">Empresas</p>
-                  <button onClick={() => setShowVincularEmpresaHilo(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>
-                </div>
-                {empresas.length === 0 ? (
-                  <p className="text-sm text-[#A69C88]">Sin empresas vinculadas.</p>
-                ) : (
-                  <div className="space-y-1">
-                    {empresas.map((emp) => (
-                      <div key={emp.id} className="flex items-center justify-between gap-2 text-sm">
-                        <button onClick={() => onOpen("empresa", emp.id)} className="text-left flex-1 min-w-0 font-semibold text-[#2A2118]">{emp.denominacion}</button>
-                        <IconBtn label="Quitar vínculo" danger onClick={() => setConfirmar({ texto: "¿Quitar esta empresa del hilo?", onConfirm: () => quitarEmpresaDelHilo(emp.id) })}><X size={14} /></IconBtn>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+            <VinculosDeHilo hilo={hilo} hiloId={id} core={core} setCore={setCore} onOpen={onOpen} agregarPersona={agregarPersona} setConfirmar={setConfirmar} />
 
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#8A8272]">Obras</p>
-                  <button onClick={() => setShowVincularObraHilo(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>
-                </div>
-                {obras.length === 0 ? (
-                  <p className="text-sm text-[#A69C88]">Sin obras vinculadas.</p>
-                ) : (
-                  <div className="space-y-1">
-                    {obras.map((o) => (
-                      <div key={o.id} className="flex items-center justify-between gap-2 text-sm">
-                        <button onClick={() => onOpen("obra", o.id)} className="text-left flex-1 min-w-0 font-semibold text-[#2A2118]">{o.nombre}</button>
-                        <IconBtn label="Quitar vínculo" danger onClick={() => setConfirmar({ texto: "¿Quitar esta obra del hilo?", onConfirm: () => quitarObraDelHilo(o.id) })}><X size={14} /></IconBtn>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
+            {!esTarea && (
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <p className="text-[10px] font-bold uppercase tracking-wide text-[#8A8272]">Tareas</p>
@@ -4024,92 +4090,10 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
                   </div>
                 )}
               </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {hilo.tipo === "tarea" && (
-        <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-          <button onClick={() => setVerVinculos((v) => !v)} className="w-full flex items-center justify-between">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Vínculos</p>
-            {verVinculos ? <ChevronUp size={14} className="text-[#8A8272]" /> : <ChevronDown size={14} className="text-[#8A8272]" />}
-          </button>
-          {verVinculos && (
-            <div className="mt-2.5 space-y-3">
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#8A8272]">Hilo</p>
-                  {!hiloRelacionado && <button onClick={() => setShowVincularCliente(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>}
-                </div>
-                {hiloRelacionado ? (
-                  <div className="flex items-center justify-between gap-2 text-sm">
-                    <button onClick={() => onOpen("hilo", hiloRelacionado.id)} className="text-left flex-1 min-w-0 font-semibold text-[#2A2118]">{hiloRelacionado.titulo}</button>
-                    <IconBtn label="Desvincular" danger onClick={() => setConfirmar({ texto: "¿Desvincular esta tarea del hilo de cliente?", onConfirm: () => setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === id ? { ...h, hiloRelacionadoId: null } : h)) })) })}><X size={14} /></IconBtn>
-                  </div>
-                ) : (
-                  <p className="text-sm text-[#A69C88]">Sin hilo vinculado.</p>
-                )}
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#8A8272]">Personas</p>
-                  <button onClick={() => setShowAgregarPersona(true)} className="text-xs font-bold text-[#B0452E]">+ Agregar</button>
-                </div>
-                {personasDelHilo.length === 0 ? <p className="text-sm text-[#A69C88]">Sin personas vinculadas.</p> : (
-                  <div className="space-y-1">
-                    {participantesActivos(hilo, core).map((part) => {
-                      const p = core.personas.find((pp) => pp.id === part.personaId);
-                      if (!p) return null;
-                      return (
-                        <div key={part.id} className="flex items-center justify-between gap-2 text-sm">
-                          <button onClick={() => onOpen("persona", p.id)} className="text-left flex-1 min-w-0 font-semibold text-[#2A2118]">{p.nombre}</button>
-                          <IconBtn label="Desvincular" danger onClick={() => setConfirmar({ texto: "¿Desvincular a esta persona del hilo? Queda en el historial de interlocutores.", onConfirm: () => desvincularParticipante(part.id) })}><X size={14} /></IconBtn>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#8A8272]">Empresas</p>
-                  <button onClick={() => setShowVincularEmpresaHilo(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>
-                </div>
-                {empresas.length === 0 ? <p className="text-sm text-[#A69C88]">Sin empresas vinculadas.</p> : (
-                  <div className="space-y-1">
-                    {empresas.map((emp) => (
-                      <div key={emp.id} className="flex items-center justify-between gap-2 text-sm">
-                        <button onClick={() => onOpen("empresa", emp.id)} className="text-left flex-1 min-w-0 font-semibold text-[#2A2118]">{emp.denominacion}</button>
-                        <IconBtn label="Quitar vínculo" danger onClick={() => setConfirmar({ texto: "¿Quitar esta empresa del hilo?", onConfirm: () => quitarEmpresaDelHilo(emp.id) })}><X size={14} /></IconBtn>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#8A8272]">Obras</p>
-                  <button onClick={() => setShowVincularObraHilo(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>
-                </div>
-                {obras.length === 0 ? <p className="text-sm text-[#A69C88]">Sin obras vinculadas.</p> : (
-                  <div className="space-y-1">
-                    {obras.map((o) => (
-                      <div key={o.id} className="flex items-center justify-between gap-2 text-sm">
-                        <button onClick={() => onOpen("obra", o.id)} className="text-left flex-1 min-w-0 font-semibold text-[#2A2118]">{o.nombre}</button>
-                        <IconBtn label="Quitar vínculo" danger onClick={() => setConfirmar({ texto: "¿Quitar esta obra del hilo?", onConfirm: () => quitarObraDelHilo(o.id) })}><X size={14} /></IconBtn>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+            )}
+          </div>
+        )}
+      </div>
 
       </div>
 
@@ -4183,22 +4167,6 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
           <EditarTituloHiloForm hilo={hilo} onSave={(nuevoTitulo) => { setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === id ? { ...h, titulo: nuevoTitulo } : h)) })); setShowEditarTitulo(false); }} />
         </Modal>
       )}
-      {showVincularEmpresaHilo && (
-        <VincularEmpresaAHiloForm
-          core={core}
-          setCore={setCore}
-          hiloId={id}
-          onClose={() => setShowVincularEmpresaHilo(false)}
-        />
-      )}
-      {showVincularObraHilo && (
-        <VincularObraAHiloForm
-          core={core}
-          setCore={setCore}
-          hiloId={id}
-          onClose={() => setShowVincularObraHilo(false)}
-        />
-      )}
       {showVincularCliente && (
         <Modal title="Vincular a un hilo de cliente" onClose={() => setShowVincularCliente(false)}>
           {core.hilos.filter((h) => h.tipo === "cliente" && h.estado === "Activo").length === 0 ? (
@@ -4220,18 +4188,6 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
               />
             </Field>
           )}
-        </Modal>
-      )}
-      {showAgregarPersona && (
-        <Modal title="Agregar persona al hilo" onClose={() => setShowAgregarPersona(false)}>
-          <AgregarPersonaAlHiloForm
-            core={core}
-            setCore={setCore}
-            hilo={hilo}
-            personasDelHilo={personasDelHilo}
-            agregarPersona={agregarPersona}
-            onClose={() => setShowAgregarPersona(false)}
-          />
         </Modal>
       )}
       {showAgregarTarea && (
@@ -4289,156 +4245,6 @@ function EditarTituloHiloForm({ hilo, onSave }) {
       <Field label="Título"><input className={inputCls} value={titulo} onChange={(e) => setTitulo(e.target.value)} /></Field>
       <PrimaryBtn full onClick={() => titulo.trim() && onSave(titulo.trim())}>Guardar</PrimaryBtn>
     </div>
-  );
-}
-
-// Vincula una empresa más (existente o nueva) a un hilo de cliente ya creado.
-// Un hilo puede tener varias empresas vinculadas a la vez.
-function VincularEmpresaAHiloForm({ core, setCore, hiloId, onClose }) {
-  const [agregadas, setAgregadas] = useState([]); // empresaIds vinculados en esta apertura del modal
-  const yaVinculadas = new Set(contrapartesDe(core, "Hilo", hiloId, "Empresa", true).map(({ c }) => c.id));
-  const disponibles = core.empresas.filter((e) => !yaVinculadas.has(e.id) && !agregadas.includes(e.id));
-  const [empresaId, setEmpresaId] = useState("");
-  const [showNuevaEmpresa, setShowNuevaEmpresa] = useState(false);
-
-  const vincularEmpresa = (id) => {
-    setCore((prev) => {
-      const obrasDeEsaEmpresa = obraIdsDeEmpresa(prev, id);
-      const yaVinculadasObra = new Set(contrapartesDe(prev, "Hilo", hiloId, "Obra", true).map(({ c }) => c.id));
-      const nuevasObraLinks = obrasDeEsaEmpresa.filter((oid) => !yaVinculadasObra.has(oid)).map((oid) => vinc("Hilo", hiloId, "Obra", oid, null, false, todayISO()));
-      return { ...prev, vinculos: [...(prev.vinculos || []), vinc("Hilo", hiloId, "Empresa", id, null, false, todayISO()), ...nuevasObraLinks] };
-    });
-    setAgregadas((a) => [...a, id]);
-  };
-  const agregarExistente = () => {
-    if (!empresaId) return;
-    vincularEmpresa(empresaId);
-    setEmpresaId("");
-  };
-  const quitarAgregada = (id) => {
-    setCore((prev) => ({ ...prev, vinculos: (prev.vinculos || []).filter((v) => !((v.origenTipo === "Hilo" && v.origenId === hiloId && v.destinoTipo === "Empresa" && v.destinoId === id) || (v.destinoTipo === "Hilo" && v.destinoId === hiloId && v.origenTipo === "Empresa" && v.origenId === id))) }));
-    setAgregadas((a) => a.filter((x) => x !== id));
-  };
-
-  return (
-    <Modal title="Vincular empresas" onClose={onClose}>
-      <ChipsAgregados items={agregadas} core={core} coleccion="empresas" labelKey="denominacion" onQuitar={quitarAgregada} />
-      {disponibles.length === 0 ? (
-        <p className="text-sm text-[#A69C88] mb-3">No hay más empresas disponibles para vincular.</p>
-      ) : (
-        <>
-          <Field label="Empresa">
-            <BuscadorSelect
-              opciones={disponibles.map((e) => ({ id: e.id, label: e.denominacion }))}
-              value={empresaId}
-              onChange={setEmpresaId}
-              placeholder="Buscar empresa..."
-            />
-          </Field>
-          <button type="button" disabled={!empresaId} onClick={agregarExistente} className="w-full border border-[#E4DECF] rounded-sm py-2.5 font-bold text-sm text-[#2A2118] disabled:text-[#C9C1AE] disabled:cursor-not-allowed mb-3">+ Agregar</button>
-        </>
-      )}
-      <button type="button" onClick={() => setShowNuevaEmpresa(true)} className="w-full border border-[#E4DECF] rounded-sm py-2 font-bold text-xs text-[#2A2118] mb-3">+ Crear empresa nueva</button>
-      <button type="button" onClick={onClose} className="w-full mt-1 bg-[#E8871E] text-[#2A2118] rounded-sm py-2.5 font-bold text-sm">Listo</button>
-
-      {showNuevaEmpresa && (
-        <EmpresaForm
-          initial={{}}
-          core={core}
-          setCore={setCore}
-          onClose={() => setShowNuevaEmpresa(false)}
-          onSave={(data, vinculoPersona) => {
-            setCore((prev) => ({ ...prev, empresas: [data, ...prev.empresas] }));
-            vincularEmpresa(data.id);
-            if (vinculoPersona?.personaId) {
-              setCore((prev) => ({
-                ...prev,
-                vinculos: [...(prev.vinculos || []), vinc("Persona", vinculoPersona.personaId, "Empresa", data.id, vinculoPersona.tipoRelacionId || null, true, todayISO())],
-              }));
-            }
-            setShowNuevaEmpresa(false);
-          }}
-        />
-      )}
-    </Modal>
-  );
-}
-
-// Cambia (o quita) la obra vinculada a un hilo. Si la obra elegida tiene una empresa dueña
-// conocida (vía empresaObra), esa empresa se agrega automáticamente a las del hilo — sin
-// desvincular las que ya estaban.
-// Vincula una obra más (existente o nueva) a un hilo de cliente ya creado. Un hilo puede
-// tener varias obras vinculadas a la vez. Si la obra elegida tiene una empresa dueña
-// conocida (vía empresaObra), esa empresa se agrega automáticamente a las del hilo — sin
-// desvincular las que ya estaban.
-function VincularObraAHiloForm({ core, setCore, hiloId, onClose }) {
-  const [agregadas, setAgregadas] = useState([]); // obraIds vinculadas en esta apertura del modal
-  const yaVinculadas = new Set(contrapartesDe(core, "Hilo", hiloId, "Obra", true).map(({ c }) => c.id));
-  const disponibles = core.obras.filter((o) => !yaVinculadas.has(o.id) && !agregadas.includes(o.id));
-  const [obraId, setObraId] = useState("");
-  const [showNuevaObra, setShowNuevaObra] = useState(false);
-
-  const vinculoEmpresaDueña = (prev, obraId) => {
-    const empresaDueña = empresaDueñaDeObra(prev, obraId);
-    const yaVinculadaEmpresa = empresaDueña && contrapartesDe(prev, "Hilo", hiloId, "Empresa", true).some(({ c }) => c.id === empresaDueña);
-    return empresaDueña && !yaVinculadaEmpresa ? [vinc("Hilo", hiloId, "Empresa", empresaDueña, null, false, todayISO())] : [];
-  };
-
-  const vincularObra = (id) => {
-    setCore((prev) => ({ ...prev, vinculos: [...(prev.vinculos || []), vinc("Hilo", hiloId, "Obra", id, null, false, todayISO()), ...vinculoEmpresaDueña(prev, id)] }));
-    setAgregadas((a) => [...a, id]);
-  };
-  const agregarExistente = () => {
-    if (!obraId) return;
-    vincularObra(obraId);
-    setObraId("");
-  };
-  const quitarAgregada = (id) => {
-    setCore((prev) => ({ ...prev, vinculos: (prev.vinculos || []).filter((v) => !((v.origenTipo === "Hilo" && v.origenId === hiloId && v.destinoTipo === "Obra" && v.destinoId === id) || (v.destinoTipo === "Hilo" && v.destinoId === hiloId && v.origenTipo === "Obra" && v.origenId === id))) }));
-    setAgregadas((a) => a.filter((x) => x !== id));
-  };
-
-  return (
-    <Modal title="Vincular obras" onClose={onClose}>
-      <ChipsAgregados items={agregadas} core={core} coleccion="obras" labelKey="nombre" onQuitar={quitarAgregada} />
-      {disponibles.length === 0 ? (
-        <p className="text-sm text-[#A69C88] mb-3">No hay más obras disponibles para vincular.</p>
-      ) : (
-        <>
-          <Field label="Obra">
-            <BuscadorSelect
-              opciones={disponibles.map((o) => ({ id: o.id, label: o.nombre }))}
-              value={obraId}
-              onChange={setObraId}
-              placeholder="Buscar obra..."
-            />
-          </Field>
-          <button type="button" disabled={!obraId} onClick={agregarExistente} className="w-full border border-[#E4DECF] rounded-sm py-2.5 font-bold text-sm text-[#2A2118] disabled:text-[#C9C1AE] disabled:cursor-not-allowed mb-3">+ Agregar</button>
-        </>
-      )}
-      <button type="button" onClick={() => setShowNuevaObra(true)} className="w-full border border-[#E4DECF] rounded-sm py-2 font-bold text-xs text-[#2A2118] mb-3">+ Crear obra nueva</button>
-      <button type="button" onClick={onClose} className="w-full mt-1 bg-[#E8871E] text-[#2A2118] rounded-sm py-2.5 font-bold text-sm">Listo</button>
-
-      {showNuevaObra && (
-        <ObraForm
-          initial={{}}
-          core={core}
-          setCore={setCore}
-          onClose={() => setShowNuevaObra(false)}
-          onSave={(data, vinculoEmpresa) => {
-            setCore((prev) => ({ ...prev, obras: [data, ...prev.obras] }));
-            vincularObra(data.id);
-            if (vinculoEmpresa?.empresaId) {
-              setCore((prev) => ({
-                ...prev,
-                vinculos: [...(prev.vinculos || []), vinc("Empresa", vinculoEmpresa.empresaId, "Obra", data.id, TR_DUENA, false, todayISO())],
-              }));
-            }
-            setShowNuevaObra(false);
-          }}
-        />
-      )}
-    </Modal>
   );
 }
 
