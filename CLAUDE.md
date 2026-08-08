@@ -43,6 +43,16 @@ preguntar:
 No aplica a cambios que no toquen código de la app (por ejemplo, editar este
 mismo archivo).
 
+# Criterios de diseño de la App
+
+## Eliminar siempre con confirmación
+
+En toda la app, para eliminar un registro no alcanza con una "x" que borre
+directo. El criterio fijo es: ícono de editar (lápiz) + ícono de papelera que,
+al tocarlo, pide confirmación antes de eliminar (mismo patrón ya usado en
+Cargos, Personas, Empresas, Obras, etc.). Aplica de acá en adelante a toda
+pantalla nueva y a cualquier pantalla existente que se toque.
+
 # Contexto del negocio
 
 La empresa del usuario es **Feyro**, dedicada a la venta de materiales
