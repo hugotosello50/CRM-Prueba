@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.0.1";
+const APP_VERSION = "2.0.2";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -1112,6 +1112,7 @@ export default function CRM({ userId, onLogout }) {
                 onClick={() => { setTab(n.id); setDetail(null); }}
                 style={active ? { backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) } : { backgroundColor: core.tema.botonInactivo, color: core.tema.ink }}
                 className="flex-1 min-w-0 h-12 flex flex-col items-center justify-center gap-0.5 rounded-sm text-[9px] font-bold transition-colors"
+                title={n.label}
               >
                 <Icon size={15} /> <span className="truncate max-w-full px-0.5">{n.label}</span>
               </button>
@@ -1213,8 +1214,8 @@ function ResumenHoyModal({ core, acciones, onOpen, onClose }) {
         onClick={() => { onClose(); onOpen("hilo", hilo.id); }}
         className="w-full text-left bg-white border border-[#E4DECF] rounded-sm p-2.5 mb-1.5"
       >
-        <p className="text-sm font-semibold text-[#2A2118] truncate">{esTarea ? hilo.titulo : (persona?.nombre || hilo.titulo)}</p>
-        <p className="text-xs text-[#6B6352] truncate">{[tipoAccion?.nombre, esTarea ? "" : hilo.titulo, a.notaPlanificada].filter(Boolean).join(" · ")}</p>
+        <p className="text-sm font-semibold text-[#2A2118] truncate" title={esTarea ? hilo.titulo : (persona?.nombre || hilo.titulo)}>{esTarea ? hilo.titulo : (persona?.nombre || hilo.titulo)}</p>
+        <p className="text-xs text-[#6B6352] truncate" title={[tipoAccion?.nombre, esTarea ? "" : hilo.titulo, a.notaPlanificada].filter(Boolean).join(" · ")}>{[tipoAccion?.nombre, esTarea ? "" : hilo.titulo, a.notaPlanificada].filter(Boolean).join(" · ")}</p>
       </button>
     );
   };
@@ -2737,9 +2738,9 @@ function HiloSinAccionCard({ hilo, core, setCore, acciones, setAcciones, onOpen 
           {esTarea ? <ListChecks size={15} /> : getIniciales(nombrePrincipal)}
         </div>
         <button onClick={() => (esTarea || !persona ? onOpen("hilo", hilo.id) : onOpen("persona", persona.id))} className="text-left min-w-0 flex-1">
-          <p className="text-base font-extrabold text-[#2A2118] truncate">{nombrePrincipal}</p>
+          <p className="text-base font-extrabold text-[#2A2118] truncate" title={nombrePrincipal}>{nombrePrincipal}</p>
           {(empresas.length > 0 || obras.length > 0) && (
-            <p className="text-sm mt-0.5 truncate">
+            <p className="text-sm mt-0.5 truncate" title={[empresas.map((e) => e.denominacion).join(", "), obras.map((o) => o.nombre).join(", ")].filter(Boolean).join(" · ")}>
               {empresas.length > 0 && <span className="font-bold text-[#2A2118]">{empresas.map((e) => e.denominacion).join(", ")}</span>}
               {empresas.length > 0 && obras.length > 0 && <span className="text-[#8A8272]"> · </span>}
               {obras.length > 0 && <span className="text-[#6B6352]">{obras.map((o) => o.nombre).join(", ")}</span>}
@@ -2841,9 +2842,9 @@ function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, 
           </div>
         )}
         <button onClick={() => (esTarea || !persona ? onOpen("hilo", hilo.id) : onOpen("persona", persona.id))} className="text-left min-w-0 flex-1">
-          <p className="text-base font-extrabold text-[#2A2118] truncate">{nombrePrincipal}</p>
+          <p className="text-base font-extrabold text-[#2A2118] truncate" title={nombrePrincipal}>{nombrePrincipal}</p>
           {(empresas.length > 0 || obras.length > 0) && (
-            <p className="text-sm mt-0.5 truncate">
+            <p className="text-sm mt-0.5 truncate" title={[empresas.map((e) => e.denominacion).join(", "), obras.map((o) => o.nombre).join(", ")].filter(Boolean).join(" · ")}>
               {empresas.length > 0 && <span className="font-bold text-[#2A2118]">{empresas.map((e) => e.denominacion).join(", ")}</span>}
               {empresas.length > 0 && obras.length > 0 && <span className="text-[#8A8272]"> · </span>}
               {obras.length > 0 && <span className="text-[#6B6352]">{obras.map((o) => o.nombre).join(", ")}</span>}
@@ -2904,7 +2905,7 @@ function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, 
                 ))}
               </span>
             )}
-            {tipoPrimary && <span className="min-w-0 flex-1 truncate text-right text-xs font-mono text-[#6B6352]">{tipoPrimary.nombre}</span>}
+            {tipoPrimary && <span className="min-w-0 flex-1 truncate text-right text-xs font-mono text-[#6B6352]" title={tipoPrimary.nombre}>{tipoPrimary.nombre}</span>}
             <span className="shrink-0 text-[11px] font-bold font-mono px-2 py-1 rounded-sm bg-[#F1DFB9] text-[#5C3F18]">
               {fmtDate(masUrgente.fechaProgramada)}
             </span>
@@ -3146,8 +3147,8 @@ function PersonasView({ core, setCore, onOpen }) {
                     {getIniciales(p.nombre)}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-[#2A2118] truncate">{p.nombre}</p>
-                    <p className="text-xs text-[#8A8272] truncate">{empresas.length ? empresas.join(", ") : "Sin empresa vinculada"}</p>
+                    <p className="font-semibold text-[#2A2118] truncate" title={p.nombre}>{p.nombre}</p>
+                    <p className="text-xs text-[#8A8272] truncate" title={empresas.length ? empresas.join(", ") : "Sin empresa vinculada"}>{empresas.length ? empresas.join(", ") : "Sin empresa vinculada"}</p>
                   </div>
                 </button>
                 <WhatsAppLink persona={p} size={17} />
@@ -3425,6 +3426,7 @@ function VinculosDeFicha({ core, setCore, entidadTipo, entidadId, onOpen }) {
 // Edita un vínculo ya cargado: su tipo de relación (opcional), si es principal, la fecha y la nota.
 function EditVinculoForm({ core, setCore, vinculo, onClose }) {
   const [tipoRelacionId, setTipoRelacionId] = useState(vinculo.tipoRelacionId || "");
+  const [showNuevoTipo, setShowNuevoTipo] = useState(false);
   const [principal, setPrincipal] = useState(!!vinculo.principal);
   const [desde, setDesde] = useState(vinculo.desde || todayISO());
   const [nota, setNota] = useState(vinculo.nota || "");
@@ -3446,12 +3448,26 @@ function EditVinculoForm({ core, setCore, vinculo, onClose }) {
           placeholder="Buscar tipo de relación..."
         />
       </Field>
+      <button type="button" onClick={() => setShowNuevoTipo(true)} className="w-full border border-[#E4DECF] rounded-sm py-2 font-bold text-xs text-[#2A2118] mb-3">+ Crear tipo de relación nuevo</button>
       <label className="flex items-center gap-2 mb-3 text-sm text-[#2A2118]">
         <input type="checkbox" checked={principal} onChange={(e) => setPrincipal(e.target.checked)} /> Marcar como vínculo principal
       </label>
       <Field label="Fecha"><input type="date" className={inputCls} value={desde} onChange={(e) => setDesde(e.target.value)} /></Field>
       <Field label="Nota (opcional)"><textarea className={inputCls} rows={2} value={nota} onChange={(e) => setNota(e.target.value)} /></Field>
       <PrimaryBtn full onClick={guardar}>Guardar</PrimaryBtn>
+
+      {showNuevoTipo && (
+        <Modal title="Nuevo tipo de relación" onClose={() => setShowNuevoTipo(false)}>
+          <TipoRelacionForm
+            data={{}}
+            onSave={(data) => {
+              setCore((prev) => ({ ...prev, tiposRelacion: [...(prev.tiposRelacion || []), data] }));
+              setTipoRelacionId(data.id);
+              setShowNuevoTipo(false);
+            }}
+          />
+        </Modal>
+      )}
     </Modal>
   );
 }
@@ -3542,7 +3558,7 @@ function HiloRow({ hilo, core, acciones, onOpen }) {
     <button onClick={() => onOpen("hilo", hilo.id)} className="w-full text-left bg-white border border-[#E4DECF] rounded-sm p-3">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="text-[15px] font-semibold text-[#2A2118] truncate">{hilo.titulo}</p>
+          <p className="text-[15px] font-semibold text-[#2A2118] truncate" title={hilo.titulo}>{hilo.titulo}</p>
           <p className="text-xs text-[#8A8272] mt-0.5">{[empresas.map((e) => e.denominacion).join(", "), obras.map((o) => o.nombre).join(", ")].filter(Boolean).join(" · ") || "Sin empresa/obra"}</p>
         </div>
         <Chip tone={hilo.estado === "Activo" ? "green" : "neutral"}>{hilo.estado}</Chip>
@@ -4941,9 +4957,9 @@ function EmpresasView({ core, setCore, onOpen }) {
                 <button onClick={() => onOpen("empresa", e.id)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
                   <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}><Building2 size={16} /></div>
                   <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-[#2A2118] truncate">{e.denominacion}</p>
+                    <p className="font-semibold text-[#2A2118] truncate" title={e.denominacion}>{e.denominacion}</p>
                     {nPersonas > 0 ? (
-                      <p className="text-xs text-[#8A8272] truncate">{e.ciudad ? `${e.ciudad} · ` : ""}{nPersonas} contacto{nPersonas !== 1 ? "s" : ""}</p>
+                      <p className="text-xs text-[#8A8272] truncate" title={`${e.ciudad ? e.ciudad + " · " : ""}${nPersonas} contacto${nPersonas !== 1 ? "s" : ""}`}>{e.ciudad ? `${e.ciudad} · ` : ""}{nPersonas} contacto{nPersonas !== 1 ? "s" : ""}</p>
                     ) : (
                       <Chip tone="amber">A definir</Chip>
                     )}
@@ -5369,9 +5385,9 @@ function ObrasView({ core, setCore, onOpen }) {
                 <button onClick={() => onOpen("obra", o.id)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
                   <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}><HardHat size={16} /></div>
                   <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-[#2A2118] truncate">{o.nombre}</p>
+                    <p className="font-semibold text-[#2A2118] truncate" title={o.nombre}>{o.nombre}</p>
                     {empresas.length ? (
-                      <p className="text-xs text-[#8A8272] truncate">{empresas.join(", ")}</p>
+                      <p className="text-xs text-[#8A8272] truncate" title={empresas.join(", ")}>{empresas.join(", ")}</p>
                     ) : (
                       <Chip tone="amber">A definir</Chip>
                     )}
@@ -6845,11 +6861,13 @@ function RelacionesView({ core, setCore, onOpen }) {
             return (
               <div key={v.id} className="bg-white border border-[#E4DECF] rounded-sm p-2.5 flex items-center justify-between gap-2 text-sm">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate">
-                    <button onClick={() => onOpen(v.origenTipo.toLowerCase(), v.origenId)} className="font-semibold text-[#2A2118]">{origenLabel}</button>
-                    <span className="text-[#8A8272]"> {nombreRelacionLado(tr, true) || "— vinculado a —"} </span>
-                    <button onClick={() => onOpen(v.destinoTipo.toLowerCase(), v.destinoId)} className="font-semibold text-[#2A2118]">{destinoLabel}</button>
+                  <p className="font-semibold text-[#2A2118]">
+                    <button onClick={() => onOpen(v.origenTipo.toLowerCase(), v.origenId)} title={origenLabel}>{origenLabel}</button>
                     {v.principal && <Star size={11} className="inline text-[#E8871E] ml-1" />}
+                  </p>
+                  <p className="text-[#8A8272]">
+                    {nombreRelacionLado(tr, true) || "vinculado a"}{" "}
+                    <button onClick={() => onOpen(v.destinoTipo.toLowerCase(), v.destinoId)} className="font-semibold text-[#2A2118]" title={destinoLabel}>{destinoLabel}</button>
                   </p>
                   <p className="text-xs text-[#8A8272]">{v.desde}{v.nota ? ` · ${v.nota}` : ""}</p>
                 </div>
