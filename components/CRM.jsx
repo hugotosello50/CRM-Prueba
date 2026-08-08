@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.5.3";
+const APP_VERSION = "2.6.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -663,6 +663,13 @@ function Modal({ title, onClose, children }) {
   );
 }
 
+// Arma el texto de aviso de uso para un modal de confirmación de borrado: si el registro
+// está siendo usado por otros, avisa cuántos y qué les pasa; si no, lo dice explícitamente.
+function textoUsoRegistro(count, singular, plural, consecuencia) {
+  if (count === 0) return "No está siendo usado por ningún otro registro. No se puede deshacer.";
+  return `Se usa en ${count} ${count === 1 ? singular : plural} — ${consecuencia} No se puede deshacer.`;
+}
+
 // Modal de confirmación de borrado reutilizable (criterio fijo de la app: nunca se borra
 // directo con una "x", siempre se pide confirmación).
 function ConfirmDeleteModal({ title, texto, onCancel, onConfirm, confirmLabel = "Sí, eliminar" }) {
@@ -1184,7 +1191,7 @@ export default function CRM({ userId, onLogout }) {
               {tab === "personas" && <PersonasView core={core} setCore={setCore} onOpen={openDetail} />}
               {tab === "empresas" && <EmpresasView core={core} setCore={setCore} onOpen={openDetail} />}
               {tab === "obras" && <ObrasView core={core} setCore={setCore} onOpen={openDetail} />}
-              {tab === "tiposAccion" && <TiposAccionView core={core} setCore={setCore} />}
+              {tab === "tiposAccion" && <TiposAccionView core={core} setCore={setCore} acciones={acciones} />}
               {tab === "etiquetas" && <EtiquetasView core={core} setCore={setCore} />}
               {tab === "categorias" && <CategoriasView core={core} setCore={setCore} />}
               {tab === "tiposRelacion" && <TiposRelacionView core={core} setCore={setCore} />}
@@ -3257,7 +3264,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
 
       {deletingAccionId && (
         <Modal title="¿Eliminar esta acción?" onClose={() => setDeletingAccionId(null)}>
-          <p className="text-sm text-[#2A2118] mb-4">Se borra del hilo de forma permanente. No se puede deshacer.</p>
+          <p className="text-sm text-[#2A2118] mb-4">{textoUsoRegistro(accionesDelHilo.filter((a) => a.id !== deletingAccionId && (a.origenId === deletingAccionId || a.destinoId === deletingAccionId)).length, "acción", "acciones", "Van a perder la referencia de contexto (\"Ver contexto\") a esta acción.")}</p>
           <div className="flex gap-2">
             <button onClick={() => setDeletingAccionId(null)} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
             <button onClick={() => { deleteAccion(deletingAccionId); setDeletingAccionId(null); }} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, eliminar</button>
@@ -3314,6 +3321,7 @@ function PersonasView({ core, setCore, onOpen }) {
   const [modal, setModal] = useState(null); // null | {} (new) | persona (edit)
   const [q, setQ] = useState("");
   const [deletingId, setDeletingId] = useState(null);
+  const usoDeletingId = deletingId ? vinculosDeEntidad(core, "Persona", deletingId, true).length : 0;
   const [googleEstado, setGoogleEstado] = useState("verificando"); // verificando | noConectado | sincronizando | ok | reconectar | sinEtiqueta | error
   const [googleLabel, setGoogleLabel] = useState("");
   const yaSincronizoRef = useRef(false);
@@ -3467,7 +3475,7 @@ function PersonasView({ core, setCore, onOpen }) {
       {modal !== null && <PersonaForm initial={modal} core={core} setCore={setCore} onSave={savePersona} onDelete={modal.id ? () => { deletePersona(modal.id); setModal(null); } : null} onClose={() => setModal(null)} />}
       {deletingId && (
         <Modal title="¿Eliminar esta persona?" onClose={() => setDeletingId(null)}>
-          <p className="text-sm text-[#2A2118] mb-4">Se borra la persona, sus vínculos con empresas, sus etiquetas y no se toca su historial de acciones (queda huérfano, referenciado por un id inexistente). No se puede deshacer.</p>
+          <p className="text-sm text-[#2A2118] mb-4">{textoUsoRegistro(usoDeletingId, "vínculo", "vínculos", "Se borran junto con la persona (empresas, obras, hilos).")} Su historial de acciones no se toca (queda huérfano, referenciado por un id inexistente).</p>
           <div className="flex gap-2">
             <button onClick={() => setDeletingId(null)} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
             <button onClick={() => { deletePersona(deletingId); setDeletingId(null); }} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, eliminar</button>
@@ -3654,7 +3662,7 @@ function PersonaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
       <div className="flex items-center gap-2 mt-2">
         {confirmarEliminar ? (
           <>
-            <span className="flex-1 text-xs text-[#B0452E] font-semibold">¿Eliminar a esta persona? No se puede deshacer.</span>
+            <span className="flex-1 text-xs text-[#B0452E] font-semibold">{textoUsoRegistro(vinculosDeEntidad(core, "Persona", initial.id, true).length, "vínculo", "vínculos", "Se borran junto con la persona.")}</span>
             <button type="button" onClick={() => setConfirmarEliminar(false)} className="shrink-0 border border-[#D8D2C4] rounded-sm px-3 py-2.5 text-xs font-bold text-[#6B6352]">Cancelar</button>
             <button type="button" onClick={onDelete} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="shrink-0 rounded-sm px-3 py-2.5 text-xs font-bold">Sí, eliminar</button>
           </>
@@ -4707,6 +4715,7 @@ function EmpresasView({ core, setCore, onOpen }) {
   const [modal, setModal] = useState(null);
   const [q, setQ] = useState("");
   const [deletingId, setDeletingId] = useState(null);
+  const usoDeletingId = deletingId ? vinculosDeEntidad(core, "Empresa", deletingId, true).length : 0;
   const [showImportar, setShowImportar] = useState(false);
   const list = core.empresas.filter((e) => e.denominacion.toLowerCase().includes(q.toLowerCase()));
 
@@ -4783,7 +4792,7 @@ function EmpresasView({ core, setCore, onOpen }) {
       {modal !== null && <EmpresaForm initial={modal} core={core} setCore={setCore} onSave={save} onDelete={modal.id ? () => { del(modal.id); setModal(null); } : null} onClose={() => setModal(null)} />}
       {deletingId && (
         <Modal title="¿Eliminar esta empresa?" onClose={() => setDeletingId(null)}>
-          <p className="text-sm text-[#2A2118] mb-4">Se borra la empresa, sus vínculos con personas y obras, y sus etiquetas. No se puede deshacer.</p>
+          <p className="text-sm text-[#2A2118] mb-4">{textoUsoRegistro(usoDeletingId, "vínculo", "vínculos", "Se borran junto con la empresa (personas, obras, hilos).")}</p>
           <div className="flex gap-2">
             <button onClick={() => setDeletingId(null)} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
             <button onClick={() => { del(deletingId); setDeletingId(null); }} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, eliminar</button>
@@ -4880,7 +4889,7 @@ function EmpresaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
       <div className="flex items-center gap-2 mt-2">
         {confirmarEliminar ? (
           <>
-            <span className="flex-1 text-xs text-[#B0452E] font-semibold">¿Eliminar esta empresa? No se puede deshacer.</span>
+            <span className="flex-1 text-xs text-[#B0452E] font-semibold">{textoUsoRegistro(vinculosDeEntidad(core, "Empresa", initial.id, true).length, "vínculo", "vínculos", "Se borran junto con la empresa.")}</span>
             <button type="button" onClick={() => setConfirmarEliminar(false)} className="shrink-0 border border-[#D8D2C4] rounded-sm px-3 py-2.5 text-xs font-bold text-[#6B6352]">Cancelar</button>
             <button type="button" onClick={onDelete} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="shrink-0 rounded-sm px-3 py-2.5 text-xs font-bold">Sí, eliminar</button>
           </>
@@ -5140,6 +5149,7 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
 function ObrasView({ core, setCore, onOpen }) {
   const [modal, setModal] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const usoDeletingId = deletingId ? vinculosDeEntidad(core, "Obra", deletingId, true).length : 0;
   const [q, setQ] = useState("");
   const list = core.obras.filter((o) => o.nombre.toLowerCase().includes(q.toLowerCase()));
   const save = (data, vinculoEmpresa) => {
@@ -5204,7 +5214,7 @@ function ObrasView({ core, setCore, onOpen }) {
       {modal !== null && <ObraForm initial={modal} core={core} setCore={setCore} onSave={save} onDelete={modal.id ? () => { del(modal.id); setModal(null); } : null} onClose={() => setModal(null)} />}
       {deletingId && (
         <Modal title="¿Eliminar esta obra?" onClose={() => setDeletingId(null)}>
-          <p className="text-sm text-[#2A2118] mb-4">Se borra la obra, sus vínculos con empresas y sus etiquetas. No se puede deshacer.</p>
+          <p className="text-sm text-[#2A2118] mb-4">{textoUsoRegistro(usoDeletingId, "vínculo", "vínculos", "Se borran junto con la obra (empresas, personas, hilos).")}</p>
           <div className="flex gap-2">
             <button onClick={() => setDeletingId(null)} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
             <button onClick={() => { del(deletingId); setDeletingId(null); }} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, eliminar</button>
@@ -5295,7 +5305,7 @@ function ObraForm({ initial, core, setCore, onSave, onDelete, onClose }) {
       <div className="flex items-center gap-2 mt-2">
         {confirmarEliminar ? (
           <>
-            <span className="flex-1 text-xs text-[#B0452E] font-semibold">¿Eliminar esta obra? No se puede deshacer.</span>
+            <span className="flex-1 text-xs text-[#B0452E] font-semibold">{textoUsoRegistro(vinculosDeEntidad(core, "Obra", initial.id, true).length, "vínculo", "vínculos", "Se borran junto con la obra.")}</span>
             <button type="button" onClick={() => setConfirmarEliminar(false)} className="shrink-0 border border-[#D8D2C4] rounded-sm px-3 py-2.5 text-xs font-bold text-[#6B6352]">Cancelar</button>
             <button type="button" onClick={onDelete} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="shrink-0 rounded-sm px-3 py-2.5 text-xs font-bold">Sí, eliminar</button>
           </>
@@ -5761,9 +5771,10 @@ function InformeSinContacto({ core, acciones }) {
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
-function TiposAccionView({ core, setCore }) {
+function TiposAccionView({ core, setCore, acciones }) {
   const [modal, setModal] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const usoDeletingId = deletingId ? acciones.filter((a) => a.tipoAccionId === deletingId).length : 0;
   const [q, setQ] = useState("");
   const list = core.tiposAccion.filter((t) => t.nombre.toLowerCase().includes(q.toLowerCase()));
   const saveTipo = (data) => {
@@ -5807,7 +5818,7 @@ function TiposAccionView({ core, setCore }) {
       )}
       {deletingId && (
         <Modal title="¿Eliminar este tipo de acción?" onClose={() => setDeletingId(null)}>
-          <p className="text-sm text-[#2A2118] mb-4">No se puede deshacer.</p>
+          <p className="text-sm text-[#2A2118] mb-4">{textoUsoRegistro(usoDeletingId, "acción", "acciones", "Van a quedar sin tipo asignado.")}</p>
           <div className="flex gap-2">
             <button onClick={() => setDeletingId(null)} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
             <button onClick={() => { delTipo(deletingId); setDeletingId(null); }} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, eliminar</button>
@@ -5821,6 +5832,7 @@ function TiposAccionView({ core, setCore }) {
 function EtiquetasView({ core, setCore }) {
   const [modal, setModal] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const usoDeletingId = deletingId ? (core.entidadEtiqueta || []).filter((r) => r.etiquetaId === deletingId).length : 0;
   const saveEtiqueta = (data) => {
     setCore((prev) => {
       const exists = prev.etiquetas.some((t) => t.id === data.id);
@@ -5871,7 +5883,7 @@ function EtiquetasView({ core, setCore }) {
       )}
       {deletingId && (
         <Modal title="¿Eliminar esta etiqueta?" onClose={() => setDeletingId(null)}>
-          <p className="text-sm text-[#2A2118] mb-4">Se quita de todo lo que la tenga asignada. No se puede deshacer.</p>
+          <p className="text-sm text-[#2A2118] mb-4">{textoUsoRegistro(usoDeletingId, "registro", "registros", "Se les va a quitar esta etiqueta.")}</p>
           <div className="flex gap-2">
             <button onClick={() => setDeletingId(null)} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
             <button onClick={() => { delEtiqueta(deletingId); setDeletingId(null); }} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, eliminar</button>
@@ -5885,6 +5897,7 @@ function EtiquetasView({ core, setCore }) {
 function CategoriasView({ core, setCore }) {
   const [modal, setModal] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const usoDeletingId = deletingId ? (core.etiquetas || []).filter((e) => e.categoriaId === deletingId).length : 0;
   const saveCategoria = (data) => {
     setCore((prev) => {
       const exists = (prev.categorias || []).some((c) => c.id === data.id);
@@ -5928,7 +5941,7 @@ function CategoriasView({ core, setCore }) {
       )}
       {deletingId && (
         <Modal title="¿Eliminar esta categoría?" onClose={() => setDeletingId(null)}>
-          <p className="text-sm text-[#2A2118] mb-4">No se puede deshacer.</p>
+          <p className="text-sm text-[#2A2118] mb-4">{textoUsoRegistro(usoDeletingId, "etiqueta", "etiquetas", "Van a quedar sin categoría.")}</p>
           <div className="flex gap-2">
             <button onClick={() => setDeletingId(null)} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
             <button onClick={() => { delCategoria(deletingId); setDeletingId(null); }} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, eliminar</button>
@@ -5944,6 +5957,7 @@ function CategoriasView({ core, setCore }) {
 function TiposRelacionView({ core, setCore }) {
   const [modal, setModal] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const usoDeletingId = deletingId ? (core.vinculos || []).filter((v) => v.tipoRelacionId === deletingId).length : 0;
   const saveTipo = (data) => {
     setCore((prev) => {
       const exists = (prev.tiposRelacion || []).some((t) => t.id === data.id);
@@ -6000,7 +6014,7 @@ function TiposRelacionView({ core, setCore }) {
       )}
       {deletingId && (
         <Modal title="¿Eliminar este tipo de relación?" onClose={() => setDeletingId(null)}>
-          <p className="text-sm text-[#2A2118] mb-4">También se borran los vínculos que lo usan. No se puede deshacer.</p>
+          <p className="text-sm text-[#2A2118] mb-4">{textoUsoRegistro(usoDeletingId, "vínculo", "vínculos", "También se van a borrar esos vínculos.")}</p>
           <div className="flex gap-2">
             <button onClick={() => setDeletingId(null)} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
             <button onClick={() => { delTipo(deletingId); setDeletingId(null); }} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, eliminar</button>
