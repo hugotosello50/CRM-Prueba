@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.5.0";
+const APP_VERSION = "2.5.1";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -543,7 +543,7 @@ function Chip({ children, tone = "neutral" }) {
     slate: "bg-[#2A2F36] text-[#F2F0E9]",
     red: "bg-[#B0452E] text-[#F2F0E9]",
   };
-  return <span className={`text-[10px] font-bold tracking-widest uppercase px-2 py-1 rounded-sm ${tones[tone]}`}>{children}</span>;
+  return <span className={`text-[10px] font-bold tracking-widest px-2 py-1 rounded-sm ${tones[tone]}`}>{children}</span>;
 }
 
 // Chips de los ítems que se fueron agregando en esta apertura de un formulario de vínculo
@@ -591,7 +591,7 @@ function PrimaryBtn({ onClick, children, full, disabled, core }) {
 function Field({ label, children }) {
   return (
     <label className="block mb-3">
-      <span className="block text-[11px] font-bold uppercase tracking-wide text-[#6B6352] mb-1">{label}</span>
+      <span className="block text-[11px] font-bold tracking-wide text-[#6B6352] mb-1">{label}</span>
       {children}
     </label>
   );
@@ -816,12 +816,12 @@ function TagsSection({ core, setCore, entidadTipo, entidadId }) {
     <div className="mt-3">
       <div className="flex items-center gap-2 flex-wrap">
         {tags.map(({ rel, etiqueta }) => (
-          <span key={rel.id} className="inline-flex items-center gap-1 text-[10px] font-bold tracking-widest uppercase px-2 py-1 rounded-sm bg-[#E7E2D8] text-[#4A4438]">
+          <span key={rel.id} className="inline-flex items-center gap-1 text-[10px] font-bold tracking-widest px-2 py-1 rounded-sm bg-[#E7E2D8] text-[#4A4438]">
             {etiqueta.etiqueta}
             <button onClick={() => quitar(rel.id)} aria-label="Quitar etiqueta"><X size={10} /></button>
           </span>
         ))}
-        <button onClick={() => setShowPicker(true)} className="text-[10px] font-bold uppercase tracking-wide text-[#B0452E] flex items-center gap-1 px-1 py-1">
+        <button onClick={() => setShowPicker(true)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-1 px-1 py-1">
           <Tag size={11} /> {tags.length === 0 ? "Agregar etiqueta" : "Agregar"}
         </button>
       </div>
@@ -1125,7 +1125,7 @@ export default function CRM({ userId, onLogout }) {
         <header className="mb-4 px-1 flex items-start justify-between gap-2 shrink-0">
           <div>
             <h1 className="text-xl font-extrabold text-[#2A2118] tracking-tight">{core.parametros.tituloApp || "Seguimiento comercial"}</h1>
-            <p className={`text-[10px] font-bold uppercase tracking-wide mt-0.5 ${guardado === "error" ? "text-[#B0452E]" : "text-[#A69C88]"}`}>
+            <p className={`text-[10px] font-bold tracking-wide mt-0.5 ${guardado === "error" ? "text-[#B0452E]" : "text-[#A69C88]"}`}>
               {guardado === "guardando" ? "Guardando..." : guardado === "error" ? "Error al guardar" : "Guardado"}
             </p>
           </div>
@@ -1200,7 +1200,7 @@ export default function CRM({ userId, onLogout }) {
       {showMenu && (
         <Modal title="Menú" onClose={() => setShowMenu(false)}>
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-wide text-[#A69C88] mb-2">ABM</p>
+            <p className="text-[10px] font-bold tracking-wide text-[#A69C88] mb-2">ABM</p>
             <div className="space-y-1 mb-4">
               {MENU_ABM.map((item) => {
                 const Icon = item.icon;
@@ -1217,7 +1217,7 @@ export default function CRM({ userId, onLogout }) {
                 );
               })}
             </div>
-            <p className="text-[10px] font-bold uppercase tracking-wide text-[#A69C88] mb-2 pt-3 border-t border-[#E4DECF]">Sistema</p>
+            <p className="text-[10px] font-bold tracking-wide text-[#A69C88] mb-2 pt-3 border-t border-[#E4DECF]">Sistema</p>
             <div className="space-y-1">
               <button
                 onClick={() => { setTab("config"); setDetail(null); setShowMenu(false); }}
@@ -1274,13 +1274,13 @@ function ResumenHoyModal({ core, acciones, onOpen, onClose }) {
   return (
     <Modal title="Resumen de hoy" onClose={onClose}>
       <div>
-        <p className="text-[10px] font-bold uppercase tracking-wide text-[#6B6352] mb-1.5">Hoy{hoy.length > 0 ? ` (${hoy.length})` : ""}</p>
+        <p className="text-[10px] font-bold tracking-wide text-[#6B6352] mb-1.5">Hoy{hoy.length > 0 ? ` (${hoy.length})` : ""}</p>
         {hoy.length === 0 ? (
           <p className="text-xs text-[#A69C88] mb-3">Nada programado para hoy.</p>
         ) : (
           <div className="mb-3">{hoy.map((a) => <Fila key={a.id} a={a} />)}</div>
         )}
-        <p className="text-[10px] font-bold uppercase tracking-wide text-[#B0452E] mb-1.5">Vencidas{vencidas.length > 0 ? ` (${vencidas.length})` : ""}</p>
+        <p className="text-[10px] font-bold tracking-wide text-[#B0452E] mb-1.5">Vencidas{vencidas.length > 0 ? ` (${vencidas.length})` : ""}</p>
         {vencidas.length === 0 ? (
           <p className="text-xs text-[#A69C88]">No hay pendientes vencidas.</p>
         ) : (
@@ -1631,7 +1631,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
       ) : (
         <div className="border-t border-[#E4DECF] my-3 pt-3">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[#B0452E]">Primer contacto</p>
+            <p className="text-[11px] font-bold tracking-wide text-[#B0452E]">Primer contacto</p>
             <button type="button" onClick={() => setShowPrimerContacto(false)} className="text-xs font-bold text-[#6B6352]">Quitar</button>
           </div>
           <SelectConCrear
@@ -1917,7 +1917,7 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
       </div>
 
       {dragging && (
-        <p className="text-center text-xs font-bold text-[#B0452E] uppercase tracking-wide mb-1.5 animate-pulse">
+        <p className="text-center text-xs font-bold text-[#B0452E] tracking-wide mb-1.5 animate-pulse">
           Soltá sobre una pestaña para mover la tarea
         </p>
       )}
@@ -1970,7 +1970,7 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
 
       {tareasCerradas.length > 0 && (
         <div className="mt-4">
-          <button onClick={() => setVerCerradas((v) => !v)} className="text-[10px] font-bold uppercase tracking-wide text-[#B0452E] flex items-center gap-0.5">
+          <button onClick={() => setVerCerradas((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
             {verCerradas ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verCerradas ? "Ocultar" : "Ver"} tareas completadas ({tareasCerradas.length})
           </button>
           {verCerradas && (
@@ -2112,7 +2112,7 @@ function TareaCard({ hilo, core, setCore, acciones, setAcciones, onOpen, onInici
             <IconBtn label="Eliminar subtarea" danger onClick={() => setDeletingSubtareaId(s.id)}><Trash2 size={11} /></IconBtn>
           </div>
         ))}
-        <button type="button" onClick={() => setShowNuevaSubtarea(true)} className="text-[10px] font-bold uppercase tracking-wide text-[#B0452E] mt-1">+ Agregar subtarea</button>
+        <button type="button" onClick={() => setShowNuevaSubtarea(true)} className="text-[10px] font-bold tracking-wide text-[#B0452E] mt-1">+ Agregar subtarea</button>
       </div>
 
       {showFecha && (
@@ -2292,15 +2292,15 @@ function CalendarioView({ core, setCore, acciones, setAcciones, onOpen, t }) {
     <div>
     <div className="sticky top-0 z-10 bg-[#F7F5F0]">
       <div className="flex gap-1.5 mb-3">
-        <button onClick={() => setModo("mes")} style={modo === "mes" ? { backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) } : { backgroundColor: core.tema.botonInactivo, color: core.tema.ink }} className="flex-1 h-8 text-[11px] font-bold uppercase tracking-wide rounded-sm">Mensual</button>
-        <button onClick={() => setModo("semana")} style={modo === "semana" ? { backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) } : { backgroundColor: core.tema.botonInactivo, color: core.tema.ink }} className="flex-1 h-8 text-[11px] font-bold uppercase tracking-wide rounded-sm">Semanal</button>
+        <button onClick={() => setModo("mes")} style={modo === "mes" ? { backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) } : { backgroundColor: core.tema.botonInactivo, color: core.tema.ink }} className="flex-1 h-8 text-[11px] font-bold tracking-wide rounded-sm">Mensual</button>
+        <button onClick={() => setModo("semana")} style={modo === "semana" ? { backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) } : { backgroundColor: core.tema.botonInactivo, color: core.tema.ink }} className="flex-1 h-8 text-[11px] font-bold tracking-wide rounded-sm">Semanal</button>
       </div>
 
       <div className="flex items-center justify-between mb-2">
         <IconBtn label="Anterior" onClick={irAnterior}><ChevronLeft size={18} /></IconBtn>
         <div className="text-center">
           <p className="text-sm font-extrabold text-[#2A2118]">{tituloRango}</p>
-          <button onClick={irHoy} className="text-[10px] font-bold uppercase tracking-wide text-[#B0452E]">Hoy</button>
+          <button onClick={irHoy} className="text-[10px] font-bold tracking-wide text-[#B0452E]">Hoy</button>
         </div>
         <IconBtn label="Siguiente" onClick={irSiguiente}><ChevronRight size={18} /></IconBtn>
       </div>
@@ -2314,7 +2314,7 @@ function CalendarioView({ core, setCore, acciones, setAcciones, onOpen, t }) {
       {modo === "mes" ? (
         <div>
           <div className="grid grid-cols-7 gap-1 mb-1">
-            {DIAS_SEMANA.map((d) => <p key={d} className="text-center text-[10px] font-bold uppercase text-[#A69C88]">{d}</p>)}
+            {DIAS_SEMANA.map((d) => <p key={d} className="text-center text-[10px] font-bold text-[#A69C88]">{d}</p>)}
           </div>
           <div className="grid grid-cols-7 gap-1">
             {gridMensual.map(({ date, iso, inMonth }) => {
@@ -2358,7 +2358,7 @@ function CalendarioView({ core, setCore, acciones, setAcciones, onOpen, t }) {
                 <span className={`text-sm ${isToday ? "font-extrabold text-[#B0452E]" : "text-[#2A2118]"}`}>{DIAS_SEMANA[(date.getDay() + 6) % 7]} {date.getDate()}/{date.getMonth() + 1}</span>
                 <div className="flex items-center gap-1.5">
                   {countCli > 0 && <Chip tone={tone}>{countCli}</Chip>}
-                  {countTar > 0 && <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-sm text-white" style={{ backgroundColor: COLOR_TAREA }}>{countTar}</span>}
+                  {countTar > 0 && <span className="text-[10px] font-bold tracking-widest px-2 py-1 rounded-sm text-white" style={{ backgroundColor: COLOR_TAREA }}>{countTar}</span>}
                   {countCli === 0 && countTar === 0 && <span className="text-xs text-[#D8D2C4]">—</span>}
                 </div>
               </button>
@@ -2369,7 +2369,7 @@ function CalendarioView({ core, setCore, acciones, setAcciones, onOpen, t }) {
 
       {diaSeleccionado && (
         <div className="mt-4 pt-3 border-t border-[#E4DECF]">
-          <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352] mb-2">{fmtDate(diaSeleccionado)}</p>
+          <p className="text-[11px] font-bold tracking-wide text-[#6B6352] mb-2">{fmtDate(diaSeleccionado)}</p>
           {gruposDelDia.length === 0 ? (
             <p className="text-sm text-[#A69C88]">Sin acciones programadas este día.</p>
           ) : (
@@ -2494,7 +2494,7 @@ function ExcelTabsBar({ core, tabs, activeId, incluirSinTab, sinColumnaNombre, o
           defaultValue={nombre}
           onKeyDown={(e) => { if (e.key === "Enter") confirmarRenombrar(id, e.target.value); if (e.key === "Escape") setEditandoId(undefined); }}
           onBlur={(e) => confirmarRenombrar(id, e.target.value)}
-          className="shrink-0 h-8 w-24 text-[10px] font-bold uppercase tracking-wide px-2 border rounded-t-sm focus:outline-none"
+          className="shrink-0 h-8 w-24 text-[10px] font-bold tracking-wide px-2 border rounded-t-sm focus:outline-none"
           style={{ backgroundColor: core.tema.tarjeta, borderColor: core.tema.linea }}
         />
       );
@@ -2513,7 +2513,7 @@ function ExcelTabsBar({ core, tabs, activeId, incluirSinTab, sinColumnaNombre, o
           zIndex: esActiva ? 2 : 1,
           transform: esHover ? "scale(1.05)" : "none",
         }}
-        className="relative shrink-0 h-8 flex items-center gap-1.5 px-3 text-[10px] font-bold uppercase tracking-wide border border-b-0 rounded-t-sm transition-transform"
+        className="relative shrink-0 h-8 flex items-center gap-1.5 px-3 text-[10px] font-bold tracking-wide border border-b-0 rounded-t-sm transition-transform"
       >
         {nombre}
         {contarTab(id) > 0 && (
@@ -2556,14 +2556,14 @@ function ExcelTabsBar({ core, tabs, activeId, incluirSinTab, sinColumnaNombre, o
       </div>
 
       <div className="flex justify-end gap-3 mt-1.5 mb-1">
-        <button onClick={() => setEditandoId(activeId)} className="text-[10px] font-bold uppercase tracking-wide text-[#6B6352] flex items-center gap-1">
+        <button onClick={() => setEditandoId(activeId)} className="text-[10px] font-bold tracking-wide text-[#6B6352] flex items-center gap-1">
           <Pencil size={11} /> Renombrar
         </button>
         {activeId !== null && (
           <button
             onClick={() => onDelete(activeId)}
             disabled={contarTab(activeId) > 0}
-            className={`text-[10px] font-bold uppercase tracking-wide flex items-center gap-1 ${contarTab(activeId) > 0 ? "text-[#C9C1AE] cursor-not-allowed" : "text-[#B0452E]"}`}
+            className={`text-[10px] font-bold tracking-wide flex items-center gap-1 ${contarTab(activeId) > 0 ? "text-[#C9C1AE] cursor-not-allowed" : "text-[#B0452E]"}`}
           >
             <Trash2 size={11} /> Eliminar "{tabActivaNombre}"{contarTab(activeId) > 0 ? " (vaciala primero)" : ""}
           </button>
@@ -2706,7 +2706,7 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, t, soloTipo 
     <div>
     <div className="sticky top-0 z-10 bg-[#F7F5F0]">
       {dragging && (
-        <p className="text-center text-xs font-bold text-[#B0452E] uppercase tracking-wide mb-1.5 animate-pulse">
+        <p className="text-center text-xs font-bold text-[#B0452E] tracking-wide mb-1.5 animate-pulse">
           Soltá sobre una pestaña para mover el hilo
         </p>
       )}
@@ -2741,7 +2741,7 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, t, soloTipo 
               key={key}
               onClick={() => setBucket(key)}
               style={bucket === key ? { backgroundColor: core.tema.botonActivo, color: colorTexto } : { backgroundColor: core.tema.botonInactivo, color: colorTexto }}
-              className="h-8 flex items-center justify-center gap-1 text-[10px] font-bold uppercase tracking-wide rounded-sm transition-colors"
+              className="h-8 flex items-center justify-center gap-1 text-[10px] font-bold tracking-wide rounded-sm transition-colors"
             >
               {label}
               {count > 0 && (
@@ -2763,7 +2763,7 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, t, soloTipo 
         <button
           onClick={() => setShowNuevoHilo(true)}
           style={{ backgroundColor: "#E8871E", color: "#2A2118" }}
-          className="h-8 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide px-2 rounded-sm shrink-0"
+          className="h-8 flex items-center gap-1 text-[10px] font-bold tracking-wide px-2 rounded-sm shrink-0"
         >
           <Plus size={14} /> Hilo
         </button>
@@ -2773,7 +2773,7 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, t, soloTipo 
               key={key}
               onClick={() => setEstadoFiltro(key)}
               style={estadoFiltro === key ? { backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) } : { backgroundColor: core.tema.tarjeta, color: core.tema.mutedBase }}
-              className="h-8 flex items-center text-[10px] font-bold uppercase tracking-wide px-2"
+              className="h-8 flex items-center text-[10px] font-bold tracking-wide px-2"
             >
               {label}
             </button>
@@ -2822,7 +2822,7 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, t, soloTipo 
       {hilosSinAccion.length > 0 && (
         <div className="mt-4">
           <div className="border-t border-[#E4DECF] mb-3" />
-          <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352] mb-2">Sin acción programada ({hilosSinAccion.length})</p>
+          <p className="text-[11px] font-bold tracking-wide text-[#6B6352] mb-2">Sin acción programada ({hilosSinAccion.length})</p>
           <div>
             {hilosSinAccion.map((h, i) => (
               <Fragment key={h.id}>
@@ -2924,11 +2924,34 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   const deleteAccion = (accId) => setAcciones((prev) => prev.filter((a) => a.id !== accId));
   const reprogramar = (nuevaFecha) => { if (primary) updateAccion(primary.id, { fechaProgramada: nuevaFecha }); setShowReprogramar(false); };
 
+  const nombreLine = !esTarea && personasDelHilo.length > 0 ? (
+    <p className="text-base font-extrabold text-[#2A2118] truncate">
+      {personasDelHilo.map((p, i) => (
+        <span key={p.id}>
+          {i > 0 && ", "}
+          <button onClick={() => onOpen("persona", p.id)} className="hover:underline underline-offset-2">{p.nombre}</button>
+        </span>
+      ))}
+    </p>
+  ) : (
+    <p className="text-base font-extrabold text-[#2A2118] truncate" title={nombrePrincipal}>{nombrePrincipal}</p>
+  );
+
   const empresasObrasLine = (empresas.length > 0 || obras.length > 0) && (
-    <p className="text-sm mt-0.5 truncate" title={[empresas.map((e) => e.denominacion).join(", "), obras.map((o) => o.nombre).join(", ")].filter(Boolean).join(" · ")}>
-      {empresas.length > 0 && <span className="font-bold text-[#2A2118]">{empresas.map((e) => e.denominacion).join(", ")}</span>}
+    <p className="text-sm mt-0.5 truncate">
+      {empresas.map((e, i) => (
+        <span key={e.id}>
+          {i > 0 && ", "}
+          <button onClick={() => onOpen("empresa", e.id)} className="font-bold text-[#2A2118] hover:underline underline-offset-2">{e.denominacion}</button>
+        </span>
+      ))}
       {empresas.length > 0 && obras.length > 0 && <span className="text-[#8A8272]"> · </span>}
-      {obras.length > 0 && <span className="text-[#6B6352]">{obras.map((o) => o.nombre).join(", ")}</span>}
+      {obras.map((o, i) => (
+        <span key={o.id}>
+          {i > 0 && ", "}
+          <button onClick={() => onOpen("obra", o.id)} className="text-[#6B6352] hover:underline underline-offset-2">{o.nombre}</button>
+        </span>
+      ))}
     </p>
   );
 
@@ -2943,20 +2966,13 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
         >
           {esTarea ? <ListChecks size={15} /> : getIniciales(nombrePrincipal)}
         </div>
-        {esTarea || !persona ? (
-          <div className="min-w-0 flex-1 flex items-start gap-1">
-            <div className="min-w-0 flex-1">
-              <p className="text-base font-extrabold text-[#2A2118] truncate" title={nombrePrincipal}>{nombrePrincipal}</p>
-              {empresasObrasLine}
-            </div>
-            {esTarea && <IconBtn label="Editar título" onClick={() => setShowEditarTitulo(true)}><Pencil size={13} /></IconBtn>}
-          </div>
-        ) : (
-          <button onClick={() => onOpen("persona", persona.id)} className="text-left min-w-0 flex-1">
-            <p className="text-base font-extrabold text-[#2A2118] truncate" title={nombrePrincipal}>{nombrePrincipal}</p>
+        <div className="min-w-0 flex-1 flex items-start gap-1">
+          <div className="min-w-0 flex-1">
+            {nombreLine}
             {empresasObrasLine}
-          </button>
-        )}
+          </div>
+          {esTarea && <IconBtn label="Editar título" onClick={() => setShowEditarTitulo(true)}><Pencil size={13} /></IconBtn>}
+        </div>
         {persona && <WhatsAppLink persona={persona} size={15} />}
         {hilo.estado === "Cerrado" && <Chip tone="neutral">{hilo.estado}</Chip>}
         {onIniciarDrag && (
@@ -2976,7 +2992,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       {!esTarea && (
         <div className="mt-2 pt-2 border-t border-dashed border-[#E4DECF]">
           <div className="flex items-center justify-between gap-2">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-[#A69C88] mb-0.5">Tema del hilo</p>
+            <p className="text-[10px] font-bold tracking-wide text-[#A69C88] mb-0.5">Tema del hilo</p>
             <IconBtn label="Editar título" onClick={() => setShowEditarTitulo(true)}><Pencil size={12} /></IconBtn>
           </div>
           <p className="text-base font-extrabold text-[#2A2118]">{hilo.titulo}</p>
@@ -2988,14 +3004,22 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       )}
 
       {/* Bloque 3: actividad programada */}
-      {primary?.notaPlanificada && (
-        <p className="text-xs font-bold text-[#2A2118] mt-2 pl-2.5" style={{ borderLeft: `10px solid ${colorBorde}` }}>{primary.notaPlanificada}</p>
+      {primary && (
+        <div className="flex items-start justify-between gap-2 mt-2">
+          {primary.notaPlanificada ? (
+            <p className="text-xs font-bold text-[#2A2118] pl-2.5 flex-1 min-w-0" style={{ borderLeft: `10px solid ${colorBorde}` }}>{primary.notaPlanificada}</p>
+          ) : <span />}
+          <div className="flex items-center gap-0.5 shrink-0">
+            <IconBtn label="Editar acción" onClick={() => setEditingAccion(primary)}><Pencil size={16} /></IconBtn>
+            <IconBtn label="Eliminar acción" danger onClick={() => setDeletingAccionId(primary.id)}><Trash2 size={16} /></IconBtn>
+          </div>
+        </div>
       )}
 
       {primary && <VerContextoOrigen accion={primary} acciones={accionesDelHilo} />}
 
       {bucket.length > 1 && (
-        <p className="text-[10px] text-[#B0452E] font-bold uppercase tracking-wide mt-1.5">⚠ Este hilo tiene {bucket.length} acciones pendientes a la vez — revisalo, no debería pasar.</p>
+        <p className="text-[10px] text-[#B0452E] font-bold tracking-wide mt-1.5">⚠ Este hilo tiene {bucket.length} acciones pendientes a la vez — revisalo, no debería pasar.</p>
       )}
 
       <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-dashed border-[#E4DECF] flex-nowrap">
@@ -3035,10 +3059,8 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       )}
       <div className="flex items-center gap-2 mt-2 flex-wrap">
         <PrimaryBtn core={core} onClick={() => setShowAvanzar(true)}>{primary ? "Avanzar hilo" : "Avanzar este hilo"}</PrimaryBtn>
-        {primary && <IconBtn label="Editar acción" onClick={() => setEditingAccion(primary)}><Pencil size={16} /></IconBtn>}
-        {primary && <IconBtn label="Eliminar acción" danger onClick={() => setDeletingAccionId(primary.id)}><Trash2 size={16} /></IconBtn>}
         {!primary && esTarea && (
-          <button onClick={() => setShowFechaTarea(true)} className="text-xs font-bold uppercase tracking-wide px-2.5 py-2 rounded-sm bg-[#E7E2D8] text-[#6B6352]">Poner fecha y hora</button>
+          <button onClick={() => setShowFechaTarea(true)} className="text-xs font-bold tracking-wide px-2.5 py-2 rounded-sm bg-[#E7E2D8] text-[#6B6352]">Poner fecha y hora</button>
         )}
       </div>
 
@@ -3046,7 +3068,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
 
       {/* Vínculos */}
       <div className="mt-2 pt-2 border-t border-dashed border-[#E4DECF]">
-        <button onClick={() => setVerVinculos((v) => !v)} className="text-[10px] font-bold uppercase tracking-wide text-[#B0452E] flex items-center gap-0.5">
+        <button onClick={() => setVerVinculos((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
           {verVinculos ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verVinculos ? "Ocultar vínculos" : "Ver vínculos"}
         </button>
         {verVinculos && (
@@ -3054,7 +3076,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
             {esTarea && (
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#8A8272]">Hilo</p>
+                  <p className="text-[10px] font-bold tracking-wide text-[#8A8272]">Hilo</p>
                   {!hiloRelacionado && <button onClick={() => setShowVincularCliente(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>}
                 </div>
                 {hiloRelacionado ? (
@@ -3073,8 +3095,8 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
             {!esTarea && (
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#8A8272]">Tareas</p>
-                  <button onClick={() => setShowAgregarTarea(true)} className="text-xs font-bold text-[#B0452E]">+ Agregar</button>
+                  <p className="text-[10px] font-bold tracking-wide text-[#8A8272]">Tareas</p>
+                  <button onClick={() => setShowAgregarTarea(true)} className="text-xs font-bold text-[#B0452E]">+ Agregar tarea</button>
                 </div>
                 {tareasVinculadas.length === 0 ? (
                   <p className="text-sm text-[#A69C88]">Sin tareas vinculadas.</p>
@@ -3099,7 +3121,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
 
       {/* Resumen en dos niveles: fecha + acciones, y detalle completo de cada acción */}
       <div className="mt-2 pt-2 border-t border-dashed border-[#E4DECF]">
-        <button onClick={() => { setVerResumen((v) => !v); setVerDetalle(false); }} className="text-[10px] font-bold uppercase tracking-wide text-[#B0452E] flex items-center gap-0.5">
+        <button onClick={() => { setVerResumen((v) => !v); setVerDetalle(false); }} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
           {verResumen ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verResumen ? "Ocultar resumen" : "Ver resumen"}
         </button>
         {verResumen && (
@@ -3122,8 +3144,8 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
                     ))}
                   </div>
                 )}
-                <button onClick={() => setVerDetalle((v) => !v)} className="text-[10px] font-bold uppercase tracking-wide text-[#B0452E] flex items-center gap-0.5 mt-2">
-                  {verDetalle ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verDetalle ? "Ocultar detalle" : "Ver detalle"}
+                <button onClick={() => setVerDetalle((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5 mt-2">
+                  {verDetalle ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verDetalle ? "Ocultar resumen detallado" : "Ver resumen detallado"}
                 </button>
               </>
             )}
@@ -3653,7 +3675,7 @@ function VinculosDeFicha({ core, setCore, entidadTipo, entidadId, onOpen }) {
 
   return (
     <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-      <button onClick={() => setVerVinculos((v) => !v)} className="text-[10px] font-bold uppercase tracking-wide text-[#B0452E] flex items-center gap-0.5">
+      <button onClick={() => setVerVinculos((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
         {verVinculos ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verVinculos ? "Ocultar vínculos" : "Ver vínculos"}
       </button>
       {verVinculos && (
@@ -3788,7 +3810,7 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
       </div>
 
       <div className="flex items-center justify-between mb-2">
-        <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Hilos de seguimiento</p>
+        <p className="text-[11px] font-bold tracking-wide text-[#6B6352]">Hilos de seguimiento</p>
         <button onClick={() => setShowNuevoHilo(true)} className="text-xs font-bold text-[#B0452E] flex items-center gap-1"><Plus size={12} /> Nuevo hilo</button>
       </div>
 
@@ -3802,7 +3824,7 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
 
       {hilosCerrados.length > 0 && (
         <div className="mt-3">
-          <button onClick={() => setVerCerrados((v) => !v)} className="text-[10px] font-bold uppercase tracking-wide text-[#B0452E] flex items-center gap-0.5">
+          <button onClick={() => setVerCerrados((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
             {verCerrados ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verCerrados ? "Ocultar" : "Ver"} hilos cerrados ({hilosCerrados.length})
           </button>
           {verCerrados && (
@@ -3866,7 +3888,7 @@ function VerContextoOrigen({ accion, acciones }) {
   const origen = accion.origenId ? (acciones || []).find((a) => a.id === accion.origenId) : null;
   return (
     <div className="mt-1.5">
-      <button onClick={() => setVer((v) => !v)} className="text-[10px] font-bold uppercase tracking-wide text-[#B0452E] flex items-center gap-0.5">
+      <button onClick={() => setVer((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
         {ver ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {ver ? "Ocultar contexto" : "Ver contexto"}
       </button>
       {ver && (
@@ -3903,7 +3925,7 @@ function AccionCard({ accion, acciones, core, onEdit, onDelete }) {
       <div className="flex items-center gap-2 mt-1.5">
         {accion.prioridad && <Chip tone={prioTone}>{accion.prioridad}</Chip>}
         {accion.recurrente && <span className="text-[10px] text-[#8A8272] flex items-center gap-1"><Repeat size={11} /> cada {accion.repiteCadaN} {accion.repiteUnidad}</span>}
-        <button onClick={() => setVerContexto((v) => !v)} className="text-[10px] font-bold uppercase tracking-wide text-[#B0452E] flex items-center gap-0.5 ml-auto">
+        <button onClick={() => setVerContexto((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5 ml-auto">
           {verContexto ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verContexto ? "Ocultar contexto" : "Ver contexto"}
         </button>
       </div>
@@ -4142,7 +4164,7 @@ function VinculosDeHilo({ hilo, hiloId, core, setCore, onOpen, agregarPersona, s
         <div className="space-y-2.5">
           {grupos.map(({ def, items }) => (
             <div key={def.tipo}>
-              <p className="text-[10px] font-bold uppercase tracking-wide text-[#A69C88] mb-1">{def.plural}</p>
+              <p className="text-[10px] font-bold tracking-wide text-[#A69C88] mb-1">{def.plural}</p>
               <div className="space-y-1">
                 {def.tipo === "Persona"
                   ? [...items].sort((a, b) => (b.v.principal ? 1 : 0) - (a.v.principal ? 1 : 0)).map(({ v, item }) => (
@@ -4171,7 +4193,7 @@ function VinculosDeHilo({ hilo, hiloId, core, setCore, onOpen, agregarPersona, s
       )}
       {participantesInactivos.length > 0 && (
         <div className="mt-2">
-          <button onClick={() => setVerHistorialPersonas((v) => !v)} className="text-[10px] font-bold uppercase tracking-wide text-[#B0452E] flex items-center gap-0.5">
+          <button onClick={() => setVerHistorialPersonas((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
             {verHistorialPersonas ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verHistorialPersonas ? "Ocultar historial de interlocutores" : "Ver historial de interlocutores"} ({participantesInactivos.length})
           </button>
           {verHistorialPersonas && (
@@ -4364,7 +4386,7 @@ function AvanzarHiloForm({ hilo, pendienteActual, core, setCore, acciones, setAc
 
   return (
     <Modal title={`${esTarea ? "Avanzar tarea" : "Avanzar hilo"} — ${hilo.titulo}`} onClose={onClose}>
-      <p className="text-[11px] font-bold uppercase tracking-wide text-[#B0452E] mb-2">{pendienteActual ? "Lo que acabás de hacer" : "Registrar contacto"}</p>
+      <p className="text-[11px] font-bold tracking-wide text-[#B0452E] mb-2">{pendienteActual ? "Lo que acabás de hacer" : "Registrar contacto"}</p>
       {!esTarea && (
         <SelectConCrear
           label="Tipo de acción"
@@ -4793,7 +4815,7 @@ function EmpresaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
 
       {esNueva && (
         <div className="border-t border-[#E4DECF] my-3 pt-3">
-          <p className="text-[11px] font-bold uppercase tracking-wide text-[#B0452E] mb-2">Persona que la representa</p>
+          <p className="text-[11px] font-bold tracking-wide text-[#B0452E] mb-2">Persona que la representa</p>
           <div className="flex gap-1.5 mb-2">
             <button type="button" onClick={() => setPersonaModo("existente")} style={{ backgroundColor: personaModo === "existente" ? "#2A2F36" : "#E7E2D8", color: personaModo === "existente" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-2 rounded-sm text-xs font-bold">Existente</button>
             <button type="button" onClick={() => setPersonaModo("adefinir")} style={{ backgroundColor: personaModo === "adefinir" ? "#2A2F36" : "#E7E2D8", color: personaModo === "adefinir" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-2 rounded-sm text-xs font-bold">A definir</button>
@@ -5045,7 +5067,7 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
         {subsidiarias.length > 0 && (
           <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
             <div className="flex items-center justify-between mb-2">
-              <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352] flex items-center gap-1"><Layers size={12} /> Empresas del grupo</p>
+              <p className="text-[11px] font-bold tracking-wide text-[#6B6352] flex items-center gap-1"><Layers size={12} /> Empresas del grupo</p>
               <button
                 onClick={() => setVerGrupo((v) => !v)}
                 style={verGrupo ? { backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) } : { backgroundColor: "#E7E2D8", color: "#6B6352" }}
@@ -5064,7 +5086,7 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
 
         <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">{verGrupo && subsidiarias.length > 0 ? "Hilos del grupo" : "Hilos de esta empresa"}</p>
+            <p className="text-[11px] font-bold tracking-wide text-[#6B6352]">{verGrupo && subsidiarias.length > 0 ? "Hilos del grupo" : "Hilos de esta empresa"}</p>
             <button onClick={() => setShowNuevoHiloEmpresa(true)} className="text-xs font-bold text-[#B0452E]">+ Nuevo hilo</button>
           </div>
           {hilosDeEstaEmpresa.length === 0 ? (
@@ -5213,7 +5235,7 @@ function ObraForm({ initial, core, setCore, onSave, onDelete, onClose }) {
 
       {esNueva && (
         <div className="border-t border-[#E4DECF] my-3 pt-3">
-          <p className="text-[11px] font-bold uppercase tracking-wide text-[#B0452E] mb-2">Empresa a la que pertenece</p>
+          <p className="text-[11px] font-bold tracking-wide text-[#B0452E] mb-2">Empresa a la que pertenece</p>
           <div className="flex gap-1.5 mb-2">
             <button type="button" onClick={() => setEmpresaModo("existente")} style={{ backgroundColor: empresaModo === "existente" ? "#2A2F36" : "#E7E2D8", color: empresaModo === "existente" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-2 rounded-sm text-xs font-bold">Existente</button>
             <button type="button" onClick={() => setEmpresaModo("adefinir")} style={{ backgroundColor: empresaModo === "adefinir" ? "#2A2F36" : "#E7E2D8", color: empresaModo === "adefinir" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-2 rounded-sm text-xs font-bold">A definir</button>
@@ -5301,7 +5323,7 @@ function ObraDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
 
         <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Hilos de esta obra</p>
+            <p className="text-[11px] font-bold tracking-wide text-[#6B6352]">Hilos de esta obra</p>
             <button onClick={() => setShowNuevoHiloObra(true)} className="text-xs font-bold text-[#B0452E]">+ Nuevo hilo</button>
           </div>
           {hilosDeEstaObra.length === 0 ? (
@@ -5391,7 +5413,7 @@ function BuscarView({ core, search, setSearch, onOpen }) {
 function ResultGroup({ title, items, onOpen }) {
   return (
     <div>
-      <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352] mb-1.5">{title}</p>
+      <p className="text-[11px] font-bold tracking-wide text-[#6B6352] mb-1.5">{title}</p>
       <div className="space-y-1.5">
         {items.map((it) => (
           <div key={it.id} className="w-full bg-white border border-[#E4DECF] rounded-sm p-2.5 text-sm flex items-center gap-2">
@@ -5439,14 +5461,14 @@ function InformesView({ core, acciones }) {
         <button
           onClick={() => setSubVista("tablero")}
           style={subVista === "tablero" ? { backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) } : { backgroundColor: core.tema.tarjeta, color: core.tema.mutedBase }}
-          className="flex-1 flex items-center justify-center gap-1.5 text-xs font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-sm border border-[#E4DECF]"
+          className="flex-1 flex items-center justify-center gap-1.5 text-xs font-bold tracking-wide px-2.5 py-1.5 rounded-sm border border-[#E4DECF]"
         >
           <BarChart3 size={13} /> Tablero de control
         </button>
         <button
           onClick={() => setSubVista("informes")}
           style={subVista === "informes" ? { backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) } : { backgroundColor: core.tema.tarjeta, color: core.tema.mutedBase }}
-          className="flex-1 flex items-center justify-center gap-1.5 text-xs font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-sm border border-[#E4DECF]"
+          className="flex-1 flex items-center justify-center gap-1.5 text-xs font-bold tracking-wide px-2.5 py-1.5 rounded-sm border border-[#E4DECF]"
         >
           <FileSpreadsheet size={13} /> Informes
         </button>
@@ -5461,7 +5483,7 @@ function IndicadorCard({ label, value, tone = "neutral" }) {
   const tones = { neutral: "#2A2118", red: "#B0452E", green: "#3F6B4A", amber: "#E8871E" };
   return (
     <div className="bg-white border border-[#E4DECF] rounded-sm p-3">
-      <p className="text-[10px] font-bold uppercase tracking-wide text-[#8A8272] mb-1">{label}</p>
+      <p className="text-[10px] font-bold tracking-wide text-[#8A8272] mb-1">{label}</p>
       <p className="text-2xl font-extrabold" style={{ color: tones[tone] }}>{value}</p>
     </div>
   );
@@ -5517,7 +5539,7 @@ function ReportesView({ core, acciones }) {
             key={key}
             onClick={() => setInforme(key)}
             style={informe === key ? { backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) } : { backgroundColor: core.tema.tarjeta, color: core.tema.mutedBase }}
-            className="shrink-0 text-xs font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-sm border border-[#E4DECF]"
+            className="shrink-0 text-xs font-bold tracking-wide px-2.5 py-1.5 rounded-sm border border-[#E4DECF]"
           >
             {label}
           </button>
@@ -5564,7 +5586,7 @@ function ReportTable({ headers, rows, onExportar, emptyText }) {
   return (
     <div>
       <div className="flex justify-end mb-2">
-        <button onClick={onExportar} disabled={rows.length === 0} style={rows.length === 0 ? { backgroundColor: "#E7E2D8", color: "#A69C88", cursor: "not-allowed" } : { backgroundColor: "#3F6B4A", color: "#FFFFFF" }} className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-sm">
+        <button onClick={onExportar} disabled={rows.length === 0} style={rows.length === 0 ? { backgroundColor: "#E7E2D8", color: "#A69C88", cursor: "not-allowed" } : { backgroundColor: "#3F6B4A", color: "#FFFFFF" }} className="flex items-center gap-1.5 text-xs font-bold tracking-wide px-2.5 py-1.5 rounded-sm">
           <Download size={13} /> Exportar a Excel
         </button>
       </div>
@@ -5575,7 +5597,7 @@ function ReportTable({ headers, rows, onExportar, emptyText }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-[#EFEBE0]">
-                {headers.map((h) => <th key={h} className="text-left px-2.5 py-2 text-[10px] font-bold uppercase tracking-wide text-[#6B6352] whitespace-nowrap">{h}</th>)}
+                {headers.map((h) => <th key={h} className="text-left px-2.5 py-2 text-[10px] font-bold tracking-wide text-[#6B6352] whitespace-nowrap">{h}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -6117,7 +6139,7 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
             key={k}
             onClick={() => setSection(k)}
             style={section === k ? { backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) } : { backgroundColor: core.tema.tarjeta, color: core.tema.mutedBase }}
-            className="text-xs font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-sm border border-[#E4DECF]"
+            className="text-xs font-bold tracking-wide px-2.5 py-1.5 rounded-sm border border-[#E4DECF]"
           >{l}</button>
         ))}
       </div>
@@ -6151,7 +6173,7 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
           </div>
 
           <div className="bg-white border border-[#E4DECF] rounded-sm p-4">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352] mb-2">Colores de urgencia en Seguimientos</p>
+            <p className="text-[11px] font-bold tracking-wide text-[#6B6352] mb-2">Colores de urgencia en Seguimientos</p>
             <div className="flex items-center gap-2 mb-2 text-sm">
               <span className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: "#B0452E" }} /> Vencida
             </div>
@@ -6168,7 +6190,7 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
           </div>
 
           <div className="bg-white border border-[#E4DECF] rounded-sm p-4">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352] mb-2">Días hábiles</p>
+            <p className="text-[11px] font-bold tracking-wide text-[#6B6352] mb-2">Días hábiles</p>
             <div className="grid grid-cols-7 gap-1">
               {[["Lu", 1], ["Ma", 2], ["Mi", 3], ["Ju", 4], ["Vi", 5], ["Sá", 6], ["Do", 0]].map(([label, num]) => {
                 const activo = (core.parametros.diasHabiles || []).includes(num);
@@ -6188,7 +6210,7 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
           </div>
 
           <div className="bg-white border border-[#E4DECF] rounded-sm p-4">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352] mb-2">Fechas puntuales no hábiles</p>
+            <p className="text-[11px] font-bold tracking-wide text-[#6B6352] mb-2">Fechas puntuales no hábiles</p>
             <div className="flex gap-2 mb-3">
               <input type="date" className={inputCls} value={nuevaFechaNoHabil} onChange={(e) => setNuevaFechaNoHabil(e.target.value)} />
               <button onClick={agregarFechaNoHabil} className="shrink-0 bg-[#E8871E] text-[#2A2118] rounded-sm px-3 font-bold"><Plus size={16} /></button>
@@ -6212,7 +6234,7 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
       {section === "apariencia" && (
         <div className="space-y-3">
           <div className="bg-white border border-[#E4DECF] rounded-sm p-4">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352] mb-3">Paletas</p>
+            <p className="text-[11px] font-bold tracking-wide text-[#6B6352] mb-3">Paletas</p>
             <div className="space-y-2">
               {PALETAS.map((p) => (
                 <button
@@ -6233,7 +6255,7 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
           </div>
 
           <div className="bg-white border border-[#E4DECF] rounded-sm p-4">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352] mb-3">Botones</p>
+            <p className="text-[11px] font-bold tracking-wide text-[#6B6352] mb-3">Botones</p>
             <div className="flex items-center justify-between mb-3">
               <label className="text-sm text-[#2A2118]">Botón activo (seleccionado)</label>
               <input type="color" value={core.tema.botonActivo} onChange={(e) => setTemaColor("botonActivo", e.target.value)} className="w-10 h-8 rounded-sm border border-[#E4DECF] cursor-pointer" />
@@ -6245,13 +6267,13 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
             <div className="flex gap-2 mt-3">
               <button
                 style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}
-                className="flex-1 py-2 rounded-sm text-xs font-bold uppercase tracking-wide"
+                className="flex-1 py-2 rounded-sm text-xs font-bold tracking-wide"
               >
                 Vista previa activo
               </button>
               <button
                 style={{ backgroundColor: core.tema.botonInactivo, color: core.tema.ink }}
-                className="flex-1 py-2 rounded-sm text-xs font-bold uppercase tracking-wide"
+                className="flex-1 py-2 rounded-sm text-xs font-bold tracking-wide"
               >
                 Vista previa inactivo
               </button>
@@ -6259,7 +6281,7 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
           </div>
 
           <div className="bg-white border border-[#E4DECF] rounded-sm p-4">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352] mb-3">Fondo y tarjetas</p>
+            <p className="text-[11px] font-bold tracking-wide text-[#6B6352] mb-3">Fondo y tarjetas</p>
             <div className="flex items-center justify-between mb-3">
               <label className="text-sm text-[#2A2118]">Fondo de la página</label>
               <input type="color" value={core.tema.fondo} onChange={(e) => setTemaColor("fondo", e.target.value)} className="w-10 h-8 rounded-sm border border-[#E4DECF] cursor-pointer" />
@@ -6271,7 +6293,7 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
           </div>
 
           <div className="bg-white border border-[#E4DECF] rounded-sm p-4">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352] mb-3">Texto</p>
+            <p className="text-[11px] font-bold tracking-wide text-[#6B6352] mb-3">Texto</p>
             <div className="flex items-center justify-between mb-3">
               <label className="text-sm text-[#2A2118]">Texto principal</label>
               <input type="color" value={core.tema.ink} onChange={(e) => setTemaColor("ink", e.target.value)} className="w-10 h-8 rounded-sm border border-[#E4DECF] cursor-pointer" />
@@ -6283,35 +6305,35 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
           </div>
 
           <div className="bg-white border border-[#E4DECF] rounded-sm p-4">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352] mb-3">Líneas</p>
+            <p className="text-[11px] font-bold tracking-wide text-[#6B6352] mb-3">Líneas</p>
             <div className="flex items-center justify-between">
               <label className="text-sm text-[#2A2118]">Color de bordes y separadores</label>
               <input type="color" value={core.tema.linea} onChange={(e) => setTemaColor("linea", e.target.value)} className="w-10 h-8 rounded-sm border border-[#E4DECF] cursor-pointer" />
             </div>
           </div>
 
-          <button onClick={restablecerTema} className="text-xs font-bold uppercase tracking-wide text-[#B0452E]">Restablecer colores originales</button>
+          <button onClick={restablecerTema} className="text-xs font-bold tracking-wide text-[#B0452E]">Restablecer colores originales</button>
 
           <p className="text-xs text-[#A69C88]">Esto cambia el fondo, el texto, los botones principales, las tarjetas y las líneas divisorias en toda la app. Los bordes de urgencia de Seguimientos (rojo/amarillo/verde) y los colores de prioridad no se ven afectados — esos siguen su propia lógica.</p>
         </div>
       )}
 
       <div className="mt-6 pt-4 border-t border-[#E4DECF]">
-        <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352] mb-2">Datos de prueba</p>
-        <button onClick={generarDatosPrueba} className="text-xs font-bold uppercase tracking-wide text-[#3F6B4A] flex items-center gap-1.5">
+        <p className="text-[11px] font-bold tracking-wide text-[#6B6352] mb-2">Datos de prueba</p>
+        <button onClick={generarDatosPrueba} className="text-xs font-bold tracking-wide text-[#3F6B4A] flex items-center gap-1.5">
           <Plus size={13} /> Generar datos de prueba
         </button>
         {avisoDatosPrueba && <p className="text-xs font-bold text-[#3F6B4A] mt-1">Datos de prueba generados ✓</p>}
         <p className="text-xs text-[#A69C88] mt-1 mb-3">Crea 3 personas, 3 empresas y 3 obras de prueba (vinculadas entre sí de a pares). Si ya existen, no las duplica.</p>
 
-        <button onClick={() => setConfirmBorrarMovimientosPrueba(true)} className="text-xs font-bold uppercase tracking-wide text-[#B0452E] flex items-center gap-1.5">
+        <button onClick={() => setConfirmBorrarMovimientosPrueba(true)} className="text-xs font-bold tracking-wide text-[#B0452E] flex items-center gap-1.5">
           <Trash2 size={13} /> Borrar movimientos de prueba
         </button>
         <p className="text-xs text-[#A69C88] mt-1">Borra los seguimientos, tareas y acciones vinculados a personas, empresas u obras cuyo nombre empieza con "Persona/Empresa/Obra Prueba". No borra esas personas, empresas ni obras — eso lo hacés vos desde cada ABM.</p>
       </div>
 
       <div className="mt-6 pt-4 border-t border-[#E4DECF]">
-        <button onClick={() => setConfirmVaciar(true)} className="text-xs font-bold uppercase tracking-wide text-[#B0452E] flex items-center gap-1.5">
+        <button onClick={() => setConfirmVaciar(true)} className="text-xs font-bold tracking-wide text-[#B0452E] flex items-center gap-1.5">
           <AlertTriangle size={13} /> Vaciar todos los datos cargados
         </button>
         <p className="text-xs text-[#A69C88] mt-1">Borra personas, empresas, obras, seguimientos, tareas, vínculos y acciones. No toca etiquetas, categorías, tipos de relación, tipos de acción ni la apariencia.</p>
