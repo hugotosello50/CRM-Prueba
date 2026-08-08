@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.4.0";
+const APP_VERSION = "2.5.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -1334,7 +1334,7 @@ function DetailRouter({ detail, core, setCore, acciones, setAcciones, onClose, o
   if (detail.type === "persona") return <PersonaDetail id={detail.id} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onClose={onClose} onOpen={onOpen} />;
   if (detail.type === "empresa") return <EmpresaDetail id={detail.id} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onClose={onClose} onOpen={onOpen} />;
   if (detail.type === "obra") return <ObraDetail id={detail.id} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onClose={onClose} onOpen={onOpen} />;
-  if (detail.type === "hilo") return <HiloDetail id={detail.id} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onClose={onClose} onOpen={onOpen} />;
+  if (detail.type === "hilo") return <HiloScreen id={detail.id} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onClose={onClose} onOpen={onOpen} />;
   return null;
 }
 
@@ -1352,13 +1352,9 @@ function BackHeader({ title, onClose }) {
 function AgendaView({ core, setCore, acciones, setAcciones, onOpen }) {
   const t = todayISO();
 
-  const reprogramar = (id, nuevaFecha) => {
-    setAcciones((prev) => prev.map((a) => (a.id === id ? { ...a, fechaProgramada: nuevaFecha } : a)));
-  };
-
   return (
     <div>
-      <KanbanView core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onOpen={onOpen} onReprogramar={reprogramar} t={t} soloTipo="cliente" />
+      <KanbanView core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onOpen={onOpen} t={t} soloTipo="cliente" />
     </div>
   );
 }
@@ -2292,10 +2288,6 @@ function CalendarioView({ core, setCore, acciones, setAcciones, onOpen, t }) {
   const pendientesDelDia = diaSeleccionado ? pendientes.filter((a) => a.fechaProgramada === diaSeleccionado) : [];
   const gruposDelDia = useMemo(() => agruparPorHilo(pendientesDelDia), [pendientesDelDia]);
 
-  const reprogramar = (id, nuevaFecha) => {
-    setAcciones((prev) => prev.map((a) => (a.id === id ? { ...a, fechaProgramada: nuevaFecha } : a)));
-  };
-
   return (
     <div>
     <div className="sticky top-0 z-10 bg-[#F7F5F0]">
@@ -2392,7 +2384,6 @@ function CalendarioView({ core, setCore, acciones, setAcciones, onOpen, t }) {
                     acciones={acciones}
                     setAcciones={setAcciones}
                     onOpen={onOpen}
-                    onReprogramar={reprogramar}
                     t={t}
                   />
                 </Fragment>
@@ -2582,7 +2573,7 @@ function ExcelTabsBar({ core, tabs, activeId, incluirSinTab, sinColumnaNombre, o
   );
 }
 
-function KanbanView({ core, setCore, acciones, setAcciones, onOpen, onReprogramar, t, soloTipo }) {
+function KanbanView({ core, setCore, acciones, setAcciones, onOpen, t, soloTipo }) {
   const [columnaActiva, setColumnaActiva] = useState(null); // null = "Sin columna"
   const [dragging, setDragging] = useState(null); // { grupo }
   const [hoverColumnaId, setHoverColumnaId] = useState(undefined); // undefined = nada, "null" = Sin columna, o id
@@ -2819,7 +2810,6 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, onReprograma
                 acciones={acciones}
                 setAcciones={setAcciones}
                 onOpen={onOpen}
-                onReprogramar={onReprogramar}
                 t={t}
                 onIniciarDrag={() => setDragging({ grupo })}
                 arrastrando={dragging?.grupo === grupo}
@@ -2837,7 +2827,7 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, onReprograma
             {hilosSinAccion.map((h, i) => (
               <Fragment key={h.id}>
                 {i > 0 && <div className="flex justify-center py-2"><span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: core.tema.botonActivo }} /></div>}
-                <HiloSinAccionCard hilo={h} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onOpen={onOpen} />
+                <HiloAgendaCard hilo={h} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onOpen={onOpen} />
               </Fragment>
             ))}
           </div>
@@ -2860,22 +2850,91 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, onReprograma
   );
 }
 
-function HiloSinAccionCard({ hilo, core, setCore, acciones, setAcciones, onOpen }) {
+function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, acciones, setAcciones, onOpen, t, onIniciarDrag, arrastrando, standalone }) {
   const [showAvanzar, setShowAvanzar] = useState(false);
+  const [showReprogramar, setShowReprogramar] = useState(false);
+  const [showEditarTitulo, setShowEditarTitulo] = useState(false);
+  const [showVincularCliente, setShowVincularCliente] = useState(false);
+  const [showAgregarTarea, setShowAgregarTarea] = useState(false);
+  const [showFechaTarea, setShowFechaTarea] = useState(false);
+  const [editingAccion, setEditingAccion] = useState(null);
+  const [deletingAccionId, setDeletingAccionId] = useState(null);
+  const [verVinculos, setVerVinculos] = useState(false);
+  const [verResumen, setVerResumen] = useState(false);
+  const [verDetalle, setVerDetalle] = useState(false);
+  const [confirmar, setConfirmar] = useState(null); // { texto, onConfirm }
+
+  const hilo = hiloProp || (accionesBucket ? core.hilos.find((h) => h.id === accionesBucket[0].hiloId) : null);
+  if (!hilo) return standalone ? <div><p className="text-sm text-[#8A8272]">Este hilo ya no existe.</p></div> : null;
+
+  const id = hilo.id;
   const esTarea = hilo.tipo === "tarea";
   const persona = personaPrincipalDeHilo(hilo, core);
   const personasDelHilo = personasActivasDeHilo(hilo, core);
   const empresas = empresasDeHilo(hilo, core);
   const obras = obrasDeHilo(hilo, core);
-  const accionesDelHilo = acciones.filter((a) => a.hiloId === hilo.id);
-  const historialCompleto = accionesDelHilo.filter((a) => a.estado === "Realizada").sort(compararRecientePrimero);
-  const ultimaNota = historialCompleto[0]?.notaHecho;
-  const tareasVinculadas = core.hilos.filter((h) => h.tipo === "tarea" && h.hiloRelacionadoId === hilo.id).length;
+  const accionesDelHilo = acciones.filter((a) => a.hiloId === id);
+  const bucket = accionesBucket || accionesDelHilo.filter((a) => a.estado === "Pendiente");
+  const primary = bucket[0] || null;
+  const tipoPrimary = primary ? core.tiposAccion.find((tt) => tt.id === primary.tipoAccionId) : null;
+  const prioTone = primary?.prioridad === "Alta" ? "red" : primary?.prioridad === "Media" ? "amber" : "neutral";
+  const historial = accionesDelHilo.filter((a) => a.estado === "Realizada").sort(compararRecientePrimero);
+  const hiloRelacionado = hilo.hiloRelacionadoId ? core.hilos.find((h) => h.id === hilo.hiloRelacionadoId) : null;
+  const tareasVinculadas = core.hilos.filter((h) => h.tipo === "tarea" && h.hiloRelacionadoId === id);
+
+  // el color de la solapa refleja la más urgente de todas las pendientes de este bucket
+  const hoy = t || todayISO();
+  const masUrgente = primary ? bucket.reduce((min, a) => (a.fechaProgramada < min.fechaProgramada ? a : min), primary) : null;
+  const diasFaltantes = masUrgente ? diasEntre(hoy, masUrgente.fechaProgramada) : null;
+  const diasUrgente = core.parametros.diasUrgente ?? 3;
+  const colorBorde = !masUrgente ? "#C9C1AE" : diasFaltantes < 0 ? "#B0452E" : diasFaltantes <= diasUrgente ? "#E8871E" : "#3F6B4A";
   const nombrePrincipal = esTarea ? hilo.titulo : (personasDelHilo.length > 0 ? personasDelHilo.map((p) => p.nombre).join(", ") : etiquetaVinculoHilo(hilo, core));
 
+  const desvincularTarea = (tareaId) => setCore((prev) => ({
+    ...prev,
+    hilos: prev.hilos.map((h) => (h.id === tareaId ? { ...h, hiloRelacionadoId: null } : h)),
+  }));
+  // Agrega la persona al hilo y, si tiene empresas vinculadas, arrastra también esas
+  // empresas y las obras de esas empresas (además de las obras vinculadas directamente
+  // a la persona) — mismo criterio que al crear un hilo desde una persona.
+  const agregarPersona = (personaId, comoPrincipal) => setCore((prev) => {
+    const hiloActual = prev.hilos.find((h) => h.id === id);
+    if (!hiloActual) return prev;
+    const activos = participantesActivos(hiloActual, prev);
+    const yaActivo = activos.some((p) => p.personaId === personaId);
+    let vinculos = [...(prev.vinculos || [])];
+    if (!yaActivo) {
+      const seraPrincipal = comoPrincipal || activos.length === 0;
+      if (seraPrincipal) vinculos = vinculos.map((v) => (esParticipanteActivoDeHilo(v, id) ? { ...v, principal: false } : v));
+      vinculos.push(vinc("Persona", personaId, "Hilo", id, null, seraPrincipal, todayISO()));
+    }
+    const empresasDeEsaPersona = empresaIdsDePersona(prev, personaId);
+    const yaEmpresas = new Set(contrapartesDe(prev, "Hilo", id, "Empresa", true).map(({ c }) => c.id));
+    const nuevasEmpresas = empresasDeEsaPersona.filter((eid) => !yaEmpresas.has(eid));
+    for (const eid of nuevasEmpresas) vinculos.push(vinc("Hilo", id, "Empresa", eid, null, false, todayISO()));
+    const empresasParaObras = [...yaEmpresas, ...nuevasEmpresas];
+    const obrasDirectas = obraIdsDirectasDePersona(prev, personaId);
+    const obrasDeEmpresas = empresasParaObras.flatMap((eid) => obraIdsDeEmpresa(prev, eid));
+    const yaObras = new Set(contrapartesDe(prev, "Hilo", id, "Obra", true).map(({ c }) => c.id));
+    const nuevasObras = [...new Set([...obrasDirectas, ...obrasDeEmpresas])].filter((oid) => !yaObras.has(oid));
+    for (const oid of nuevasObras) vinculos.push(vinc("Hilo", id, "Obra", oid, null, false, todayISO()));
+    return { ...prev, vinculos };
+  });
+  const updateAccion = (accId, cambios) => setAcciones((prev) => prev.map((a) => (a.id === accId ? { ...a, ...cambios } : a)));
+  const deleteAccion = (accId) => setAcciones((prev) => prev.filter((a) => a.id !== accId));
+  const reprogramar = (nuevaFecha) => { if (primary) updateAccion(primary.id, { fechaProgramada: nuevaFecha }); setShowReprogramar(false); };
+
+  const empresasObrasLine = (empresas.length > 0 || obras.length > 0) && (
+    <p className="text-sm mt-0.5 truncate" title={[empresas.map((e) => e.denominacion).join(", "), obras.map((o) => o.nombre).join(", ")].filter(Boolean).join(" · ")}>
+      {empresas.length > 0 && <span className="font-bold text-[#2A2118]">{empresas.map((e) => e.denominacion).join(", ")}</span>}
+      {empresas.length > 0 && obras.length > 0 && <span className="text-[#8A8272]"> · </span>}
+      {obras.length > 0 && <span className="text-[#6B6352]">{obras.map((o) => o.nombre).join(", ")}</span>}
+    </p>
+  );
+
   return (
-    <div className="bg-white border border-[#E4DECF] rounded-sm p-3 relative">
-      <span className="absolute -top-px left-4 w-10 h-1.5" style={{ backgroundColor: "#C9C1AE", clipPath: "polygon(8% 0, 92% 0, 100% 100%, 0% 100%)" }} />
+    <div className="bg-white border border-[#E4DECF] rounded-sm p-3 relative" style={{ opacity: arrastrando ? 0.35 : 1 }}>
+      {/* Bloque 1: persona, empresa, obra */}
       <div className="flex items-start gap-2.5 min-w-0 mt-1">
         <CasillaFinalizar hilo={hilo} acciones={accionesDelHilo} setCore={setCore} size={18} />
         <div
@@ -2884,120 +2943,22 @@ function HiloSinAccionCard({ hilo, core, setCore, acciones, setAcciones, onOpen 
         >
           {esTarea ? <ListChecks size={15} /> : getIniciales(nombrePrincipal)}
         </div>
-        <button onClick={() => (esTarea || !persona ? onOpen("hilo", hilo.id) : onOpen("persona", persona.id))} className="text-left min-w-0 flex-1">
-          <p className="text-base font-extrabold text-[#2A2118] truncate" title={nombrePrincipal}>{nombrePrincipal}</p>
-          {(empresas.length > 0 || obras.length > 0) && (
-            <p className="text-sm mt-0.5 truncate" title={[empresas.map((e) => e.denominacion).join(", "), obras.map((o) => o.nombre).join(", ")].filter(Boolean).join(" · ")}>
-              {empresas.length > 0 && <span className="font-bold text-[#2A2118]">{empresas.map((e) => e.denominacion).join(", ")}</span>}
-              {empresas.length > 0 && obras.length > 0 && <span className="text-[#8A8272]"> · </span>}
-              {obras.length > 0 && <span className="text-[#6B6352]">{obras.map((o) => o.nombre).join(", ")}</span>}
-            </p>
-          )}
-        </button>
-        {persona && <WhatsAppLink persona={persona} size={15} />}
-      </div>
-
-      {!esTarea && (
-        <div className="mt-2 pt-2 border-t border-dashed border-[#E4DECF]">
-          <p className="text-[10px] font-bold uppercase tracking-wide text-[#A69C88] mb-0.5">Tema del hilo</p>
-          <p className="text-base font-extrabold text-[#2A2118]">{hilo.titulo}</p>
-        </div>
-      )}
-
-      {ultimaNota && (
-        <p className="text-xs text-[#6B6352] italic mt-2 pl-2.5 border-l-2 border-[#E4DECF]">"{ultimaNota}"</p>
-      )}
-      <div className="flex items-center gap-2 mt-2 pt-2 border-t border-dashed border-[#E4DECF] flex-wrap">
-        {tareasVinculadas > 0 && (
-          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#6B6352] bg-[#F7F5F0] border border-[#E4DECF] rounded-sm px-2 py-1">
-            <ListChecks size={11} /> {tareasVinculadas} tarea{tareasVinculadas === 1 ? "" : "s"}
-          </span>
-        )}
-        {personasDelHilo.length > 1 && (
-          <span className="flex items-center">
-            {personasDelHilo.map((p) => (
-              <span
-                key={p.id}
-                className="w-5 h-5 rounded-full bg-[#F1DFB9] text-[#5C3F18] text-[9px] font-extrabold flex items-center justify-center border-2 -ml-1.5 first:ml-0"
-                style={{ borderColor: core.tema.tarjeta }}
-              >
-                {getIniciales(p.nombre)}
-              </span>
-            ))}
-          </span>
-        )}
-      </div>
-      <div className="flex items-center gap-2 mt-2">
-        <PrimaryBtn core={core} onClick={() => setShowAvanzar(true)}>Avanzar hilo</PrimaryBtn>
-        <button onClick={() => onOpen("hilo", hilo.id)} className="rounded-sm px-3.5 py-2.5 font-bold text-sm border border-[#E4DECF] text-[#6B6352]">Ver completo</button>
-      </div>
-      {showAvanzar && (
-        <AvanzarHiloForm
-          hilo={hilo}
-          pendienteActual={null}
-          core={core}
-          setCore={setCore}
-          acciones={acciones}
-          setAcciones={setAcciones}
-          onClose={() => setShowAvanzar(false)}
-        />
-      )}
-    </div>
-  );
-}
-
-function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, onOpen, onReprogramar, t, onIniciarDrag, arrastrando }) {
-  const [showAvanzar, setShowAvanzar] = useState(false);
-  const [showReprogramar, setShowReprogramar] = useState(false);
-
-  const primary = accionesBucket[0];
-  const tipoPrimary = core.tiposAccion.find((tt) => tt.id === primary.tipoAccionId);
-  const prioTone = primary.prioridad === "Alta" ? "red" : primary.prioridad === "Media" ? "amber" : "neutral";
-  const hilo = core.hilos.find((h) => h.id === primary.hiloId);
-  const esTarea = hilo?.tipo === "tarea";
-  const persona = hilo ? personaPrincipalDeHilo(hilo, core) : null;
-  const personasDelHilo = hilo ? personasActivasDeHilo(hilo, core) : [];
-  const empresas = hilo ? empresasDeHilo(hilo, core) : [];
-  const obras = hilo ? obrasDeHilo(hilo, core) : [];
-
-  const accionesDelHilo = hilo ? acciones.filter((a) => a.hiloId === hilo.id) : [];
-  const historialCompleto = accionesDelHilo.filter((a) => a.estado === "Realizada").sort(compararRecientePrimero);
-
-  // el color de la solapa refleja la más urgente de todas las pendientes de este bucket
-  const masUrgente = accionesBucket.reduce((min, a) => (a.fechaProgramada < min.fechaProgramada ? a : min), primary);
-  const diasFaltantes = diasEntre(t, masUrgente.fechaProgramada);
-  const diasUrgente = core.parametros.diasUrgente ?? 3;
-  const colorBorde = diasFaltantes < 0 ? "#B0452E" : diasFaltantes <= diasUrgente ? "#E8871E" : "#3F6B4A";
-  const tareasVinculadas = hilo ? core.hilos.filter((h) => h.tipo === "tarea" && h.hiloRelacionadoId === hilo.id).length : 0;
-  const nombrePrincipal = hilo ? (esTarea ? hilo.titulo : (personasDelHilo.length > 0 ? personasDelHilo.map((p) => p.nombre).join(", ") : etiquetaVinculoHilo(hilo, core))) : "";
-
-  return (
-    <div
-      className="bg-white border border-[#E4DECF] rounded-sm p-3 relative"
-      style={{ opacity: arrastrando ? 0.35 : 1 }}
-    >
-      {/* Bloque 1: persona, empresa, obra */}
-      <div className="flex items-start gap-2.5 min-w-0 mt-1">
-        {hilo && setCore && <CasillaFinalizar hilo={hilo} acciones={accionesDelHilo} setCore={setCore} size={18} />}
-        {hilo && (
-          <div
-            className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-extrabold"
-            style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}
-          >
-            {esTarea ? <ListChecks size={15} /> : getIniciales(nombrePrincipal)}
+        {esTarea || !persona ? (
+          <div className="min-w-0 flex-1 flex items-start gap-1">
+            <div className="min-w-0 flex-1">
+              <p className="text-base font-extrabold text-[#2A2118] truncate" title={nombrePrincipal}>{nombrePrincipal}</p>
+              {empresasObrasLine}
+            </div>
+            {esTarea && <IconBtn label="Editar título" onClick={() => setShowEditarTitulo(true)}><Pencil size={13} /></IconBtn>}
           </div>
+        ) : (
+          <button onClick={() => onOpen("persona", persona.id)} className="text-left min-w-0 flex-1">
+            <p className="text-base font-extrabold text-[#2A2118] truncate" title={nombrePrincipal}>{nombrePrincipal}</p>
+            {empresasObrasLine}
+          </button>
         )}
-        <button onClick={() => (esTarea || !persona ? onOpen("hilo", hilo.id) : onOpen("persona", persona.id))} className="text-left min-w-0 flex-1">
-          <p className="text-base font-extrabold text-[#2A2118] truncate" title={nombrePrincipal}>{nombrePrincipal}</p>
-          {(empresas.length > 0 || obras.length > 0) && (
-            <p className="text-sm mt-0.5 truncate" title={[empresas.map((e) => e.denominacion).join(", "), obras.map((o) => o.nombre).join(", ")].filter(Boolean).join(" · ")}>
-              {empresas.length > 0 && <span className="font-bold text-[#2A2118]">{empresas.map((e) => e.denominacion).join(", ")}</span>}
-              {empresas.length > 0 && obras.length > 0 && <span className="text-[#8A8272]"> · </span>}
-              {obras.length > 0 && <span className="text-[#6B6352]">{obras.map((o) => o.nombre).join(", ")}</span>}
-            </p>
-          )}
-        </button>
         {persona && <WhatsAppLink persona={persona} size={15} />}
+        {hilo.estado === "Cerrado" && <Chip tone="neutral">{hilo.estado}</Chip>}
         {onIniciarDrag && (
           <button
             onPointerDown={(e) => { e.preventDefault(); onIniciarDrag(); }}
@@ -3012,80 +2973,174 @@ function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, 
       </div>
 
       {/* Bloque 2: tema del hilo */}
-      {hilo && !esTarea && (
+      {!esTarea && (
         <div className="mt-2 pt-2 border-t border-dashed border-[#E4DECF]">
-          <p className="text-[10px] font-bold uppercase tracking-wide text-[#A69C88] mb-0.5">Tema del hilo</p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-[#A69C88] mb-0.5">Tema del hilo</p>
+            <IconBtn label="Editar título" onClick={() => setShowEditarTitulo(true)}><Pencil size={12} /></IconBtn>
+          </div>
           <p className="text-base font-extrabold text-[#2A2118]">{hilo.titulo}</p>
         </div>
       )}
 
+      {hilo.estado === "Cerrado" && hilo.notaCierre && (
+        <p className="text-xs text-[#6B6352] mt-2 italic bg-[#F7F5F0] rounded-sm p-2">"{hilo.notaCierre}"</p>
+      )}
+
       {/* Bloque 3: actividad programada */}
-      {primary.notaPlanificada && (
+      {primary?.notaPlanificada && (
         <p className="text-xs font-bold text-[#2A2118] mt-2 pl-2.5" style={{ borderLeft: `10px solid ${colorBorde}` }}>{primary.notaPlanificada}</p>
       )}
 
-      <VerContextoOrigen accion={primary} acciones={accionesDelHilo} />
+      {primary && <VerContextoOrigen accion={primary} acciones={accionesDelHilo} />}
 
-      {accionesBucket.length > 1 && (
-        <p className="text-[10px] text-[#B0452E] font-bold uppercase tracking-wide mt-1.5">⚠ Este hilo tiene {accionesBucket.length} acciones pendientes a la vez — revisalo, no debería pasar.</p>
+      {bucket.length > 1 && (
+        <p className="text-[10px] text-[#B0452E] font-bold uppercase tracking-wide mt-1.5">⚠ Este hilo tiene {bucket.length} acciones pendientes a la vez — revisalo, no debería pasar.</p>
       )}
 
-      {hilo && (
-        <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-dashed border-[#E4DECF] flex-nowrap">
-          {tareasVinculadas > 0 && (
-            <span className="shrink-0 inline-flex items-center gap-1 text-[11px] font-bold text-[#6B6352] bg-[#F7F5F0] border border-[#E4DECF] rounded-sm px-2 py-1">
-              <ListChecks size={11} /> {tareasVinculadas} tarea{tareasVinculadas === 1 ? "" : "s"}
+      <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-dashed border-[#E4DECF] flex-nowrap">
+        {tareasVinculadas.length > 0 && (
+          <span className="shrink-0 inline-flex items-center gap-1 text-[11px] font-bold text-[#6B6352] bg-[#F7F5F0] border border-[#E4DECF] rounded-sm px-2 py-1">
+            <ListChecks size={11} /> {tareasVinculadas.length} tarea{tareasVinculadas.length === 1 ? "" : "s"}
+          </span>
+        )}
+        <div className="flex items-center gap-1.5 ml-auto min-w-0">
+          {personasDelHilo.length > 1 && (
+            <span className="shrink-0 flex items-center">
+              {personasDelHilo.map((p) => (
+                <span
+                  key={p.id}
+                  className="w-5 h-5 rounded-full bg-[#F1DFB9] text-[#5C3F18] text-[9px] font-extrabold flex items-center justify-center border-2 -ml-1.5 first:ml-0"
+                  style={{ borderColor: core.tema.tarjeta }}
+                >
+                  {getIniciales(p.nombre)}
+                </span>
+              ))}
             </span>
           )}
-          <div className="flex items-center gap-1.5 ml-auto min-w-0">
-            {personasDelHilo.length > 1 && (
-              <span className="shrink-0 flex items-center">
-                {personasDelHilo.map((p) => (
-                  <span
-                    key={p.id}
-                    className="w-5 h-5 rounded-full bg-[#F1DFB9] text-[#5C3F18] text-[9px] font-extrabold flex items-center justify-center border-2 -ml-1.5 first:ml-0"
-                    style={{ borderColor: core.tema.tarjeta }}
-                  >
-                    {getIniciales(p.nombre)}
-                  </span>
-                ))}
-              </span>
-            )}
-            {tipoPrimary && <span className="min-w-0 flex-1 truncate text-right text-xs font-mono text-[#6B6352]" title={tipoPrimary.nombre}>{tipoPrimary.nombre}</span>}
+          {primary && tipoPrimary && <span className="min-w-0 flex-1 truncate text-right text-xs font-mono text-[#6B6352]" title={tipoPrimary.nombre}>{tipoPrimary.nombre}</span>}
+          {primary && (
             <span className="shrink-0 text-[11px] font-bold font-mono px-2 py-1 rounded-sm bg-[#F1DFB9] text-[#5C3F18]">
               {fmtDate(masUrgente.fechaProgramada)}
             </span>
-            <span className="shrink-0"><IconBtn label="Reprogramar" onClick={() => setShowReprogramar(true)}><Pencil size={13} /></IconBtn></span>
-            {primary.recurrente && <Repeat size={12} className="shrink-0 text-[#8A8272]" />}
-            {primary.prioridad && <span className="shrink-0"><Chip tone={prioTone}>{primary.prioridad.charAt(0)}</Chip></span>}
+          )}
+          {primary && <span className="shrink-0"><IconBtn label="Reprogramar" onClick={() => setShowReprogramar(true)}><Pencil size={13} /></IconBtn></span>}
+          {primary?.recurrente && <Repeat size={12} className="shrink-0 text-[#8A8272]" />}
+          {primary?.prioridad && <span className="shrink-0"><Chip tone={prioTone}>{primary.prioridad.charAt(0)}</Chip></span>}
+        </div>
+      </div>
+
+      {!primary && (
+        <p className="text-xs text-[#A69C88] mt-2">Sin próxima acción programada.</p>
+      )}
+      <div className="flex items-center gap-2 mt-2 flex-wrap">
+        <PrimaryBtn core={core} onClick={() => setShowAvanzar(true)}>{primary ? "Avanzar hilo" : "Avanzar este hilo"}</PrimaryBtn>
+        {primary && <IconBtn label="Editar acción" onClick={() => setEditingAccion(primary)}><Pencil size={16} /></IconBtn>}
+        {primary && <IconBtn label="Eliminar acción" danger onClick={() => setDeletingAccionId(primary.id)}><Trash2 size={16} /></IconBtn>}
+        {!primary && esTarea && (
+          <button onClick={() => setShowFechaTarea(true)} className="text-xs font-bold uppercase tracking-wide px-2.5 py-2 rounded-sm bg-[#E7E2D8] text-[#6B6352]">Poner fecha y hora</button>
+        )}
+      </div>
+
+      {primary && <p className="text-right text-[9px] font-mono text-[#C9C1AE] mt-1">{fmtNumero(primary.numero)}</p>}
+
+      {/* Vínculos */}
+      <div className="mt-2 pt-2 border-t border-dashed border-[#E4DECF]">
+        <button onClick={() => setVerVinculos((v) => !v)} className="text-[10px] font-bold uppercase tracking-wide text-[#B0452E] flex items-center gap-0.5">
+          {verVinculos ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verVinculos ? "Ocultar vínculos" : "Ver vínculos"}
+        </button>
+        {verVinculos && (
+          <div className="mt-2.5 space-y-3">
+            {esTarea && (
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#8A8272]">Hilo</p>
+                  {!hiloRelacionado && <button onClick={() => setShowVincularCliente(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>}
+                </div>
+                {hiloRelacionado ? (
+                  <div className="flex items-center justify-between gap-2 text-sm">
+                    <button onClick={() => onOpen("hilo", hiloRelacionado.id)} className="text-left flex-1 min-w-0 font-semibold text-[#2A2118]">{hiloRelacionado.titulo}</button>
+                    <IconBtn label="Desvincular" danger onClick={() => setConfirmar({ texto: "¿Desvincular esta tarea del hilo de cliente?", onConfirm: () => setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === id ? { ...h, hiloRelacionadoId: null } : h)) })) })}><X size={14} /></IconBtn>
+                  </div>
+                ) : (
+                  <p className="text-sm text-[#A69C88]">Sin hilo vinculado.</p>
+                )}
+              </div>
+            )}
+
+            <VinculosDeHilo hilo={hilo} hiloId={id} core={core} setCore={setCore} onOpen={onOpen} agregarPersona={agregarPersona} setConfirmar={setConfirmar} />
+
+            {!esTarea && (
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#8A8272]">Tareas</p>
+                  <button onClick={() => setShowAgregarTarea(true)} className="text-xs font-bold text-[#B0452E]">+ Agregar</button>
+                </div>
+                {tareasVinculadas.length === 0 ? (
+                  <p className="text-sm text-[#A69C88]">Sin tareas vinculadas.</p>
+                ) : (
+                  <div className="space-y-1">
+                    {tareasVinculadas.map((tv) => (
+                      <div key={tv.id} className="flex items-center justify-between gap-2 text-sm">
+                        <button onClick={() => onOpen("hilo", tv.id)} className="text-left flex-1 min-w-0 flex items-center gap-1.5">
+                          <span className={tv.estado === "Cerrado" ? "line-through text-[#A69C88]" : "text-[#2A2118] font-semibold"}>{tv.titulo}</span>
+                          {tv.estado === "Cerrado" && <Chip tone="neutral">Cerrada</Chip>}
+                        </button>
+                        <IconBtn label="Desvincular" danger onClick={() => setConfirmar({ texto: "¿Desvincular esta tarea del hilo?", onConfirm: () => desvincularTarea(tv.id) })}><X size={14} /></IconBtn>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      {hilo && (
-        <div className="flex items-center gap-2 mt-2">
-          <PrimaryBtn core={core} onClick={() => setShowAvanzar(true)}>Avanzar hilo</PrimaryBtn>
-          <button
-            onClick={() => onOpen("hilo", hilo.id)}
-            className="rounded-sm px-3.5 py-2.5 font-bold text-sm border border-[#E4DECF] text-[#6B6352]"
-          >
-            Ver completo
-          </button>
-        </div>
-      )}
+      {/* Resumen en dos niveles: fecha + acciones, y detalle completo de cada acción */}
+      <div className="mt-2 pt-2 border-t border-dashed border-[#E4DECF]">
+        <button onClick={() => { setVerResumen((v) => !v); setVerDetalle(false); }} className="text-[10px] font-bold uppercase tracking-wide text-[#B0452E] flex items-center gap-0.5">
+          {verResumen ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verResumen ? "Ocultar resumen" : "Ver resumen"}
+        </button>
+        {verResumen && (
+          <div className="mt-2">
+            {historial.length === 0 ? (
+              <p className="text-xs text-[#A69C88]">Todavía no hay acciones anteriores en este hilo.</p>
+            ) : (
+              <>
+                {verDetalle ? (
+                  <div className="space-y-2">
+                    {historial.map((a) => <AccionCard key={a.id} accion={a} acciones={accionesDelHilo} core={core} onEdit={() => setEditingAccion(a)} onDelete={() => setDeletingAccionId(a.id)} />)}
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {historial.map((a) => (
+                      <div key={a.id} className="text-xs">
+                        <span className="font-mono text-[#8A8272]">{fmtDate(a.fechaRealizada)}</span>{" "}
+                        <span className="text-[#6B6352]">{a.notaHecho || core.tiposAccion.find((tt) => tt.id === a.tipoAccionId)?.nombre}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <button onClick={() => setVerDetalle((v) => !v)} className="text-[10px] font-bold uppercase tracking-wide text-[#B0452E] flex items-center gap-0.5 mt-2">
+                  {verDetalle ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verDetalle ? "Ocultar detalle" : "Ver detalle"}
+                </button>
+              </>
+            )}
+          </div>
+        )}
+      </div>
 
-      <p className="text-right text-[9px] font-mono text-[#C9C1AE] mt-1">{fmtNumero(primary.numero)}</p>
-
-      {showReprogramar && (
+      {showReprogramar && primary && (
         <ReprogramarModal
           fechaActual={primary.fechaProgramada}
           core={core}
           onClose={() => setShowReprogramar(false)}
-          onSave={(nuevaFecha) => { onReprogramar(primary.id, nuevaFecha); setShowReprogramar(false); }}
+          onSave={reprogramar}
         />
       )}
 
-      {showAvanzar && hilo && (
+      {showAvanzar && (
         <AvanzarHiloForm
           hilo={hilo}
           pendienteActual={primary}
@@ -3096,6 +3151,99 @@ function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, 
           onClose={() => setShowAvanzar(false)}
         />
       )}
+
+      {showFechaTarea && (
+        <Modal title="Fecha y hora de la tarea" onClose={() => setShowFechaTarea(false)}>
+          <EditarFechaTareaForm hilo={hilo} pendiente={primary} setAcciones={setAcciones} onClose={() => setShowFechaTarea(false)} />
+        </Modal>
+      )}
+
+      {showEditarTitulo && (
+        <Modal title="Editar título del hilo" onClose={() => setShowEditarTitulo(false)}>
+          <EditarTituloHiloForm hilo={hilo} onSave={(nuevoTitulo) => { setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === id ? { ...h, titulo: nuevoTitulo } : h)) })); setShowEditarTitulo(false); }} />
+        </Modal>
+      )}
+
+      {showVincularCliente && (
+        <Modal title="Vincular a un hilo de cliente" onClose={() => setShowVincularCliente(false)}>
+          {core.hilos.filter((h) => h.tipo === "cliente" && h.estado === "Activo").length === 0 ? (
+            <p className="text-sm text-[#A69C88]">No hay hilos de clientes activos para vincular.</p>
+          ) : (
+            <Field label="Hilo de cliente">
+              <BuscadorSelect
+                opciones={core.hilos.filter((h) => h.tipo === "cliente" && h.estado === "Activo").map((h) => {
+                  const p = personaPrincipalDeHilo(h, core);
+                  return { id: h.id, label: p ? `${h.titulo} · ${p.nombre}` : h.titulo };
+                })}
+                value=""
+                onChange={(hiloElegidoId) => {
+                  if (!hiloElegidoId) return;
+                  setCore((prev) => ({ ...prev, hilos: prev.hilos.map((hh) => (hh.id === id ? { ...hh, hiloRelacionadoId: hiloElegidoId } : hh)) }));
+                  setShowVincularCliente(false);
+                }}
+                placeholder="Buscar hilo de cliente..."
+              />
+            </Field>
+          )}
+        </Modal>
+      )}
+
+      {showAgregarTarea && (
+        <Modal title="Agregar tarea" onClose={() => setShowAgregarTarea(false)}>
+          <AgregarTareaAlHiloForm
+            core={core}
+            hiloClienteId={id}
+            personasDelHilo={personasDelHilo}
+            onVincular={(tareaId) => {
+              setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === tareaId ? { ...h, hiloRelacionadoId: id } : h)) }));
+            }}
+            onCrear={(nuevoHilo, fecha, hora) => {
+              setCore((prev) => ({ ...prev, hilos: [nuevoHilo, ...prev.hilos] }));
+              if (fecha) {
+                setAcciones((prev) => {
+                  const siguienteNumero = Math.max(0, ...prev.map((a) => a.numero || 0)) + 1;
+                  return [{ id: uid("A"), hiloId: nuevoHilo.id, tipoAccionId: "", estado: "Pendiente", fechaRealizada: "", fechaProgramada: fecha, horaProgramada: hora, prioridad: "Media", notaPlanificada: nuevoHilo.titulo, notaHecho: "", origenId: null, destinoId: null, numero: siguienteNumero, recurrente: false, repiteCadaN: null, repiteUnidad: null, fechaCreacion: todayISO(), secuencia: Date.now() }, ...prev];
+                });
+              }
+            }}
+            onClose={() => setShowAgregarTarea(false)}
+          />
+        </Modal>
+      )}
+
+      {editingAccion && (
+        <EditAccionForm
+          accion={editingAccion}
+          core={core}
+          setCore={setCore}
+          otrasAccionesDelHilo={accionesDelHilo.filter((a) => a.id !== editingAccion.id)}
+          onClose={() => setEditingAccion(null)}
+          onSave={(cambios) => { updateAccion(editingAccion.id, cambios); setEditingAccion(null); }}
+        />
+      )}
+
+      {deletingAccionId && (
+        <Modal title="¿Eliminar esta acción?" onClose={() => setDeletingAccionId(null)}>
+          <p className="text-sm text-[#2A2118] mb-4">Se borra del hilo de forma permanente. No se puede deshacer.</p>
+          <div className="flex gap-2">
+            <button onClick={() => setDeletingAccionId(null)} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
+            <button onClick={() => { deleteAccion(deletingAccionId); setDeletingAccionId(null); }} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, eliminar</button>
+          </div>
+        </Modal>
+      )}
+
+      {confirmar && (
+        <ConfirmDeleteModal title="¿Confirmás?" texto={confirmar.texto} confirmLabel="Sí" onCancel={() => setConfirmar(null)} onConfirm={() => { confirmar.onConfirm(); setConfirmar(null); }} />
+      )}
+    </div>
+  );
+}
+
+function HiloScreen({ id, core, setCore, acciones, setAcciones, onClose, onOpen }) {
+  return (
+    <div>
+      <BackHeader onClose={onClose} />
+      <HiloAgendaCard hilo={core.hilos.find((h) => h.id === id)} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onOpen={onOpen} standalone />
     </div>
   );
 }
@@ -4042,300 +4190,6 @@ function VinculosDeHilo({ hilo, hiloId, core, setCore, onOpen, agregarPersona, s
       )}
       {showVincular && (
         <VincularEntidadAHiloForm core={core} setCore={setCore} vinculadasKeys={vinculadasKeys} onVincular={vincularEntidad} onClose={() => setShowVincular(false)} />
-      )}
-    </div>
-  );
-}
-
-function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen }) {
-  const hilo = core.hilos.find((h) => h.id === id);
-  const [showAvanzar, setShowAvanzar] = useState(false);
-  const [showReprogramar, setShowReprogramar] = useState(false);
-  const [showEditarTitulo, setShowEditarTitulo] = useState(false);
-  const [showVincularCliente, setShowVincularCliente] = useState(false);
-  const [showAgregarTarea, setShowAgregarTarea] = useState(false);
-  const [editingAccion, setEditingAccion] = useState(null);
-  const [deletingAccionId, setDeletingAccionId] = useState(null);
-  const [showFechaTarea, setShowFechaTarea] = useState(false);
-  const [verVinculos, setVerVinculos] = useState(false);
-  const [confirmar, setConfirmar] = useState(null); // { texto, onConfirm }
-
-  if (!hilo) return <div><BackHeader onClose={onClose} /><p className="text-sm text-[#8A8272]">Este hilo ya no existe.</p></div>;
-
-  const esTarea = hilo.tipo === "tarea";
-  const personasDelHilo = personasActivasDeHilo(hilo, core);
-  const persona = personasDelHilo[0] || null;
-  const empresas = empresasDeHilo(hilo, core);
-  const obras = obrasDeHilo(hilo, core);
-  const hiloRelacionado = hilo.hiloRelacionadoId ? core.hilos.find((h) => h.id === hilo.hiloRelacionadoId) : null;
-  const tareasVinculadas = core.hilos.filter((h) => h.tipo === "tarea" && h.hiloRelacionadoId === id);
-  const accionesDelHilo = acciones.filter((a) => a.hiloId === id);
-  const pendienteActual = accionesDelHilo.filter((a) => a.estado === "Pendiente").sort((a, b) => (a.fechaProgramada < b.fechaProgramada ? -1 : 1))[0] || null;
-  const historial = accionesDelHilo.filter((a) => a.estado === "Realizada").sort(compararRecientePrimero);
-  const desvincularTarea = (tareaId) => setCore((prev) => ({
-    ...prev,
-    hilos: prev.hilos.map((h) => (h.id === tareaId ? { ...h, hiloRelacionadoId: null } : h)),
-  }));
-  // Agrega la persona al hilo y, si tiene empresas vinculadas, arrastra también esas
-  // empresas y las obras de esas empresas (además de las obras vinculadas directamente
-  // a la persona) — mismo criterio que al crear un hilo desde una persona.
-  const agregarPersona = (personaId, comoPrincipal) => setCore((prev) => {
-    const hiloActual = prev.hilos.find((h) => h.id === id);
-    if (!hiloActual) return prev;
-    const activos = participantesActivos(hiloActual, prev);
-    const yaActivo = activos.some((p) => p.personaId === personaId);
-    let vinculos = [...(prev.vinculos || [])];
-    if (!yaActivo) {
-      const seraPrincipal = comoPrincipal || activos.length === 0;
-      if (seraPrincipal) vinculos = vinculos.map((v) => (esParticipanteActivoDeHilo(v, id) ? { ...v, principal: false } : v));
-      vinculos.push(vinc("Persona", personaId, "Hilo", id, null, seraPrincipal, todayISO()));
-    }
-    const empresasDeEsaPersona = empresaIdsDePersona(prev, personaId);
-    const yaEmpresas = new Set(contrapartesDe(prev, "Hilo", id, "Empresa", true).map(({ c }) => c.id));
-    const nuevasEmpresas = empresasDeEsaPersona.filter((eid) => !yaEmpresas.has(eid));
-    for (const eid of nuevasEmpresas) vinculos.push(vinc("Hilo", id, "Empresa", eid, null, false, todayISO()));
-    const empresasParaObras = [...yaEmpresas, ...nuevasEmpresas];
-    const obrasDirectas = obraIdsDirectasDePersona(prev, personaId);
-    const obrasDeEmpresas = empresasParaObras.flatMap((eid) => obraIdsDeEmpresa(prev, eid));
-    const yaObras = new Set(contrapartesDe(prev, "Hilo", id, "Obra", true).map(({ c }) => c.id));
-    const nuevasObras = [...new Set([...obrasDirectas, ...obrasDeEmpresas])].filter((oid) => !yaObras.has(oid));
-    for (const oid of nuevasObras) vinculos.push(vinc("Hilo", id, "Obra", oid, null, false, todayISO()));
-    return { ...prev, vinculos };
-  });
-  const updateAccion = (accId, cambios) => setAcciones((prev) => prev.map((a) => (a.id === accId ? { ...a, ...cambios } : a)));
-  const deleteAccion = (accId) => setAcciones((prev) => prev.filter((a) => a.id !== accId));
-  const reprogramar = (nuevaFecha) => { if (pendienteActual) updateAccion(pendienteActual.id, { fechaProgramada: nuevaFecha }); setShowReprogramar(false); };
-
-  const colorSolapa = !pendienteActual
-    ? "#C9C1AE"
-    : diasEntre(todayISO(), pendienteActual.fechaProgramada) < 0
-    ? "#B0452E"
-    : diasEntre(todayISO(), pendienteActual.fechaProgramada) <= (core.parametros.diasUrgente ?? 3)
-    ? "#E8871E"
-    : "#3F6B4A";
-  const nombrePrincipalHilo = esTarea ? hilo.titulo : (personasDelHilo.length > 0 ? personasDelHilo.map((p) => p.nombre).join(", ") : etiquetaVinculoHilo(hilo, core));
-
-  return (
-    <div>
-      <BackHeader onClose={onClose} />
-      <div className="bg-white border border-[#E4DECF] rounded-sm p-4 mb-3 relative">
-        <span className="absolute -top-px left-4 w-10 h-1.5" style={{ backgroundColor: colorSolapa, clipPath: "polygon(8% 0, 92% 0, 100% 100%, 0% 100%)" }} />
-        <div className="flex items-start justify-between gap-2 mt-1">
-          <div className="flex items-start gap-2.5 flex-1 min-w-0">
-            <CasillaFinalizar hilo={hilo} acciones={accionesDelHilo} setCore={setCore} size={22} />
-            <div
-              className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-sm font-extrabold"
-              style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}
-            >
-              {esTarea ? <ListChecks size={17} /> : getIniciales(nombrePrincipalHilo)}
-            </div>
-            <h2 className="text-lg font-extrabold text-[#2A2118] flex-1 min-w-0">{hilo.titulo}</h2>
-            <IconBtn label="Editar título" onClick={() => setShowEditarTitulo(true)}><Pencil size={14} /></IconBtn>
-          </div>
-          <Chip tone={hilo.estado === "Activo" ? "green" : "neutral"}>{hilo.estado}</Chip>
-        </div>
-        <p className="text-xs text-[#8A8272] mt-1">
-          {personasDelHilo.length > 0 && (
-            <>
-              {personasDelHilo.map((p, i) => (
-                <span key={p.id}>
-                  {i > 0 && ", "}
-                  <button onClick={() => onOpen("persona", p.id)} className="font-semibold text-[#2A2118] underline underline-offset-2">{p.nombre}</button>
-                </span>
-              ))}
-              {" "}<WhatsAppLink persona={persona} size={13} />
-            </>
-          )}
-          {(empresas.length > 0 || obras.length > 0) && <> · {[empresas.map((e) => e.denominacion).join(", "), obras.map((o) => o.nombre).join(", ")].filter(Boolean).join(" · ")}</>}
-        </p>
-        <p className="text-xs text-[#A69C88] mt-1">
-          {accionesDelHilo.length} acci{accionesDelHilo.length === 1 ? "ón" : "ones"} en este hilo
-          {tareasVinculadas.length > 0 && ` · ${tareasVinculadas.length} tarea${tareasVinculadas.length === 1 ? "" : "s"} vinculada${tareasVinculadas.length === 1 ? "" : "s"}`}
-        </p>
-        {hilo.estado === "Cerrado" && hilo.notaCierre && (
-          <p className="text-xs text-[#6B6352] mt-2 italic bg-white/60 rounded-sm p-2">"{hilo.notaCierre}"</p>
-        )}
-
-      <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-        <button onClick={() => setVerVinculos((v) => !v)} className="text-[10px] font-bold uppercase tracking-wide text-[#B0452E] flex items-center gap-0.5">
-          {verVinculos ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verVinculos ? "Ocultar vínculos" : "Ver vínculos"}
-        </button>
-        {verVinculos && (
-          <div className="mt-2.5 space-y-3">
-            {esTarea && (
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#8A8272]">Hilo</p>
-                  {!hiloRelacionado && <button onClick={() => setShowVincularCliente(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>}
-                </div>
-                {hiloRelacionado ? (
-                  <div className="flex items-center justify-between gap-2 text-sm">
-                    <button onClick={() => onOpen("hilo", hiloRelacionado.id)} className="text-left flex-1 min-w-0 font-semibold text-[#2A2118]">{hiloRelacionado.titulo}</button>
-                    <IconBtn label="Desvincular" danger onClick={() => setConfirmar({ texto: "¿Desvincular esta tarea del hilo de cliente?", onConfirm: () => setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === id ? { ...h, hiloRelacionadoId: null } : h)) })) })}><X size={14} /></IconBtn>
-                  </div>
-                ) : (
-                  <p className="text-sm text-[#A69C88]">Sin hilo vinculado.</p>
-                )}
-              </div>
-            )}
-
-            <VinculosDeHilo hilo={hilo} hiloId={id} core={core} setCore={setCore} onOpen={onOpen} agregarPersona={agregarPersona} setConfirmar={setConfirmar} />
-
-            {!esTarea && (
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#8A8272]">Tareas</p>
-                  <button onClick={() => setShowAgregarTarea(true)} className="text-xs font-bold text-[#B0452E]">+ Agregar</button>
-                </div>
-                {tareasVinculadas.length === 0 ? (
-                  <p className="text-sm text-[#A69C88]">Sin tareas vinculadas.</p>
-                ) : (
-                  <div className="space-y-1">
-                    {tareasVinculadas.map((tv) => (
-                      <div key={tv.id} className="flex items-center justify-between gap-2 text-sm">
-                        <button onClick={() => onOpen("hilo", tv.id)} className="text-left flex-1 min-w-0 flex items-center gap-1.5">
-                          <span className={tv.estado === "Cerrado" ? "line-through text-[#A69C88]" : "text-[#2A2118] font-semibold"}>{tv.titulo}</span>
-                          {tv.estado === "Cerrado" && <Chip tone="neutral">Cerrada</Chip>}
-                        </button>
-                        <IconBtn label="Desvincular" danger onClick={() => setConfirmar({ texto: "¿Desvincular esta tarea del hilo?", onConfirm: () => desvincularTarea(tv.id) })}><X size={14} /></IconBtn>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      </div>
-
-      <div className="bg-white border border-[#E4DECF] rounded-sm p-3 mb-3">
-        {pendienteActual ? (
-          <div className="flex gap-2 flex-wrap">
-            <PrimaryBtn core={core} onClick={() => setShowAvanzar(true)}>Avanzar este hilo</PrimaryBtn>
-            {esTarea ? (
-              <button onClick={() => setShowFechaTarea(true)} className="text-xs font-bold uppercase tracking-wide px-2.5 py-2 rounded-sm bg-[#E7E2D8] text-[#6B6352]">Editar fecha y hora</button>
-            ) : (
-              <button onClick={() => setShowReprogramar(true)} className="text-xs font-bold uppercase tracking-wide px-2.5 py-2 rounded-sm bg-[#E7E2D8] text-[#6B6352]">Reprogramar</button>
-            )}
-            <IconBtn label="Editar" onClick={() => setEditingAccion(pendienteActual)}><Pencil size={16} /></IconBtn>
-            <IconBtn label="Eliminar" danger onClick={() => setDeletingAccionId(pendienteActual.id)}><Trash2 size={16} /></IconBtn>
-          </div>
-        ) : (
-          <>
-            <p className="text-sm text-[#A69C88]">Sin próxima acción programada.</p>
-            <div className="flex gap-2 flex-wrap">
-              <PrimaryBtn core={core} onClick={() => setShowAvanzar(true)}>Avanzar este hilo</PrimaryBtn>
-              {esTarea && (
-                <button onClick={() => setShowFechaTarea(true)} className="text-xs font-bold uppercase tracking-wide px-2.5 py-2 rounded-sm bg-[#E7E2D8] text-[#6B6352]">Poner fecha y hora</button>
-              )}
-            </div>
-          </>
-        )}
-      </div>
-
-      <div>
-        <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352] mb-2">Historial de este hilo</p>
-        {historial.length === 0 ? (
-          <EmptyState icon={<Clock3 size={22} />} text="Todavía no hay acciones registradas en este hilo." />
-        ) : (
-          <div className="space-y-2">
-            {historial.map((a) => <AccionCard key={a.id} accion={a} acciones={accionesDelHilo} core={core} onEdit={() => setEditingAccion(a)} onDelete={() => setDeletingAccionId(a.id)} />)}
-          </div>
-        )}
-      </div>
-
-      {showAvanzar && (
-        <AvanzarHiloForm
-          hilo={hilo}
-          pendienteActual={pendienteActual}
-          core={core}
-          setCore={setCore}
-          acciones={acciones}
-          setAcciones={setAcciones}
-          onClose={() => setShowAvanzar(false)}
-        />
-      )}
-      {showReprogramar && pendienteActual && (
-        <ReprogramarModal fechaActual={pendienteActual.fechaProgramada} core={core} onClose={() => setShowReprogramar(false)} onSave={reprogramar} />
-      )}
-      {showFechaTarea && (
-        <Modal title="Fecha y hora de la tarea" onClose={() => setShowFechaTarea(false)}>
-          <EditarFechaTareaForm hilo={hilo} pendiente={pendienteActual} setAcciones={setAcciones} onClose={() => setShowFechaTarea(false)} />
-        </Modal>
-      )}
-      {showEditarTitulo && (
-        <Modal title="Editar título del hilo" onClose={() => setShowEditarTitulo(false)}>
-          <EditarTituloHiloForm hilo={hilo} onSave={(nuevoTitulo) => { setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === id ? { ...h, titulo: nuevoTitulo } : h)) })); setShowEditarTitulo(false); }} />
-        </Modal>
-      )}
-      {showVincularCliente && (
-        <Modal title="Vincular a un hilo de cliente" onClose={() => setShowVincularCliente(false)}>
-          {core.hilos.filter((h) => h.tipo === "cliente" && h.estado === "Activo").length === 0 ? (
-            <p className="text-sm text-[#A69C88]">No hay hilos de clientes activos para vincular.</p>
-          ) : (
-            <Field label="Hilo de cliente">
-              <BuscadorSelect
-                opciones={core.hilos.filter((h) => h.tipo === "cliente" && h.estado === "Activo").map((h) => {
-                  const p = personaPrincipalDeHilo(h, core);
-                  return { id: h.id, label: p ? `${h.titulo} · ${p.nombre}` : h.titulo };
-                })}
-                value=""
-                onChange={(hiloElegidoId) => {
-                  if (!hiloElegidoId) return;
-                  setCore((prev) => ({ ...prev, hilos: prev.hilos.map((hh) => (hh.id === id ? { ...hh, hiloRelacionadoId: hiloElegidoId } : hh)) }));
-                  setShowVincularCliente(false);
-                }}
-                placeholder="Buscar hilo de cliente..."
-              />
-            </Field>
-          )}
-        </Modal>
-      )}
-      {showAgregarTarea && (
-        <Modal title="Agregar tarea" onClose={() => setShowAgregarTarea(false)}>
-          <AgregarTareaAlHiloForm
-            core={core}
-            hiloClienteId={id}
-            personasDelHilo={personasDelHilo}
-            onVincular={(tareaId) => {
-              setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === tareaId ? { ...h, hiloRelacionadoId: id } : h)) }));
-            }}
-            onCrear={(nuevoHilo, fecha, hora) => {
-              setCore((prev) => ({ ...prev, hilos: [nuevoHilo, ...prev.hilos] }));
-              if (fecha) {
-                setAcciones((prev) => {
-                  const siguienteNumero = Math.max(0, ...prev.map((a) => a.numero || 0)) + 1;
-                  return [{ id: uid("A"), hiloId: nuevoHilo.id, tipoAccionId: "", estado: "Pendiente", fechaRealizada: "", fechaProgramada: fecha, horaProgramada: hora, prioridad: "Media", notaPlanificada: nuevoHilo.titulo, notaHecho: "", origenId: null, destinoId: null, numero: siguienteNumero, recurrente: false, repiteCadaN: null, repiteUnidad: null, fechaCreacion: todayISO(), secuencia: Date.now() }, ...prev];
-                });
-              }
-            }}
-            onClose={() => setShowAgregarTarea(false)}
-          />
-        </Modal>
-      )}
-      {editingAccion && (
-        <EditAccionForm
-          accion={editingAccion}
-          core={core}
-          setCore={setCore}
-          otrasAccionesDelHilo={accionesDelHilo.filter((a) => a.id !== editingAccion.id)}
-          onClose={() => setEditingAccion(null)}
-          onSave={(cambios) => { updateAccion(editingAccion.id, cambios); setEditingAccion(null); }}
-        />
-      )}
-      {deletingAccionId && (
-        <Modal title="¿Eliminar esta acción?" onClose={() => setDeletingAccionId(null)}>
-          <p className="text-sm text-[#2A2118] mb-4">Se borra del hilo de forma permanente. No se puede deshacer.</p>
-          <div className="flex gap-2">
-            <button onClick={() => setDeletingAccionId(null)} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
-            <button onClick={() => { deleteAccion(deletingAccionId); setDeletingAccionId(null); }} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, eliminar</button>
-          </div>
-        </Modal>
-      )}
-      {confirmar && (
-        <ConfirmDeleteModal title="¿Confirmás?" texto={confirmar.texto} confirmLabel="Sí" onCancel={() => setConfirmar(null)} onConfirm={() => { confirmar.onConfirm(); setConfirmar(null); }} />
       )}
     </div>
   );
