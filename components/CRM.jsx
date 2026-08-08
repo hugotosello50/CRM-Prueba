@@ -5,7 +5,7 @@ import * as XLSX from "xlsx";
 import {
   Plus, X, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Search, Settings, Users, Building2,
   HardHat, CalendarClock, Trash2, Pencil, Check, AlertTriangle,
-  Tag, Star, Clock3, ListChecks, Repeat, ArrowLeft, ArrowDownAZ, ArrowUpAZ, GitBranch, Archive,
+  Tag, Star, Clock3, ListChecks, Repeat, ArrowLeft, ArrowDownAZ, ArrowUpAZ, GitBranch,
   BarChart3, FileSpreadsheet, Download, Trello, GripVertical, LogOut, Menu, Tags, FolderKanban, Layers,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.2.0";
+const APP_VERSION = "2.3.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -1974,8 +1974,8 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
 
       {tareasCerradas.length > 0 && (
         <div className="mt-4">
-          <button onClick={() => setVerCerradas((v) => !v)} className="text-xs font-bold text-[#6B6352] flex items-center gap-1">
-            {verCerradas ? <ChevronUp size={13} /> : <ChevronDown size={13} />} {verCerradas ? "Ocultar" : "Ver"} tareas completadas ({tareasCerradas.length})
+          <button onClick={() => setVerCerradas((v) => !v)} className="text-[10px] font-bold uppercase tracking-wide text-[#B0452E] flex items-center gap-0.5">
+            {verCerradas ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verCerradas ? "Ocultar" : "Ver"} tareas completadas ({tareasCerradas.length})
           </button>
           {verCerradas && (
             <div className="mt-2 space-y-2">
@@ -2858,7 +2858,6 @@ function HiloSinAccionCard({ hilo, core, setCore, acciones, setAcciones, onOpen 
 
 function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, onOpen, onReprogramar, t, onIniciarDrag, arrastrando }) {
   const [showAvanzar, setShowAvanzar] = useState(false);
-  const [verResumen, setVerResumen] = useState(false);
   const [showReprogramar, setShowReprogramar] = useState(false);
 
   const primary = accionesBucket[0];
@@ -2982,12 +2981,6 @@ function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, 
           >
             Ver completo
           </button>
-          <button
-            onClick={() => setVerResumen((v) => !v)}
-            className="flex items-center gap-1 text-xs font-bold text-[#B0452E]"
-          >
-            Resumen {verResumen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-          </button>
         </div>
       )}
 
@@ -3000,24 +2993,6 @@ function HiloAgendaCard({ accionesBucket, core, setCore, acciones, setAcciones, 
           onClose={() => setShowReprogramar(false)}
           onSave={(nuevaFecha) => { onReprogramar(primary.id, nuevaFecha); setShowReprogramar(false); }}
         />
-      )}
-
-      {verResumen && hilo && (
-        <div className="mt-2 pt-2 border-t border-dashed border-[#E4DECF]">
-          <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352] mb-1.5">Historial</p>
-          {historialCompleto.length === 0 ? (
-            <p className="text-xs text-[#A69C88]">Todavía no hay acciones anteriores en este hilo.</p>
-          ) : (
-            <div className="space-y-1.5">
-              {historialCompleto.map((a) => (
-                <div key={a.id} className="text-xs">
-                  <span className="font-mono text-[#8A8272]">{fmtDate(a.fechaRealizada)}</span>{" "}
-                  <span className="text-[#6B6352]">{a.notaHecho || core.tiposAccion.find((tt) => tt.id === a.tipoAccionId)?.nombre}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
       )}
 
       {showAvanzar && hilo && (
@@ -3589,8 +3564,8 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
 
       {hilosCerrados.length > 0 && (
         <div className="mt-3">
-          <button onClick={() => setVerCerrados((v) => !v)} className="text-xs font-bold text-[#6B6352] flex items-center gap-1">
-            {verCerrados ? <ChevronUp size={13} /> : <ChevronDown size={13} />} Ver hilos cerrados ({hilosCerrados.length})
+          <button onClick={() => setVerCerrados((v) => !v)} className="text-[10px] font-bold uppercase tracking-wide text-[#B0452E] flex items-center gap-0.5">
+            {verCerrados ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verCerrados ? "Ocultar" : "Ver"} hilos cerrados ({hilosCerrados.length})
           </button>
           {verCerrados && (
             <div className="space-y-2 mt-2">
@@ -4007,10 +3982,6 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
   const accionesDelHilo = acciones.filter((a) => a.hiloId === id);
   const pendienteActual = accionesDelHilo.filter((a) => a.estado === "Pendiente").sort((a, b) => (a.fechaProgramada < b.fechaProgramada ? -1 : 1))[0] || null;
   const historial = accionesDelHilo.filter((a) => a.estado === "Realizada").sort(compararRecientePrimero);
-  const tipoPendiente = pendienteActual ? core.tiposAccion.find((t) => t.id === pendienteActual.tipoAccionId) : null;
-  const prioTone = pendienteActual?.prioridad === "Alta" ? "red" : pendienteActual?.prioridad === "Media" ? "amber" : "neutral";
-
-  const toggleEstadoHilo = () => setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === id ? { ...h, estado: h.estado === "Activo" ? "Cerrado" : "Activo" } : h)) }));
   const desvincularTarea = (tareaId) => setCore((prev) => ({
     ...prev,
     hilos: prev.hilos.map((h) => (h.id === tareaId ? { ...h, hiloRelacionadoId: null } : h)),
@@ -4069,6 +4040,7 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
               {esTarea ? <ListChecks size={17} /> : getIniciales(nombrePrincipalHilo)}
             </div>
             <h2 className="text-lg font-extrabold text-[#2A2118] flex-1 min-w-0">{hilo.titulo}</h2>
+            <IconBtn label="Editar título" onClick={() => setShowEditarTitulo(true)}><Pencil size={14} /></IconBtn>
           </div>
           <Chip tone={hilo.estado === "Activo" ? "green" : "neutral"}>{hilo.estado}</Chip>
         </div>
@@ -4093,14 +4065,6 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
         {hilo.estado === "Cerrado" && hilo.notaCierre && (
           <p className="text-xs text-[#6B6352] mt-2 italic bg-white/60 rounded-sm p-2">"{hilo.notaCierre}"</p>
         )}
-        <div className="flex gap-2 mt-3">
-          <button onClick={toggleEstadoHilo} className="text-xs font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-sm bg-[#E7E2D8] text-[#6B6352] flex items-center gap-1">
-            {hilo.estado === "Activo" ? <><Archive size={12} /> Cerrar hilo</> : <><GitBranch size={12} /> Reabrir hilo</>}
-          </button>
-          <button onClick={() => setShowEditarTitulo(true)} className="text-xs font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-sm bg-[#E7E2D8] text-[#6B6352] flex items-center gap-1">
-            <Pencil size={12} /> Editar título
-          </button>
-        </div>
 
       <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
         <button onClick={() => setVerVinculos((v) => !v)} className="text-[10px] font-bold uppercase tracking-wide text-[#B0452E] flex items-center gap-0.5">
@@ -4157,27 +4121,17 @@ function HiloDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
       </div>
 
       <div className="bg-white border border-[#E4DECF] rounded-sm p-3 mb-3">
-        <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352] mb-2">Próxima acción</p>
         {pendienteActual ? (
-          <>
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <span className="text-sm font-semibold text-[#2A2118]">{tipoPendiente ? `${tipoPendiente.nombre} · ` : ""}{fmtDateHora(pendienteActual.fechaProgramada, pendienteActual.horaProgramada)} <span className="text-[9px] font-mono text-[#C9C1AE]">{fmtNumero(pendienteActual.numero)}</span></span>
-              {pendienteActual.prioridad && <Chip tone={prioTone}>{pendienteActual.prioridad}</Chip>}
-            </div>
-            {pendienteActual.notaPlanificada && <p className="text-sm text-[#6B6352] mt-1.5">"{pendienteActual.notaPlanificada}"</p>}
-            {pendienteActual.recurrente && <p className="text-[10px] text-[#8A8272] flex items-center gap-1 mt-1"><Repeat size={11} /> cada {pendienteActual.repiteCadaN} {pendienteActual.repiteUnidad}</p>}
-            <VerContextoOrigen accion={pendienteActual} acciones={accionesDelHilo} />
-            <div className="flex gap-2 mt-3 flex-wrap">
-              <PrimaryBtn core={core} onClick={() => setShowAvanzar(true)}>Avanzar este hilo</PrimaryBtn>
-              {esTarea ? (
-                <button onClick={() => setShowFechaTarea(true)} className="text-xs font-bold uppercase tracking-wide px-2.5 py-2 rounded-sm bg-[#E7E2D8] text-[#6B6352]">Editar fecha y hora</button>
-              ) : (
-                <button onClick={() => setShowReprogramar(true)} className="text-xs font-bold uppercase tracking-wide px-2.5 py-2 rounded-sm bg-[#E7E2D8] text-[#6B6352]">Reprogramar</button>
-              )}
-              <IconBtn label="Editar" onClick={() => setEditingAccion(pendienteActual)}><Pencil size={16} /></IconBtn>
-              <IconBtn label="Eliminar" danger onClick={() => setDeletingAccionId(pendienteActual.id)}><Trash2 size={16} /></IconBtn>
-            </div>
-          </>
+          <div className="flex gap-2 flex-wrap">
+            <PrimaryBtn core={core} onClick={() => setShowAvanzar(true)}>Avanzar este hilo</PrimaryBtn>
+            {esTarea ? (
+              <button onClick={() => setShowFechaTarea(true)} className="text-xs font-bold uppercase tracking-wide px-2.5 py-2 rounded-sm bg-[#E7E2D8] text-[#6B6352]">Editar fecha y hora</button>
+            ) : (
+              <button onClick={() => setShowReprogramar(true)} className="text-xs font-bold uppercase tracking-wide px-2.5 py-2 rounded-sm bg-[#E7E2D8] text-[#6B6352]">Reprogramar</button>
+            )}
+            <IconBtn label="Editar" onClick={() => setEditingAccion(pendienteActual)}><Pencil size={16} /></IconBtn>
+            <IconBtn label="Eliminar" danger onClick={() => setDeletingAccionId(pendienteActual.id)}><Trash2 size={16} /></IconBtn>
+          </div>
         ) : (
           <>
             <p className="text-sm text-[#A69C88]">Sin próxima acción programada.</p>
