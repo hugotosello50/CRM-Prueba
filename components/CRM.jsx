@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.0.0";
+const APP_VERSION = "2.0.1";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -6802,7 +6802,11 @@ function RelacionesView({ core, setCore, onOpen }) {
   const [showNuevo, setShowNuevo] = useState(false);
   const [editVinculo, setEditVinculo] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
-  const vinculos = [...(core.vinculos || [])].sort((a, b) => (b.desde || "").localeCompare(a.desde || ""));
+  // Esta pantalla es la Red de relaciones entre Personas/Empresas/Obras: los vínculos de un
+  // hilo (pertenencia genérica) se gestionan y se ven desde la propia ficha del hilo, no acá.
+  const vinculos = [...(core.vinculos || [])]
+    .filter((v) => v.origenTipo !== "Hilo" && v.destinoTipo !== "Hilo")
+    .sort((a, b) => (b.desde || "").localeCompare(a.desde || ""));
   const del = (id) => setCore((prev) => ({ ...prev, vinculos: (prev.vinculos || []).filter((v) => v.id !== id) }));
 
   const qq = q.trim().toLowerCase();
