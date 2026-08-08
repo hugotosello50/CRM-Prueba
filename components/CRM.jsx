@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "1.23.0";
+const APP_VERSION = "1.24.0";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
@@ -54,6 +54,8 @@ const seedCore = () => ({
     { id: "CAT2", nombre: "Rubro" },
     { id: "CAT3", nombre: "Prioridad" },
   ],
+  tiposRelacion: [],
+  vinculos: [],
   personaEmpresa: [
     { id: uid("pe"), personaId: "P001", empresaId: "E001", cargoId: "C03", principal: true },
     { id: uid("pe"), personaId: "P002", empresaId: "E001", cargoId: "C04", principal: false },
@@ -164,6 +166,8 @@ function normalizeCore(c) {
   out.tema = { ...{ botonActivo: "#1B4D2E", botonInactivo: "#D9F0DE", tarjeta: "#FFFFFF", linea: "#E4DECF", fondo: "#F7F5F0", ink: "#2A2118", mutedBase: "#6B6352" }, ...(out.tema || {}) };
   if (!Array.isArray(out.kanbanColumnas)) out.kanbanColumnas = seed.kanbanColumnas;
   if (!Array.isArray(out.kanbanColumnasTareas)) out.kanbanColumnasTareas = seed.kanbanColumnasTareas;
+  if (!Array.isArray(out.tiposRelacion)) out.tiposRelacion = [];
+  if (!Array.isArray(out.vinculos)) out.vinculos = [];
   return out;
 }
 
@@ -316,6 +320,38 @@ function getIniciales(nombre) {
   if (partes.length === 0) return "?";
   if (partes.length === 1) return partes[0].slice(0, 2).toUpperCase();
   return (partes[0][0] + partes[1][0]).toUpperCase();
+}
+
+// -------- Helpers de vínculos (Red de relaciones) --------
+const TIPOS_ENTIDAD_RELACION = [
+  { tipo: "Persona", coleccion: "personas", labelKey: "nombre" },
+  { tipo: "Empresa", coleccion: "empresas", labelKey: "denominacion" },
+  { tipo: "Obra", coleccion: "obras", labelKey: "nombre" },
+];
+function entidadLabel(tipo, id, core) {
+  const def = TIPOS_ENTIDAD_RELACION.find((t) => t.tipo === tipo);
+  if (!def) return null;
+  const item = (core[def.coleccion] || []).find((x) => x.id === id);
+  return item ? item[def.labelKey] : null;
+}
+function todasLasEntidadesRelacionables(core) {
+  return TIPOS_ENTIDAD_RELACION.flatMap((def) =>
+    (core[def.coleccion] || []).map((item) => ({ tipo: def.tipo, id: item.id, label: item[def.labelKey] }))
+  );
+}
+// Para relaciones asimétricas, cada lado ve un nombre distinto (ej: "Cliente de" / "Proveedor de");
+// para las simétricas, un solo nombre vale para los dos lados.
+function nombreRelacionLado(tipoRelacion, esOrigen) {
+  if (!tipoRelacion) return "";
+  if (tipoRelacion.cualidad !== "asimetrica") return tipoRelacion.nombre;
+  return esOrigen ? tipoRelacion.nombre : (tipoRelacion.nombreInverso || tipoRelacion.nombre);
+}
+// Dado un vínculo y una de sus dos entidades (la "ancla"), devuelve la otra punta y si la
+// ancla era el origen (para saber qué nombre de la relación corresponde mostrar del lado de ella).
+function ladoOpuestoVinculo(vinculo, anclaTipo, anclaId) {
+  const esOrigen = vinculo.origenTipo === anclaTipo && vinculo.origenId === anclaId;
+  const otro = esOrigen ? { tipo: vinculo.destinoTipo, id: vinculo.destinoId } : { tipo: vinculo.origenTipo, id: vinculo.origenId };
+  return { otro, esOrigen };
 }
 
 function addPeriod(fromISO, value, unit) {
@@ -893,6 +929,7 @@ export default function CRM({ userId, onLogout }) {
     { id: "agenda", label: "Seguimientos", icon: Trello },
     { id: "tareas", label: "Tareas", icon: ListChecks },
     { id: "calendario", label: "Calendario", icon: CalendarClock },
+    { id: "relaciones", label: "Relaciones", icon: GitBranch },
     { id: "informes", label: "Informes", icon: BarChart3 },
   ];
 
@@ -904,6 +941,7 @@ export default function CRM({ userId, onLogout }) {
     { id: "etiquetas", label: "Etiquetas", icon: Tags },
     { id: "categorias", label: "Categorías de etiquetas", icon: FolderKanban },
     { id: "cargos", label: "Cargos", icon: Briefcase },
+    { id: "tiposRelacion", label: "Tipos de relación", icon: GitBranch },
   ];
 
   return (
@@ -989,6 +1027,8 @@ export default function CRM({ userId, onLogout }) {
               {tab === "etiquetas" && <EtiquetasView core={core} setCore={setCore} />}
               {tab === "categorias" && <CategoriasView core={core} setCore={setCore} />}
               {tab === "cargos" && <CargosView core={core} setCore={setCore} />}
+              {tab === "tiposRelacion" && <TiposRelacionView core={core} setCore={setCore} />}
+              {tab === "relaciones" && <RelacionesView core={core} setCore={setCore} onOpen={openDetail} />}
               {tab === "informes" && <InformesView core={core} acciones={acciones} />}
               {tab === "buscar" && <BuscarView core={core} search={search} setSearch={setSearch} onOpen={openDetail} />}
               {tab === "config" && <ConfigView core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} />}
@@ -3229,12 +3269,14 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
   const [editRel, setEditRel] = useState(null);
   const [showRelObra, setShowRelObra] = useState(false);
   const [showNuevoHilo, setShowNuevoHilo] = useState(false);
+  const [showVincularRelacion, setShowVincularRelacion] = useState(false);
   const [verCerrados, setVerCerrados] = useState(false);
 
   if (!persona) return <div><BackHeader onClose={onClose} /><p className="text-sm text-[#8A8272]">Esta persona ya no existe.</p></div>;
 
   const relEmpresas = core.personaEmpresa.filter((r) => r.personaId === id);
   const relObras = (core.personaObra || []).filter((r) => r.personaId === id);
+  const misVinculos = (core.vinculos || []).filter((v) => (v.origenTipo === "Persona" && v.origenId === id) || (v.destinoTipo === "Persona" && v.destinoId === id));
 
   const hilosDePersona = core.hilos.filter((h) => participantesActivos(h).some((p) => p.personaId === id));
   const hilosActivos = hilosDePersona.filter((h) => h.estado === "Activo");
@@ -3243,6 +3285,7 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
   const removeRel = (relId) => setCore((prev) => ({ ...prev, personaEmpresa: prev.personaEmpresa.filter((r) => r.id !== relId) }));
   const updateRel = (relId, cambios) => setCore((prev) => ({ ...prev, personaEmpresa: prev.personaEmpresa.map((r) => (r.id === relId ? { ...r, ...cambios } : r)) }));
   const removeRelObra = (relId) => setCore((prev) => ({ ...prev, personaObra: (prev.personaObra || []).filter((r) => r.id !== relId) }));
+  const quitarVinculo = (vinculoId) => setCore((prev) => ({ ...prev, vinculos: (prev.vinculos || []).filter((v) => v.id !== vinculoId) }));
 
   return (
     <div>
@@ -3315,6 +3358,34 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
             </div>
           )}
         </div>
+
+        <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Vínculos</p>
+            <button onClick={() => setShowVincularRelacion(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>
+          </div>
+          {misVinculos.length === 0 ? (
+            <p className="text-sm text-[#A69C88]">Sin vínculos cargados.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {misVinculos.map((v) => {
+                const tr = (core.tiposRelacion || []).find((t) => t.id === v.tipoRelacionId);
+                const { otro, esOrigen } = ladoOpuestoVinculo(v, "Persona", id);
+                const label = entidadLabel(otro.tipo, otro.id, core);
+                if (!label) return null;
+                return (
+                  <div key={v.id} className="flex items-center justify-between gap-2 text-sm">
+                    <button onClick={() => onOpen(otro.tipo.toLowerCase(), otro.id)} className="text-left flex-1 min-w-0">
+                      <span className="font-semibold text-[#2A2118]">{label}</span>
+                      <span className="text-[#8A8272]"> · {nombreRelacionLado(tr, esOrigen)}{v.fecha ? ` · ${v.fecha}` : ""}</span>
+                    </button>
+                    <IconBtn label="Quitar vínculo" danger onClick={() => quitarVinculo(v.id)}><X size={14} /></IconBtn>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="flex items-center justify-between mb-2">
@@ -3350,6 +3421,14 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
           excluirIds={relEmpresas.map((r) => r.empresaId)}
           onClose={() => setShowRel(false)}
           onSave={(rel) => setCore((prev) => ({ ...prev, personaEmpresa: [...prev.personaEmpresa, { ...rel, personaId: id, id: uid("pe") }] }))}
+        />
+      )}
+      {showVincularRelacion && (
+        <VincularRelacionForm
+          core={core}
+          setCore={setCore}
+          entidadFija={{ tipo: "Persona", id }}
+          onClose={() => setShowVincularRelacion(false)}
         />
       )}
       {editRel && (
@@ -5293,6 +5372,7 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
   const [showPersonaLink, setShowPersonaLink] = useState(false);
   const [editRel, setEditRel] = useState(null);
   const [showNuevoHiloEmpresa, setShowNuevoHiloEmpresa] = useState(false);
+  const [showVincularRelacion, setShowVincularRelacion] = useState(false);
   const [verGrupo, setVerGrupo] = useState(false);
   if (!empresa) return <div><BackHeader onClose={onClose} /><p className="text-sm text-[#8A8272]">Esta empresa ya no existe.</p></div>;
 
@@ -5306,9 +5386,11 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
   const hilosDeEmpresa = core.hilos.filter((h) => hilosIdsDeEmpresa.has(h.id)).map((h) => h.id);
   const hilosDeEstaEmpresa = core.hilos.filter((h) => hilosIdsDeEmpresa.has(h.id) && h.estado === "Activo");
   const accCount = acciones.filter((a) => hilosDeEmpresa.includes(a.hiloId)).length;
+  const misVinculos = (core.vinculos || []).filter((v) => (v.origenTipo === "Empresa" && v.origenId === id) || (v.destinoTipo === "Empresa" && v.destinoId === id));
 
   const updateRel = (relId, cambios) => setCore((prev) => ({ ...prev, personaEmpresa: prev.personaEmpresa.map((r) => (r.id === relId ? { ...r, ...cambios } : r)) }));
   const unlinkObra = (relId) => setCore((prev) => ({ ...prev, empresaObra: prev.empresaObra.filter((r) => r.id !== relId) }));
+  const quitarVinculo = (vinculoId) => setCore((prev) => ({ ...prev, vinculos: (prev.vinculos || []).filter((v) => v.id !== vinculoId) }));
 
   return (
     <div>
@@ -5419,6 +5501,34 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
             </div>
           )}
         </div>
+
+        <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Vínculos</p>
+            <button onClick={() => setShowVincularRelacion(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>
+          </div>
+          {misVinculos.length === 0 ? (
+            <p className="text-sm text-[#A69C88]">Sin vínculos cargados.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {misVinculos.map((v) => {
+                const tr = (core.tiposRelacion || []).find((t) => t.id === v.tipoRelacionId);
+                const { otro, esOrigen } = ladoOpuestoVinculo(v, "Empresa", id);
+                const label = entidadLabel(otro.tipo, otro.id, core);
+                if (!label) return null;
+                return (
+                  <div key={v.id} className="flex items-center justify-between gap-2 text-sm">
+                    <button onClick={() => onOpen(otro.tipo.toLowerCase(), otro.id)} className="text-left flex-1 min-w-0">
+                      <span className="font-semibold text-[#2A2118]">{label}</span>
+                      <span className="text-[#8A8272]"> · {nombreRelacionLado(tr, esOrigen)}{v.fecha ? ` · ${v.fecha}` : ""}</span>
+                    </button>
+                    <IconBtn label="Quitar vínculo" danger onClick={() => quitarVinculo(v.id)}><X size={14} /></IconBtn>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
       {showNuevoHiloEmpresa && (
@@ -5457,6 +5567,14 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
           relacion={editRel}
           onClose={() => setEditRel(null)}
           onSave={(cambios) => { updateRel(editRel.id, cambios); setEditRel(null); }}
+        />
+      )}
+      {showVincularRelacion && (
+        <VincularRelacionForm
+          core={core}
+          setCore={setCore}
+          entidadFija={{ tipo: "Empresa", id }}
+          onClose={() => setShowVincularRelacion(false)}
         />
       )}
     </div>
@@ -5639,10 +5757,13 @@ function ObraDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
   const obra = core.obras.find((o) => o.id === id);
   const [showNuevoHiloObra, setShowNuevoHiloObra] = useState(false);
   const [showEmpresaLink, setShowEmpresaLink] = useState(false);
+  const [showVincularRelacion, setShowVincularRelacion] = useState(false);
   if (!obra) return <div><BackHeader onClose={onClose} /><p className="text-sm text-[#8A8272]">Esta obra ya no existe.</p></div>;
   const empresas = core.empresaObra.filter((r) => r.obraId === id);
   const hilosIdsDeEstaObra = new Set((core.hiloObra || []).filter((r) => r.obraId === id).map((r) => r.hiloId));
   const hilosDeEstaObra = core.hilos.filter((h) => hilosIdsDeEstaObra.has(h.id) && h.estado === "Activo");
+  const misVinculos = (core.vinculos || []).filter((v) => (v.origenTipo === "Obra" && v.origenId === id) || (v.destinoTipo === "Obra" && v.destinoId === id));
+  const quitarVinculo = (vinculoId) => setCore((prev) => ({ ...prev, vinculos: (prev.vinculos || []).filter((v) => v.id !== vinculoId) }));
   return (
     <div>
       <BackHeader onClose={onClose} />
@@ -5693,6 +5814,34 @@ function ObraDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
             </div>
           )}
         </div>
+
+        <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352]">Vínculos</p>
+            <button onClick={() => setShowVincularRelacion(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>
+          </div>
+          {misVinculos.length === 0 ? (
+            <p className="text-sm text-[#A69C88]">Sin vínculos cargados.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {misVinculos.map((v) => {
+                const tr = (core.tiposRelacion || []).find((t) => t.id === v.tipoRelacionId);
+                const { otro, esOrigen } = ladoOpuestoVinculo(v, "Obra", id);
+                const label = entidadLabel(otro.tipo, otro.id, core);
+                if (!label) return null;
+                return (
+                  <div key={v.id} className="flex items-center justify-between gap-2 text-sm">
+                    <button onClick={() => onOpen(otro.tipo.toLowerCase(), otro.id)} className="text-left flex-1 min-w-0">
+                      <span className="font-semibold text-[#2A2118]">{label}</span>
+                      <span className="text-[#8A8272]"> · {nombreRelacionLado(tr, esOrigen)}{v.fecha ? ` · ${v.fecha}` : ""}</span>
+                    </button>
+                    <IconBtn label="Quitar vínculo" danger onClick={() => quitarVinculo(v.id)}><X size={14} /></IconBtn>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
       {showNuevoHiloObra && (
         <Modal title="Nuevo hilo" onClose={() => setShowNuevoHiloObra(false)}>
@@ -5713,6 +5862,14 @@ function ObraDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
           setCore={setCore}
           obraId={id}
           onClose={() => setShowEmpresaLink(false)}
+        />
+      )}
+      {showVincularRelacion && (
+        <VincularRelacionForm
+          core={core}
+          setCore={setCore}
+          entidadFija={{ tipo: "Obra", id }}
+          onClose={() => setShowVincularRelacion(false)}
         />
       )}
     </div>
@@ -6366,6 +6523,66 @@ function CargosView({ core, setCore }) {
   );
 }
 
+// Catálogo de tipos de relación para la Red de relaciones (ver TipoRelacionForm para el
+// significado de cualidad simétrica/asimétrica y de "implica jerarquía").
+function TiposRelacionView({ core, setCore }) {
+  const [modal, setModal] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
+  const saveTipo = (data) => {
+    setCore((prev) => {
+      const exists = (prev.tiposRelacion || []).some((t) => t.id === data.id);
+      const tiposRelacion = exists ? prev.tiposRelacion.map((t) => (t.id === data.id ? data : t)) : [...(prev.tiposRelacion || []), data];
+      return { ...prev, tiposRelacion };
+    });
+    setModal(null);
+  };
+  const delTipo = (id) => setCore((prev) => ({
+    ...prev,
+    tiposRelacion: (prev.tiposRelacion || []).filter((t) => t.id !== id),
+    vinculos: (prev.vinculos || []).filter((v) => v.tipoRelacionId !== id),
+  }));
+
+  return (
+    <div>
+    <div className="sticky top-0 z-10 bg-[#F7F5F0]">
+      <div className="flex justify-end mb-2"><button onClick={() => setModal({})} className="bg-[#E8871E] text-[#2A2118] rounded-sm px-3 py-1.5 font-bold text-sm flex items-center gap-1"><Plus size={14} /> Agregar</button></div>
+    </div>
+      {(core.tiposRelacion || []).length === 0 ? (
+        <EmptyState icon={<GitBranch size={22} />} text="Todavía no hay tipos de relación cargados." />
+      ) : (
+        <div className="space-y-1.5">
+          {core.tiposRelacion.map((t) => (
+            <div key={t.id} className="bg-white border border-[#E4DECF] rounded-sm p-2.5 flex items-center justify-between text-sm">
+              <div className="min-w-0">
+                <span className="font-semibold text-[#2A2118]">{t.nombre}{t.cualidad === "asimetrica" ? ` / ${t.nombreInverso}` : ""}</span>
+                <p className="text-xs text-[#8A8272]">{t.cualidad === "asimetrica" ? "Asimétrica" : "Simétrica"}{t.cualidad === "asimetrica" && t.implicaJerarquia ? " · implica jerarquía" : ""}</p>
+              </div>
+              <div className="flex gap-1 shrink-0">
+                <IconBtn label="Editar" onClick={() => setModal(t)}><Pencil size={14} /></IconBtn>
+                <IconBtn label="Eliminar" danger onClick={() => setDeletingId(t.id)}><Trash2 size={14} /></IconBtn>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {modal !== null && (
+        <Modal title={modal.id ? "Editar tipo de relación" : "Nuevo tipo de relación"} onClose={() => setModal(null)}>
+          <TipoRelacionForm data={modal} onSave={saveTipo} />
+        </Modal>
+      )}
+      {deletingId && (
+        <Modal title="¿Eliminar este tipo de relación?" onClose={() => setDeletingId(null)}>
+          <p className="text-sm text-[#2A2118] mb-4">También se borran los vínculos que lo usan. No se puede deshacer.</p>
+          <div className="flex gap-2">
+            <button onClick={() => setDeletingId(null)} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
+            <button onClick={() => { delTipo(deletingId); setDeletingId(null); }} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, eliminar</button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
 function ConfigView({ core, setCore, acciones, setAcciones }) {
   const [section, setSection] = useState("parametros");
   const [confirmVaciar, setConfirmVaciar] = useState(false);
@@ -6796,6 +7013,248 @@ function CategoriaForm({ data, onSave }) {
     <div>
       <Field label="Nombre"><input className={inputCls} value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Ej: Zona, Rubro, Prioridad" /></Field>
       <PrimaryBtn full onClick={() => nombre.trim() && onSave({ id: data.id || uid("CAT"), nombre: nombre.trim() })}>Guardar</PrimaryBtn>
+    </div>
+  );
+}
+
+function TipoRelacionForm({ data, onSave }) {
+  const [cualidad, setCualidad] = useState(data.cualidad || "simetrica");
+  const [nombre, setNombre] = useState(data.nombre || "");
+  const [nombreInverso, setNombreInverso] = useState(data.nombreInverso || "");
+  const [implicaJerarquia, setImplicaJerarquia] = useState(!!data.implicaJerarquia);
+
+  const guardar = () => {
+    if (!nombre.trim()) return;
+    if (cualidad === "asimetrica" && !nombreInverso.trim()) return;
+    onSave({
+      id: data.id || uid("TR"),
+      cualidad,
+      nombre: nombre.trim(),
+      nombreInverso: cualidad === "asimetrica" ? nombreInverso.trim() : null,
+      implicaJerarquia: cualidad === "asimetrica" ? implicaJerarquia : false,
+    });
+  };
+
+  return (
+    <div>
+      <div className="flex gap-2 mb-2">
+        <button type="button" onClick={() => setCualidad("simetrica")} style={{ backgroundColor: cualidad === "simetrica" ? "#2A2F36" : "#E7E2D8", color: cualidad === "simetrica" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-2 rounded-sm text-sm font-bold">Simétrica</button>
+        <button type="button" onClick={() => setCualidad("asimetrica")} style={{ backgroundColor: cualidad === "asimetrica" ? "#2A2F36" : "#E7E2D8", color: cualidad === "asimetrica" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-2 rounded-sm text-sm font-bold">Asimétrica</button>
+      </div>
+      <p className="text-xs text-[#8A8272] mb-3">
+        {cualidad === "simetrica"
+          ? "Un solo nombre vale para los dos lados de la relación (ej: \"Amigo de\")."
+          : "Cada lado tiene su propio nombre; al cargar un vínculo con este tipo, el otro lado se completa solo (ej: \"Cliente de\" / \"Proveedor de\")."}
+      </p>
+      <Field label={cualidad === "simetrica" ? "Nombre de la relación" : "Nombre (origen → destino)"}>
+        <input className={inputCls} value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder={cualidad === "simetrica" ? "Ej: Amigo de" : "Ej: Cliente de"} />
+      </Field>
+      {cualidad === "asimetrica" && (
+        <>
+          <Field label="Nombre inverso (destino → origen)">
+            <input className={inputCls} value={nombreInverso} onChange={(e) => setNombreInverso(e.target.value)} placeholder="Ej: Proveedor de" />
+          </Field>
+          <Field label="¿Implica jerarquía?">
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setImplicaJerarquia(false)} style={{ backgroundColor: !implicaJerarquia ? "#2A2F36" : "#E7E2D8", color: !implicaJerarquia ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-2 rounded-sm text-sm font-bold">No</button>
+              <button type="button" onClick={() => setImplicaJerarquia(true)} style={{ backgroundColor: implicaJerarquia ? "#2A2F36" : "#E7E2D8", color: implicaJerarquia ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-2 rounded-sm text-sm font-bold">Sí</button>
+            </div>
+          </Field>
+        </>
+      )}
+      <PrimaryBtn full onClick={guardar}>Guardar</PrimaryBtn>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Red de relaciones (Telaraña)
+// ---------------------------------------------------------------------------
+// Formulario de carga de vínculos, reutilizado tal cual tanto en la pantalla principal
+// "Relaciones" (armado masivo, con varios orígenes y destinos a la vez) como en el botón
+// "+ Vincular" de cada ficha de Persona/Empresa/Obra — ahí se abre con "entidadFija" puesta,
+// que queda fija del lado del origen y no se puede quitar.
+function RelacionForm({ core, setCore, entidadFija, onCreado }) {
+  const clave = (e) => `${e.tipo}:${e.id}`;
+  const [origenes, setOrigenes] = useState(entidadFija ? [entidadFija] : []);
+  const [origenSel, setOrigenSel] = useState("");
+  const [tipoRelacionId, setTipoRelacionId] = useState((core.tiposRelacion || [])[0]?.id || "");
+  const [showNuevoTipo, setShowNuevoTipo] = useState(false);
+  const [destinos, setDestinos] = useState([]);
+  const [destinoSel, setDestinoSel] = useState("");
+  const [fecha, setFecha] = useState(todayISO());
+  const [nota, setNota] = useState("");
+  const [feedback, setFeedback] = useState("");
+
+  const todas = todasLasEntidadesRelacionables(core);
+  const yaOrigen = new Set(origenes.map(clave));
+  const yaDestino = new Set(destinos.map(clave));
+  const opcionesOrigen = todas.filter((e) => !yaOrigen.has(clave(e))).map((e) => ({ id: clave(e), label: `${e.label} (${e.tipo})` }));
+  const opcionesDestino = todas.filter((e) => !yaDestino.has(clave(e))).map((e) => ({ id: clave(e), label: `${e.label} (${e.tipo})` }));
+
+  const esFija = (e) => entidadFija && e.tipo === entidadFija.tipo && e.id === entidadFija.id;
+
+  const agregarOrigen = () => {
+    if (!origenSel) return;
+    const [tipo, id] = origenSel.split(":");
+    setOrigenes((a) => [...a, { tipo, id }]);
+    setOrigenSel("");
+  };
+  const quitarOrigen = (e) => { if (!esFija(e)) setOrigenes((a) => a.filter((x) => clave(x) !== clave(e))); };
+  const agregarDestino = () => {
+    if (!destinoSel) return;
+    const [tipo, id] = destinoSel.split(":");
+    setDestinos((a) => [...a, { tipo, id }]);
+    setDestinoSel("");
+  };
+  const quitarDestino = (e) => setDestinos((a) => a.filter((x) => clave(x) !== clave(e)));
+
+  // Producto cartesiano orígenes × destinos, sin auto-relaciones (una entidad consigo misma).
+  const pares = origenes.flatMap((o) => destinos.filter((d) => clave(d) !== clave(o)).map((d) => [o, d]));
+
+  const crearVinculos = () => {
+    if (pares.length === 0 || !tipoRelacionId || !fecha) return;
+    const nuevos = pares.map(([o, d]) => ({
+      id: uid("V"), origenTipo: o.tipo, origenId: o.id, destinoTipo: d.tipo, destinoId: d.id, tipoRelacionId, fecha, nota: nota.trim(),
+    }));
+    setCore((prev) => ({ ...prev, vinculos: [...(prev.vinculos || []), ...nuevos] }));
+    setFeedback(nuevos.length === 1 ? "Se creó 1 vínculo." : `Se crearon ${nuevos.length} vínculos.`);
+    setTimeout(() => setFeedback(""), 2500);
+    setDestinos([]);
+    setNota("");
+    onCreado?.();
+  };
+
+  return (
+    <div>
+      <Field label="Desde">
+        {origenes.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {origenes.map((e) => (
+              <span key={clave(e)} className="flex items-center gap-1 bg-[#D9F0DE] text-[#1B4D2E] text-xs font-bold px-2 py-1 rounded-sm">
+                {entidadLabel(e.tipo, e.id, core)} <span className="opacity-60 font-normal">({e.tipo})</span>
+                {!esFija(e) && <button type="button" onClick={() => quitarOrigen(e)} aria-label="Quitar"><X size={12} /></button>}
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="flex gap-2">
+          <div className="flex-1"><BuscadorSelect opciones={opcionesOrigen} value={origenSel} onChange={setOrigenSel} placeholder="Buscar persona, empresa u obra..." /></div>
+          <button type="button" disabled={!origenSel} onClick={agregarOrigen} className="shrink-0 border border-[#E4DECF] rounded-sm px-3 text-sm font-bold text-[#2A2118] disabled:text-[#C9C1AE] disabled:cursor-not-allowed">+ Agregar</button>
+        </div>
+      </Field>
+
+      <Field label="Tipo de relación">
+        <BuscadorSelect
+          opciones={(core.tiposRelacion || []).map((t) => ({ id: t.id, label: t.cualidad === "asimetrica" ? `${t.nombre} / ${t.nombreInverso}` : t.nombre }))}
+          value={tipoRelacionId}
+          onChange={setTipoRelacionId}
+          placeholder="Buscar tipo de relación..."
+        />
+      </Field>
+      <button type="button" onClick={() => setShowNuevoTipo(true)} className="w-full border border-[#E4DECF] rounded-sm py-2 font-bold text-xs text-[#2A2118] mb-3">+ Crear tipo de relación nuevo</button>
+
+      <Field label="Hacia">
+        {destinos.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {destinos.map((e) => (
+              <span key={clave(e)} className="flex items-center gap-1 bg-[#D9F0DE] text-[#1B4D2E] text-xs font-bold px-2 py-1 rounded-sm">
+                {entidadLabel(e.tipo, e.id, core)} <span className="opacity-60 font-normal">({e.tipo})</span>
+                <button type="button" onClick={() => quitarDestino(e)} aria-label="Quitar"><X size={12} /></button>
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="flex gap-2">
+          <div className="flex-1"><BuscadorSelect opciones={opcionesDestino} value={destinoSel} onChange={setDestinoSel} placeholder="Buscar persona, empresa u obra..." /></div>
+          <button type="button" disabled={!destinoSel} onClick={agregarDestino} className="shrink-0 border border-[#E4DECF] rounded-sm px-3 text-sm font-bold text-[#2A2118] disabled:text-[#C9C1AE] disabled:cursor-not-allowed">+ Agregar</button>
+        </div>
+      </Field>
+
+      <Field label="Fecha"><input type="date" className={inputCls} value={fecha} onChange={(e) => setFecha(e.target.value)} /></Field>
+      <Field label="Nota (opcional)"><textarea className={inputCls} rows={2} value={nota} onChange={(e) => setNota(e.target.value)} /></Field>
+
+      {feedback && <p className="text-xs font-bold text-[#1B4D2E] mb-2">{feedback}</p>}
+      <PrimaryBtn full disabled={pares.length === 0 || !tipoRelacionId} onClick={crearVinculos}>
+        {pares.length > 1 ? `Crear ${pares.length} vínculos` : "Crear vínculo"}
+      </PrimaryBtn>
+
+      {showNuevoTipo && (
+        <Modal title="Nuevo tipo de relación" onClose={() => setShowNuevoTipo(false)}>
+          <TipoRelacionForm
+            data={{}}
+            onSave={(data) => {
+              setCore((prev) => ({ ...prev, tiposRelacion: [...(prev.tiposRelacion || []), data] }));
+              setTipoRelacionId(data.id);
+              setShowNuevoTipo(false);
+            }}
+          />
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// Abre el mismo RelacionForm de arriba en un modal, con una entidad ya puesta como origen —
+// es la pantalla que llaman los botones "+ Vincular" de las fichas de Persona/Empresa/Obra.
+function VincularRelacionForm({ core, setCore, entidadFija, onClose }) {
+  return (
+    <Modal title="Vincular" onClose={onClose}>
+      <RelacionForm core={core} setCore={setCore} entidadFija={entidadFija} />
+      <button type="button" onClick={onClose} className="w-full mt-1 bg-[#E8871E] text-[#2A2118] rounded-sm py-2.5 font-bold text-sm">Listo</button>
+    </Modal>
+  );
+}
+
+function RelacionesView({ core, setCore, onOpen }) {
+  const [q, setQ] = useState("");
+  const vinculos = [...(core.vinculos || [])].sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""));
+  const quitarVinculo = (id) => setCore((prev) => ({ ...prev, vinculos: (prev.vinculos || []).filter((v) => v.id !== id) }));
+
+  const qq = q.trim().toLowerCase();
+  const visibles = qq
+    ? vinculos.filter((v) => {
+        const origenLabel = entidadLabel(v.origenTipo, v.origenId, core) || "";
+        const destinoLabel = entidadLabel(v.destinoTipo, v.destinoId, core) || "";
+        return origenLabel.toLowerCase().includes(qq) || destinoLabel.toLowerCase().includes(qq);
+      })
+    : vinculos;
+
+  return (
+    <div>
+      <div className="bg-white border border-[#E4DECF] rounded-sm p-3 mb-4">
+        <RelacionForm core={core} setCore={setCore} />
+      </div>
+
+      <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B6352] mb-2">Vínculos cargados</p>
+      {vinculos.length > 0 && (
+        <Field label="Buscar"><input className={inputCls} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por nombre..." /></Field>
+      )}
+      {visibles.length === 0 ? (
+        <EmptyState icon={<GitBranch size={22} />} text="Todavía no hay vínculos cargados." />
+      ) : (
+        <div className="space-y-1.5">
+          {visibles.map((v) => {
+            const tr = (core.tiposRelacion || []).find((t) => t.id === v.tipoRelacionId);
+            const origenLabel = entidadLabel(v.origenTipo, v.origenId, core);
+            const destinoLabel = entidadLabel(v.destinoTipo, v.destinoId, core);
+            if (!origenLabel || !destinoLabel) return null;
+            return (
+              <div key={v.id} className="bg-white border border-[#E4DECF] rounded-sm p-2.5 flex items-center justify-between gap-2 text-sm">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate">
+                    <button onClick={() => onOpen(v.origenTipo.toLowerCase(), v.origenId)} className="font-semibold text-[#2A2118]">{origenLabel}</button>
+                    <span className="text-[#8A8272]"> {nombreRelacionLado(tr, true) || "—"} </span>
+                    <button onClick={() => onOpen(v.destinoTipo.toLowerCase(), v.destinoId)} className="font-semibold text-[#2A2118]">{destinoLabel}</button>
+                  </p>
+                  <p className="text-xs text-[#8A8272]">{v.fecha}{v.nota ? ` · ${v.nota}` : ""}</p>
+                </div>
+                <IconBtn label="Quitar vínculo" danger onClick={() => quitarVinculo(v.id)}><X size={14} /></IconBtn>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
