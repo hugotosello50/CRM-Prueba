@@ -113,6 +113,13 @@ al tocarlo, pide confirmación antes de eliminar (mismo patrón ya usado en
 Cargos, Personas, Empresas, Obras, etc.). Aplica de acá en adelante a toda
 pantalla nueva y a cualquier pantalla existente que se toque.
 
+Además de esa doble confirmación, antes de eliminar hay que **analizar si el
+registro está siendo usado por otro registro** (vínculos, relaciones, campos
+que lo referencian, etc.) y, si es así, **avisarlo explícitamente** en el
+mismo paso de confirmación (qué y cuántos registros lo usan) — no alcanza con
+la confirmación genérica de "¿estás seguro?". Esto aplica a todo botón
+"eliminar" de la app, de acá en adelante y en lo existente que se toque.
+
 # Contexto del negocio
 
 La empresa del usuario es **Feyro**, dedicada a la venta de materiales
