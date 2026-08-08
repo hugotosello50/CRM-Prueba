@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.5.1";
+const APP_VERSION = "2.5.2";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -2860,6 +2860,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   const [editingAccion, setEditingAccion] = useState(null);
   const [deletingAccionId, setDeletingAccionId] = useState(null);
   const [verVinculos, setVerVinculos] = useState(false);
+  const [verTareasVinculadas, setVerTareasVinculadas] = useState(false);
   const [verResumen, setVerResumen] = useState(false);
   const [verDetalle, setVerDetalle] = useState(false);
   const [confirmar, setConfirmar] = useState(null); // { texto, onConfirm }
@@ -3023,10 +3024,19 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       )}
 
       <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-dashed border-[#E4DECF] flex-nowrap">
-        {tareasVinculadas.length > 0 && (
-          <span className="shrink-0 inline-flex items-center gap-1 text-[11px] font-bold text-[#6B6352] bg-[#F7F5F0] border border-[#E4DECF] rounded-sm px-2 py-1">
-            <ListChecks size={11} /> {tareasVinculadas.length} tarea{tareasVinculadas.length === 1 ? "" : "s"}
-          </span>
+        {!esTarea && (
+          <div className="shrink-0 flex items-center gap-1">
+            {tareasVinculadas.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setVerTareasVinculadas((v) => !v)}
+                className="inline-flex items-center gap-1 text-[11px] font-bold text-[#6B6352] bg-[#F7F5F0] border border-[#E4DECF] rounded-sm px-2 py-1"
+              >
+                <ListChecks size={11} /> {tareasVinculadas.length} tarea{tareasVinculadas.length === 1 ? "" : "s"}
+              </button>
+            )}
+            <IconBtn label="Agregar tarea" onClick={() => setShowAgregarTarea(true)}><Plus size={13} /></IconBtn>
+          </div>
         )}
         <div className="flex items-center gap-1.5 ml-auto min-w-0">
           {personasDelHilo.length > 1 && (
@@ -3053,6 +3063,21 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
           {primary?.prioridad && <span className="shrink-0"><Chip tone={prioTone}>{primary.prioridad.charAt(0)}</Chip></span>}
         </div>
       </div>
+
+      {verTareasVinculadas && tareasVinculadas.length > 0 && (
+        <div className="mt-1.5 space-y-1">
+          {tareasVinculadas.map((tv) => (
+            <div key={tv.id} className="flex items-center justify-between gap-2 text-sm bg-[#F7F5F0] border border-[#E4DECF] rounded-sm px-2 py-1.5">
+              <button onClick={() => onOpen("hilo", tv.id)} className="text-left flex-1 min-w-0 flex items-center gap-1.5">
+                <span className={tv.estado === "Cerrado" ? "line-through text-[#A69C88]" : "text-[#2A2118] font-semibold"}>{tv.titulo}</span>
+                {tv.estado === "Cerrado" && <Chip tone="neutral">Cerrada</Chip>}
+              </button>
+              <IconBtn label="Desvincular" danger onClick={() => setConfirmar({ texto: "¿Desvincular esta tarea del hilo?", onConfirm: () => desvincularTarea(tv.id) })}><X size={14} /></IconBtn>
+            </div>
+          ))}
+          <button onClick={() => setShowAgregarTarea(true)} className="text-xs font-bold text-[#B0452E]">+ Agregar tarea</button>
+        </div>
+      )}
 
       {!primary && (
         <p className="text-xs text-[#A69C88] mt-2">Sin próxima acción programada.</p>
@@ -3091,30 +3116,6 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
             )}
 
             <VinculosDeHilo hilo={hilo} hiloId={id} core={core} setCore={setCore} onOpen={onOpen} agregarPersona={agregarPersona} setConfirmar={setConfirmar} />
-
-            {!esTarea && (
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <p className="text-[10px] font-bold tracking-wide text-[#8A8272]">Tareas</p>
-                  <button onClick={() => setShowAgregarTarea(true)} className="text-xs font-bold text-[#B0452E]">+ Agregar tarea</button>
-                </div>
-                {tareasVinculadas.length === 0 ? (
-                  <p className="text-sm text-[#A69C88]">Sin tareas vinculadas.</p>
-                ) : (
-                  <div className="space-y-1">
-                    {tareasVinculadas.map((tv) => (
-                      <div key={tv.id} className="flex items-center justify-between gap-2 text-sm">
-                        <button onClick={() => onOpen("hilo", tv.id)} className="text-left flex-1 min-w-0 flex items-center gap-1.5">
-                          <span className={tv.estado === "Cerrado" ? "line-through text-[#A69C88]" : "text-[#2A2118] font-semibold"}>{tv.titulo}</span>
-                          {tv.estado === "Cerrado" && <Chip tone="neutral">Cerrada</Chip>}
-                        </button>
-                        <IconBtn label="Desvincular" danger onClick={() => setConfirmar({ texto: "¿Desvincular esta tarea del hilo?", onConfirm: () => desvincularTarea(tv.id) })}><X size={14} /></IconBtn>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         )}
       </div>
