@@ -120,6 +120,28 @@ mismo paso de confirmación (qué y cuántos registros lo usan) — no alcanza c
 la confirmación genérica de "¿estás seguro?". Esto aplica a todo botón
 "eliminar" de la app, de acá en adelante y en lo existente que se toque.
 
+## Menciones "@Entidad" en campos de texto
+
+Hay un mecanismo para que un texto libre (nota, título, descripción) incluya
+menciones a una Persona/Empresa/Obra que se muestran como enlace clicable a
+su ficha. Se implementa con dos piezas reutilizables ya armadas en
+`components/CRM.jsx`:
+
+- `CampoConMenciones`: reemplazo de un `<input>`/`<textarea>` común, agrega el
+  autocompletado al escribir "@".
+- `TextoConMenciones`: reemplazo de mostrar `{texto}` a secas, renderiza las
+  menciones como enlaces.
+
+Guardado como texto plano con el formato `@[Nombre](Tipo:id)`, así el campo
+sigue siendo un input/textarea común y cualquier lugar que todavía no use
+`TextoConMenciones` conserva el nombre legible (no rompe nada).
+
+Hoy están enchufados en: título del hilo (tema del hilo/tarea) y las
+descripciones de acciones (`notaPlanificada`/`notaHecho`), tanto al editar
+como al mostrarse. **El plan es extenderlo a todo campo de texto libre de la
+app** — al tocar una pantalla nueva con notas/descripciones, evaluar sumar
+estos mismos dos componentes ahí en vez de inventar algo distinto.
+
 # Contexto del negocio
 
 La empresa del usuario es **Feyro**, dedicada a la venta de materiales

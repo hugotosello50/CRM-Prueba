@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.7.0";
+const APP_VERSION = "2.8.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -753,6 +753,136 @@ function BuscadorSelect({ opciones, value, onChange, placeholder, vacioLabel }) 
   );
 }
 
+// Menciones "@Entidad": una mención se guarda como texto plano con el formato
+// @[Nombre](Tipo:id) — así el texto sigue siendo editable en un input/textarea común, y
+// cualquier pantalla que todavía no la muestre como enlace igual conserva el nombre legible.
+const MENCION_REGEX = /@\[([^\]]+)\]\((\w+):([^)]+)\)/g;
+
+// Para usar en atributos "title" o previews cortas: deja el nombre, sin el markup.
+function textoPlanoDeMenciones(texto) {
+  return (texto || "").replace(/@\[([^\]]+)\]\([^)]+\)/g, "@$1");
+}
+
+// Muestra un texto que puede tener menciones @[Nombre](Tipo:id) como enlaces clicables a la
+// ficha correspondiente, dejando el resto como texto plano.
+function TextoConMenciones({ texto, onOpen }) {
+  if (!texto) return null;
+  const regex = new RegExp(MENCION_REGEX);
+  const partes = [];
+  let ultimo = 0;
+  let match;
+  let key = 0;
+  while ((match = regex.exec(texto)) !== null) {
+    if (match.index > ultimo) partes.push(<Fragment key={`t${key++}`}>{texto.slice(ultimo, match.index)}</Fragment>);
+    const [, nombre, tipo, id] = match;
+    partes.push(
+      <button key={`m${key++}`} type="button" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onOpen(tipo.toLowerCase(), id); }} className="font-bold text-[#B0452E] hover:underline underline-offset-2">
+        @{nombre}
+      </button>
+    );
+    ultimo = match.index + match[0].length;
+  }
+  if (ultimo < texto.length) partes.push(<Fragment key={`t${key++}`}>{texto.slice(ultimo)}</Fragment>);
+  return <>{partes}</>;
+}
+
+// Campo de texto libre (input o textarea) con autocompletado "@Entidad": al escribir "@" y
+// letras se abre una lista de Personas/Empresas/Obras que coincidan; al elegir una se inserta
+// una mención @[Nombre](Tipo:id) en el texto, que TextoConMenciones muestra como enlace
+// donde sea que ese texto se lea después.
+function CampoConMenciones({ core, value, onChange, multiline, rows, placeholder, autoFocus, className }) {
+  const [query, setQuery] = useState(null); // null = no se está armando una mención
+  const [triggerPos, setTriggerPos] = useState(null);
+  const wrapRef = useRef(null);
+  const fieldRef = useRef(null);
+
+  useEffect(() => {
+    const onClickFuera = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setQuery(null); };
+    document.addEventListener("mousedown", onClickFuera);
+    document.addEventListener("touchstart", onClickFuera);
+    return () => {
+      document.removeEventListener("mousedown", onClickFuera);
+      document.removeEventListener("touchstart", onClickFuera);
+    };
+  }, []);
+
+  const entidades = useMemo(() => [
+    ...core.personas.map((p) => ({ tipo: "Persona", id: p.id, nombre: p.nombre })),
+    ...core.empresas.map((e) => ({ tipo: "Empresa", id: e.id, nombre: e.denominacion })),
+    ...core.obras.map((o) => ({ tipo: "Obra", id: o.id, nombre: o.nombre })),
+  ], [core.personas, core.empresas, core.obras]);
+
+  const detectarMencion = (texto, cursor) => {
+    const antes = texto.slice(0, cursor);
+    const arroba = antes.lastIndexOf("@");
+    if (arroba === -1) { setQuery(null); return; }
+    const entreArrobaYCursor = antes.slice(arroba + 1);
+    if (/[\s@]/.test(entreArrobaYCursor)) { setQuery(null); return; }
+    setTriggerPos(arroba);
+    setQuery(entreArrobaYCursor);
+  };
+
+  const onChangeTexto = (e) => {
+    onChange(e.target.value);
+    detectarMencion(e.target.value, e.target.selectionStart);
+  };
+
+  const elegir = (ent) => {
+    const el = fieldRef.current;
+    const cursor = el ? el.selectionStart : value.length;
+    const antes = value.slice(0, triggerPos);
+    const despues = value.slice(cursor);
+    const insercion = `@[${ent.nombre}](${ent.tipo}:${ent.id}) `;
+    const nuevoTexto = antes + insercion + despues;
+    onChange(nuevoTexto);
+    setQuery(null);
+    requestAnimationFrame(() => {
+      if (el) { el.focus(); const pos = antes.length + insercion.length; el.setSelectionRange(pos, pos); }
+    });
+  };
+
+  const qq = (query || "").trim().toLowerCase();
+  const opciones = (qq ? entidades.filter((e) => e.nombre.toLowerCase().includes(qq)) : entidades).slice(0, 6);
+
+  const Campo = multiline ? "textarea" : "input";
+
+  return (
+    <div className="relative" ref={wrapRef}>
+      <Campo
+        ref={fieldRef}
+        className={className || inputCls}
+        rows={multiline ? (rows || 3) : undefined}
+        placeholder={placeholder}
+        autoFocus={autoFocus}
+        value={value}
+        onChange={onChangeTexto}
+        onClick={(e) => detectarMencion(value, e.target.selectionStart)}
+        onKeyUp={(e) => { if (e.key === "Escape") setQuery(null); else detectarMencion(value, e.target.selectionStart); }}
+      />
+      {query !== null && (
+        <div className="relative z-20 mt-1 max-h-40 overflow-y-auto bg-white border border-[#E4DECF] rounded-sm shadow-lg">
+          {opciones.length === 0 ? (
+            <p className="px-3 py-2 text-sm text-[#A69C88]">Sin resultados.</p>
+          ) : (
+            opciones.map((ent) => (
+              <button
+                key={`${ent.tipo}:${ent.id}`}
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => elegir(ent)}
+                className="w-full text-left px-3 py-2 text-sm text-[#2A2118] flex items-center justify-between gap-2"
+              >
+                <span className="truncate">{ent.nombre}</span>
+                <span className="shrink-0 text-[10px] font-bold text-[#A69C88]">{ent.tipo}</span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SelectConCrear({ label, opciones, value, onChange, onCrear, placeholderCrear, allowVacio }) {
   const [creando, setCreando] = useState(false);
   const [nombreNuevo, setNombreNuevo] = useState("");
@@ -1272,8 +1402,8 @@ function ResumenHoyModal({ core, acciones, onOpen, onClose }) {
         onClick={() => { onClose(); onOpen("hilo", hilo.id); }}
         className="w-full text-left bg-white border border-[#E4DECF] rounded-sm p-2.5 mb-1.5"
       >
-        <p className="text-sm font-semibold text-[#2A2118] truncate" title={esTarea ? hilo.titulo : (persona?.nombre || hilo.titulo)}>{esTarea ? hilo.titulo : (persona?.nombre || hilo.titulo)}</p>
-        <p className="text-xs text-[#6B6352] truncate" title={[tipoAccion?.nombre, esTarea ? "" : hilo.titulo, a.notaPlanificada].filter(Boolean).join(" · ")}>{[tipoAccion?.nombre, esTarea ? "" : hilo.titulo, a.notaPlanificada].filter(Boolean).join(" · ")}</p>
+        <p className="text-sm font-semibold text-[#2A2118] truncate">{textoPlanoDeMenciones(esTarea ? hilo.titulo : (persona?.nombre || hilo.titulo))}</p>
+        <p className="text-xs text-[#6B6352] truncate">{textoPlanoDeMenciones([tipoAccion?.nombre, esTarea ? "" : hilo.titulo, a.notaPlanificada].filter(Boolean).join(" · "))}</p>
       </button>
     );
   };
@@ -1506,7 +1636,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
 
   return (
     <div>
-      <Field label="Título del tema *"><input autoFocus className={inputCls} value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Ej: Presupuesto cables solares" /></Field>
+      <Field label="Título del tema *"><CampoConMenciones core={core} autoFocus value={titulo} onChange={setTitulo} placeholder="Ej: Presupuesto cables solares" /></Field>
 
       {!personaFija && (
         <Field label="Persona">
@@ -1654,7 +1784,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
             }}
           />
           <Field label="Se hizo">
-            <textarea className={inputCls} rows={2} value={notas1} onChange={(e) => setNotas1(e.target.value)} placeholder="Qué hablaron, qué resultó..." />
+            <CampoConMenciones core={core} multiline rows={2} value={notas1} onChange={setNotas1} placeholder="Qué hablaron, qué resultó..." />
           </Field>
 
           <label className="flex items-center gap-2 mb-2 text-sm font-bold text-[#2A2118]">
@@ -1676,7 +1806,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
                 }}
               />
               <Field label="Se planifica (qué se busca con esta acción)">
-                <textarea className={inputCls} rows={2} value={notas2} onChange={(e) => setNotas2(e.target.value)} placeholder="Ej: confirmar si aceptaron la propuesta, próximos pasos a seguir..." />
+                <CampoConMenciones core={core} multiline rows={2} value={notas2} onChange={setNotas2} placeholder="Ej: confirmar si aceptaron la propuesta, próximos pasos a seguir..." />
               </Field>
 
               <div className="flex gap-2 mb-2">
@@ -2062,15 +2192,15 @@ function TareaCard({ hilo, core, setCore, acciones, setAcciones, onOpen, onInici
         <div className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: "#EFE6F7", color: "#6B4FA0" }}>
           <ListChecks size={14} />
         </div>
-        <button onClick={() => onOpen("hilo", hilo.id)} className="flex-1 min-w-0 text-left">
-          <p className={`text-sm font-bold ${finalizada ? "line-through text-[#A69C88]" : "text-[#2A2118]"}`}>{hilo.titulo}</p>
+        <div role="button" tabIndex={0} onClick={() => onOpen("hilo", hilo.id)} onKeyDown={(e) => e.key === "Enter" && onOpen("hilo", hilo.id)} className="flex-1 min-w-0 text-left cursor-pointer">
+          <p className={`text-sm font-bold ${finalizada ? "line-through text-[#A69C88]" : "text-[#2A2118]"}`}><TextoConMenciones texto={hilo.titulo} onOpen={onOpen} /></p>
           {pendiente && (
             <p className="text-xs text-[#8A8272] mt-0.5 font-mono">{tipo?.nombre ? `${tipo.nombre} · ` : ""}{fmtDateHora(pendiente.fechaProgramada, pendiente.horaProgramada)}</p>
           )}
           {hiloRelacionado && (
             <p className="text-[11px] text-[#B0452E] font-bold mt-0.5">Vinculada a: {hiloRelacionado.titulo}</p>
           )}
-        </button>
+        </div>
         {setAcciones && (
           <button
             onClick={(e) => { e.stopPropagation(); setShowFecha(true); }}
@@ -2943,7 +3073,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       ))}
     </p>
   ) : (
-    <p className="text-base font-extrabold text-[#2A2118] truncate" title={nombrePrincipal}>{nombrePrincipal}</p>
+    <p className="text-base font-extrabold text-[#2A2118] truncate" title={textoPlanoDeMenciones(nombrePrincipal)}><TextoConMenciones texto={nombrePrincipal} onOpen={onOpen} /></p>
   );
 
   // Si no hay persona, el título principal ya muestra la empresa (o si tampoco hay, la obra)
@@ -3040,7 +3170,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
             <p className="text-[10px] font-bold tracking-wide text-[#A69C88] mb-0.5">Tema del hilo</p>
             <IconBtn label="Editar hilo" onClick={() => setShowEditarTitulo(true)}><Pencil size={12} /></IconBtn>
           </div>
-          <p className="text-base font-extrabold text-[#2A2118]">{hilo.titulo}</p>
+          <p className="text-base font-extrabold text-[#2A2118]"><TextoConMenciones texto={hilo.titulo} onOpen={onOpen} /></p>
         </div>
       )}
 
@@ -3052,7 +3182,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       {primary && (
         <div className="flex items-start justify-between gap-2 mt-2">
           {primary.notaPlanificada ? (
-            <p className="text-xs font-bold text-[#2A2118] pl-2.5 flex-1 min-w-0" style={{ borderLeft: `10px solid ${colorBorde}` }}>{primary.notaPlanificada}</p>
+            <p className="text-xs font-bold text-[#2A2118] pl-2.5 flex-1 min-w-0" style={{ borderLeft: `10px solid ${colorBorde}` }}><TextoConMenciones texto={primary.notaPlanificada} onOpen={onOpen} /></p>
           ) : <span />}
           <div className="flex items-center gap-0.5 shrink-0">
             <IconBtn label="Editar acción" onClick={() => setEditingAccion(primary)}><Pencil size={16} /></IconBtn>
@@ -3074,7 +3204,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
           {verContextoPrimary && (
             <p className="text-xs text-[#6B6352] mt-1">
               <span className="font-bold text-[#8A8272]">Se generó a partir de:</span>{" "}
-              {origenPrimary ? (origenPrimary.notaHecho || "Sin registro.") : "Es la primera acción de este hilo."}
+              {origenPrimary ? (origenPrimary.notaHecho ? <TextoConMenciones texto={origenPrimary.notaHecho} onOpen={onOpen} /> : "Sin registro.") : "Es la primera acción de este hilo."}
             </p>
           )}
           {verResumen && (
@@ -3085,14 +3215,14 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
                 <>
                   {verDetalle ? (
                     <div className="space-y-2">
-                      {historial.map((a) => <AccionCard key={a.id} accion={a} acciones={accionesDelHilo} core={core} onEdit={() => setEditingAccion(a)} onDelete={() => setDeletingAccionId(a.id)} />)}
+                      {historial.map((a) => <AccionCard key={a.id} accion={a} acciones={accionesDelHilo} core={core} onOpen={onOpen} onEdit={() => setEditingAccion(a)} onDelete={() => setDeletingAccionId(a.id)} />)}
                     </div>
                   ) : (
                     <div className="space-y-1.5">
                       {historial.map((a) => (
                         <div key={a.id} className="text-xs">
                           <span className="font-mono text-[#8A8272]">{fmtDate(a.fechaRealizada)}</span>{" "}
-                          <span className="text-[#6B6352]">{a.notaHecho || core.tiposAccion.find((tt) => tt.id === a.tipoAccionId)?.nombre}</span>
+                          <span className="text-[#6B6352]">{a.notaHecho ? <TextoConMenciones texto={a.notaHecho} onOpen={onOpen} /> : core.tiposAccion.find((tt) => tt.id === a.tipoAccionId)?.nombre}</span>
                         </div>
                       ))}
                     </div>
@@ -3216,7 +3346,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       {showEditarTitulo && (
         esTarea ? (
           <Modal title="Editar título del hilo" onClose={() => setShowEditarTitulo(false)}>
-            <EditarTituloHiloForm hilo={hilo} onSave={(nuevoTitulo) => { setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === id ? { ...h, titulo: nuevoTitulo } : h)) })); setShowEditarTitulo(false); }} />
+            <EditarTituloHiloForm hilo={hilo} core={core} onSave={(nuevoTitulo) => { setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === id ? { ...h, titulo: nuevoTitulo } : h)) })); setShowEditarTitulo(false); }} />
           </Modal>
         ) : (
           <Modal title="Editar hilo" onClose={() => setShowEditarTitulo(false)}>
@@ -3716,7 +3846,7 @@ function VinculosDeFicha({ core, setCore, entidadTipo, entidadId, onOpen }) {
   return (
     <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
       <button onClick={() => setVerVinculos((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
-        {verVinculos ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verVinculos ? "Ocultar vínculos" : "Ver vínculos"}
+        {verVinculos ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verVinculos ? "Ocultar relaciones" : "Ver relaciones"}
       </button>
       {verVinculos && (
         <div className="mt-2.5">
@@ -3900,10 +4030,10 @@ function HiloRow({ hilo, core, acciones, onOpen }) {
   const tipoPendiente = pendiente ? core.tiposAccion.find((t) => t.id === pendiente.tipoAccionId) : null;
   const tareasVinculadas = core.hilos.filter((h) => h.tipo === "tarea" && h.hiloRelacionadoId === hilo.id).length;
   return (
-    <button onClick={() => onOpen("hilo", hilo.id)} className="w-full text-left bg-white border border-[#E4DECF] rounded-sm p-3">
+    <div role="button" tabIndex={0} onClick={() => onOpen("hilo", hilo.id)} onKeyDown={(e) => e.key === "Enter" && onOpen("hilo", hilo.id)} className="w-full text-left bg-white border border-[#E4DECF] rounded-sm p-3 cursor-pointer">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="text-[15px] font-semibold text-[#2A2118] truncate" title={hilo.titulo}>{hilo.titulo}</p>
+          <p className="text-[15px] font-semibold text-[#2A2118] truncate" title={textoPlanoDeMenciones(hilo.titulo)}><TextoConMenciones texto={hilo.titulo} onOpen={onOpen} /></p>
           <p className="text-xs text-[#8A8272] mt-0.5">{[empresas.map((e) => e.denominacion).join(", "), obras.map((o) => o.nombre).join(", ")].filter(Boolean).join(" · ") || "Sin empresa/obra"}</p>
         </div>
         <Chip tone={hilo.estado === "Activo" ? "green" : "neutral"}>{hilo.estado}</Chip>
@@ -3919,11 +4049,11 @@ function HiloRow({ hilo, core, acciones, onOpen }) {
           <span className="text-xs text-[#A69C88]">Sin próxima acción</span>
         )}
       </div>
-    </button>
+    </div>
   );
 }
 
-function AccionCard({ accion, acciones, core, onEdit, onDelete }) {
+function AccionCard({ accion, acciones, core, onOpen, onEdit, onDelete }) {
   const [verContexto, setVerContexto] = useState(false);
   const tipo = core.tiposAccion.find((t) => t.id === accion.tipoAccionId);
   const isPend = accion.estado === "Pendiente";
@@ -3943,7 +4073,7 @@ function AccionCard({ accion, acciones, core, onEdit, onDelete }) {
           {onDelete && <IconBtn label="Eliminar acción" danger onClick={onDelete}><Trash2 size={13} /></IconBtn>}
         </div>
       </div>
-      {accion.notaHecho && <p className="text-sm text-[#6B6352] mt-1.5">{accion.notaHecho}</p>}
+      {accion.notaHecho && <p className="text-sm text-[#6B6352] mt-1.5"><TextoConMenciones texto={accion.notaHecho} onOpen={onOpen} /></p>}
       <div className="flex items-center gap-2 mt-1.5">
         {accion.prioridad && <Chip tone={prioTone}>{accion.prioridad}</Chip>}
         {accion.recurrente && <span className="text-[10px] text-[#8A8272] flex items-center gap-1"><Repeat size={11} /> cada {accion.repiteCadaN} {accion.repiteUnidad}</span>}
@@ -3953,9 +4083,9 @@ function AccionCard({ accion, acciones, core, onEdit, onDelete }) {
       </div>
       {verContexto && (
         <div className="mt-2 pt-2 border-t border-[#EFEBE0] space-y-1.5">
-          <p className="text-xs text-[#6B6352]"><span className="font-bold text-[#8A8272]">Se había planificado:</span> {accion.notaPlanificada || "Sin registro."}</p>
-          <p className="text-xs text-[#6B6352]"><span className="font-bold text-[#8A8272]">Se hizo:</span> {accion.notaHecho || "Sin registro."}</p>
-          <p className="text-xs text-[#6B6352]"><span className="font-bold text-[#8A8272]">Se planificó:</span> {destino ? (destino.notaPlanificada || "Sin registro.") : "No se generó una próxima acción en ese momento."}</p>
+          <p className="text-xs text-[#6B6352]"><span className="font-bold text-[#8A8272]">Se había planificado:</span> {accion.notaPlanificada ? <TextoConMenciones texto={accion.notaPlanificada} onOpen={onOpen} /> : "Sin registro."}</p>
+          <p className="text-xs text-[#6B6352]"><span className="font-bold text-[#8A8272]">Se hizo:</span> {accion.notaHecho ? <TextoConMenciones texto={accion.notaHecho} onOpen={onOpen} /> : "Sin registro."}</p>
+          <p className="text-xs text-[#6B6352]"><span className="font-bold text-[#8A8272]">Se planificó:</span> {destino ? (destino.notaPlanificada ? <TextoConMenciones texto={destino.notaPlanificada} onOpen={onOpen} /> : "Sin registro.") : "No se generó una próxima acción en ese momento."}</p>
         </div>
       )}
     </div>
@@ -4239,11 +4369,11 @@ function VinculosDeHilo({ hilo, hiloId, core, setCore, onOpen, agregarPersona, s
   );
 }
 
-function EditarTituloHiloForm({ hilo, onSave }) {
+function EditarTituloHiloForm({ hilo, core, onSave }) {
   const [titulo, setTitulo] = useState(hilo.titulo);
   return (
     <div>
-      <Field label="Título"><input className={inputCls} value={titulo} onChange={(e) => setTitulo(e.target.value)} /></Field>
+      <Field label="Título"><CampoConMenciones core={core} value={titulo} onChange={setTitulo} /></Field>
       <PrimaryBtn full onClick={() => titulo.trim() && onSave(titulo.trim())}>Guardar</PrimaryBtn>
     </div>
   );
@@ -4304,7 +4434,7 @@ function EditarHiloPrincipalForm({ hilo, core, setCore, onClose }) {
 
   return (
     <div>
-      <Field label="Título del tema *"><input autoFocus className={inputCls} value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Ej: Presupuesto cables solares" /></Field>
+      <Field label="Título del tema *"><CampoConMenciones core={core} autoFocus value={titulo} onChange={setTitulo} placeholder="Ej: Presupuesto cables solares" /></Field>
 
       <Field label="Persona">
         <BuscadorSelect
@@ -4481,7 +4611,7 @@ function AgregarTareaAlHiloForm({ core, hiloClienteId, personasDelHilo, onVincul
         </>
       ) : (
         <>
-          <Field label="Título de la tarea *"><input autoFocus className={inputCls} value={titulo} onChange={(e) => setTitulo(e.target.value)} /></Field>
+          <Field label="Título de la tarea *"><CampoConMenciones core={core} autoFocus value={titulo} onChange={setTitulo} /></Field>
           <Field label="Columna del Kanban de Tareas (opcional)">
             <select className={inputCls} value={columnaId} onChange={(e) => setColumnaId(e.target.value)}>
               <option value="">— Sin columna —</option>
@@ -4562,7 +4692,7 @@ function AvanzarHiloForm({ hilo, pendienteActual, core, setCore, acciones, setAc
   };
 
   return (
-    <Modal title={`${esTarea ? "Avanzar tarea" : "Avanzar hilo"} — ${hilo.titulo}`} onClose={onClose}>
+    <Modal title={`${esTarea ? "Avanzar tarea" : "Avanzar hilo"} — ${textoPlanoDeMenciones(hilo.titulo)}`} onClose={onClose}>
       <p className="text-[11px] font-bold tracking-wide text-[#B0452E] mb-2">{pendienteActual ? "Lo que acabás de hacer" : "Registrar contacto"}</p>
       {!esTarea && (
         <SelectConCrear
@@ -4579,7 +4709,7 @@ function AvanzarHiloForm({ hilo, pendienteActual, core, setCore, acciones, setAc
         />
       )}
       <Field label={esTarea ? "¿Qué hiciste?" : "Se hizo"}>
-        <textarea className={inputCls} rows={2} value={notas1} onChange={(e) => setNotas1(e.target.value)} placeholder="Qué hablaron, qué resultó..." />
+        <CampoConMenciones core={core} multiline rows={2} value={notas1} onChange={setNotas1} placeholder="Qué hablaron, qué resultó..." />
       </Field>
       <Field label="Fecha en que pasó">
         <input type="date" className={inputCls} value={fechaHecho} onChange={(e) => setFechaHecho(e.target.value)} />
@@ -4607,7 +4737,7 @@ function AvanzarHiloForm({ hilo, pendienteActual, core, setCore, acciones, setAc
               />
             )}
             <Field label={esTarea ? "Próximo paso" : "Se planifica (qué se busca con esta acción)"}>
-              <textarea className={inputCls} rows={2} value={notas2} onChange={(e) => setNotas2(e.target.value)} placeholder="Ej: confirmar si aceptaron la propuesta, próximos pasos a seguir..." />
+              <CampoConMenciones core={core} multiline rows={2} value={notas2} onChange={setNotas2} placeholder="Ej: confirmar si aceptaron la propuesta, próximos pasos a seguir..." />
             </Field>
 
             <div className="flex gap-2 mb-2">
@@ -4791,11 +4921,11 @@ function EditAccionForm({ accion, core, setCore, otrasAccionesDelHilo = [], onCl
       )}
 
       <Field label="Se había planificado (por qué se creó esta acción)">
-        <textarea className={inputCls} rows={2} value={notaPlanificada} onChange={(e) => setNotaPlanificada(e.target.value)} />
+        <CampoConMenciones core={core} multiline rows={2} value={notaPlanificada} onChange={setNotaPlanificada} />
       </Field>
       {estado === "Realizada" && (
         <Field label="Se hizo">
-          <textarea className={inputCls} rows={2} value={notaHecho} onChange={(e) => setNotaHecho(e.target.value)} />
+          <CampoConMenciones core={core} multiline rows={2} value={notaHecho} onChange={setNotaHecho} />
         </Field>
       )}
 
