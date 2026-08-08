@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.5.2";
+const APP_VERSION = "2.5.3";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -2878,7 +2878,6 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   const bucket = accionesBucket || accionesDelHilo.filter((a) => a.estado === "Pendiente");
   const primary = bucket[0] || null;
   const tipoPrimary = primary ? core.tiposAccion.find((tt) => tt.id === primary.tipoAccionId) : null;
-  const prioTone = primary?.prioridad === "Alta" ? "red" : primary?.prioridad === "Media" ? "amber" : "neutral";
   const historial = accionesDelHilo.filter((a) => a.estado === "Realizada").sort(compararRecientePrimero);
   const hiloRelacionado = hilo.hiloRelacionadoId ? core.hilos.find((h) => h.id === hilo.hiloRelacionadoId) : null;
   const tareasVinculadas = core.hilos.filter((h) => h.tipo === "tarea" && h.hiloRelacionadoId === id);
@@ -3060,7 +3059,16 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
           )}
           {primary && <span className="shrink-0"><IconBtn label="Reprogramar" onClick={() => setShowReprogramar(true)}><Pencil size={13} /></IconBtn></span>}
           {primary?.recurrente && <Repeat size={12} className="shrink-0 text-[#8A8272]" />}
-          {primary?.prioridad && <span className="shrink-0"><Chip tone={prioTone}>{primary.prioridad.charAt(0)}</Chip></span>}
+          {primary && (
+            <button
+              type="button"
+              onClick={() => setShowAvanzar(true)}
+              className="shrink-0 inline-flex items-center gap-0.5 text-[11px] font-bold px-2 py-1 rounded-sm"
+              style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}
+            >
+              <ChevronRight size={12} /> Hilo
+            </button>
+          )}
         </div>
       </div>
 
@@ -3080,14 +3088,16 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       )}
 
       {!primary && (
-        <p className="text-xs text-[#A69C88] mt-2">Sin próxima acción programada.</p>
+        <>
+          <p className="text-xs text-[#A69C88] mt-2">Sin próxima acción programada.</p>
+          <div className="flex items-center gap-2 mt-2 flex-wrap">
+            <PrimaryBtn core={core} onClick={() => setShowAvanzar(true)}>Avanzar este hilo</PrimaryBtn>
+            {esTarea && (
+              <button onClick={() => setShowFechaTarea(true)} className="text-xs font-bold tracking-wide px-2.5 py-2 rounded-sm bg-[#E7E2D8] text-[#6B6352]">Poner fecha y hora</button>
+            )}
+          </div>
+        </>
       )}
-      <div className="flex items-center gap-2 mt-2 flex-wrap">
-        <PrimaryBtn core={core} onClick={() => setShowAvanzar(true)}>{primary ? "Avanzar hilo" : "Avanzar este hilo"}</PrimaryBtn>
-        {!primary && esTarea && (
-          <button onClick={() => setShowFechaTarea(true)} className="text-xs font-bold tracking-wide px-2.5 py-2 rounded-sm bg-[#E7E2D8] text-[#6B6352]">Poner fecha y hora</button>
-        )}
-      </div>
 
       {primary && <p className="text-right text-[9px] font-mono text-[#C9C1AE] mt-1">{fmtNumero(primary.numero)}</p>}
 
