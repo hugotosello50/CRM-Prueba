@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.8.0";
+const APP_VERSION = "2.9.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -3251,7 +3251,9 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
             >
               <ListChecks size={11} /> {tareasVinculadas.length} tarea{tareasVinculadas.length === 1 ? "" : "s"}
             </button>
-            <IconBtn label="Agregar tarea" onClick={() => setShowAgregarTarea(true)}><Plus size={13} /></IconBtn>
+            <button type="button" onClick={() => setShowAgregarTarea(true)} aria-label="Agregar tarea" className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center">
+              <Plus size={13} />
+            </button>
           </div>
         )}
         <div className="flex items-center gap-1.5 ml-auto min-w-0">
@@ -3950,6 +3952,7 @@ function EditVinculoForm({ core, setCore, vinculo, onClose }) {
 function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen }) {
   const persona = core.personas.find((p) => p.id === id);
   const [showNuevoHilo, setShowNuevoHilo] = useState(false);
+  const [verHilos, setVerHilos] = useState(false);
   const [verCerrados, setVerCerrados] = useState(false);
 
   if (!persona) return <div><BackHeader onClose={onClose} /><p className="text-sm text-[#8A8272]">Esta persona ya no existe.</p></div>;
@@ -3977,33 +3980,40 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
         {persona.notas && <p className="text-sm text-[#6B6352] mt-2 italic">"{persona.notas}"</p>}
         <TagsSection core={core} setCore={setCore} entidadTipo="Persona" entidadId={id} />
         <VinculosDeFicha core={core} setCore={setCore} entidadTipo="Persona" entidadId={id} onOpen={onOpen} />
-      </div>
 
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-[11px] font-bold tracking-wide text-[#6B6352]">Hilos de seguimiento</p>
-        <button onClick={() => setShowNuevoHilo(true)} className="text-xs font-bold text-[#B0452E] flex items-center gap-1"><Plus size={12} /> Nuevo hilo</button>
-      </div>
-
-      {hilosActivos.length === 0 ? (
-        <EmptyState icon={<GitBranch size={22} />} text="Todavía no hay hilos de seguimiento con esta persona." />
-      ) : (
-        <div className="space-y-2">
-          {hilosActivos.map((h) => <HiloRow key={h.id} hilo={h} core={core} acciones={acciones} onOpen={onOpen} />)}
-        </div>
-      )}
-
-      {hilosCerrados.length > 0 && (
-        <div className="mt-3">
-          <button onClick={() => setVerCerrados((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
-            {verCerrados ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verCerrados ? "Ocultar" : "Ver"} hilos cerrados ({hilosCerrados.length})
+        <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
+          <button onClick={() => setVerHilos((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
+            {verHilos ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verHilos ? "Ocultar hilos de seguimiento" : "Ver hilos de seguimiento"}
           </button>
-          {verCerrados && (
-            <div className="space-y-2 mt-2">
-              {hilosCerrados.map((h) => <HiloRow key={h.id} hilo={h} core={core} acciones={acciones} onOpen={onOpen} />)}
+          {verHilos && (
+            <div className="mt-2.5">
+              <div className="flex justify-end mb-1.5">
+                <button onClick={() => setShowNuevoHilo(true)} className="text-xs font-bold text-[#B0452E] flex items-center gap-1"><Plus size={12} /> Nuevo hilo</button>
+              </div>
+              {hilosActivos.length === 0 ? (
+                <EmptyState icon={<GitBranch size={22} />} text="Todavía no hay hilos de seguimiento con esta persona." />
+              ) : (
+                <div className="space-y-2">
+                  {hilosActivos.map((h) => <HiloRow key={h.id} hilo={h} core={core} acciones={acciones} onOpen={onOpen} />)}
+                </div>
+              )}
+
+              {hilosCerrados.length > 0 && (
+                <div className="mt-3">
+                  <button onClick={() => setVerCerrados((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
+                    {verCerrados ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verCerrados ? "Ocultar" : "Ver"} hilos cerrados ({hilosCerrados.length})
+                  </button>
+                  {verCerrados && (
+                    <div className="space-y-2 mt-2">
+                      {hilosCerrados.map((h) => <HiloRow key={h.id} hilo={h} core={core} acciones={acciones} onOpen={onOpen} />)}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
-      )}
+      </div>
 
       {showNuevoHilo && (
         <Modal title={`Nuevo hilo — ${persona.nombre}`} onClose={() => setShowNuevoHilo(false)}>
@@ -5337,6 +5347,8 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
   const empresa = core.empresas.find((e) => e.id === id);
   const [showNuevoHiloEmpresa, setShowNuevoHiloEmpresa] = useState(false);
   const [verGrupo, setVerGrupo] = useState(false);
+  const [verHilos, setVerHilos] = useState(false);
+  const [verCerrados, setVerCerrados] = useState(false);
   if (!empresa) return <div><BackHeader onClose={onClose} /><p className="text-sm text-[#8A8272]">Esta empresa ya no existe.</p></div>;
 
   const cabecera = cabeceraDeEmpresa(id, core);
@@ -5346,6 +5358,7 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
   const hilosIdsDeEmpresa = new Set(empresaIdsIncluidas.flatMap((eid) => contrapartesDe(core, "Empresa", eid, "Hilo").map(({ c }) => c.id)));
   const hilosDeEmpresa = core.hilos.filter((h) => hilosIdsDeEmpresa.has(h.id)).map((h) => h.id);
   const hilosDeEstaEmpresa = core.hilos.filter((h) => hilosIdsDeEmpresa.has(h.id) && h.estado === "Activo");
+  const hilosCerradosDeEmpresa = core.hilos.filter((h) => hilosIdsDeEmpresa.has(h.id) && h.estado === "Cerrado");
   const accCount = acciones.filter((a) => hilosDeEmpresa.includes(a.hiloId)).length;
 
   return (
@@ -5372,46 +5385,65 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
           {accCount} acción{accCount !== 1 ? "es" : ""} registrada{accCount !== 1 ? "s" : ""} {verGrupo && subsidiarias.length > 0 ? "en todo el grupo" : "en total"}
         </p>
 
-        {subsidiarias.length > 0 && (
-          <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-[11px] font-bold tracking-wide text-[#6B6352] flex items-center gap-1"><Layers size={12} /> Empresas del grupo</p>
-              <button
-                onClick={() => setVerGrupo((v) => !v)}
-                style={verGrupo ? { backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) } : { backgroundColor: "#E7E2D8", color: "#6B6352" }}
-                className="text-[11px] font-bold px-2.5 py-1 rounded-sm"
-              >
-                {verGrupo ? "Viendo grupo completo" : "Ver grupo completo"}
-              </button>
-            </div>
-            <div className="space-y-1">
-              {subsidiarias.map((s) => (
-                <button key={s.id} onClick={() => onOpen("empresa", s.id)} className="block w-full text-left text-sm font-semibold text-[#2A2118]">{s.denominacion}</button>
-              ))}
-            </div>
-          </div>
-        )}
+        <VinculosDeFicha core={core} setCore={setCore} entidadTipo="Empresa" entidadId={id} onOpen={onOpen} />
 
         <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-[11px] font-bold tracking-wide text-[#6B6352]">{verGrupo && subsidiarias.length > 0 ? "Hilos del grupo" : "Hilos de esta empresa"}</p>
-            <button onClick={() => setShowNuevoHiloEmpresa(true)} className="text-xs font-bold text-[#B0452E]">+ Nuevo hilo</button>
-          </div>
-          {hilosDeEstaEmpresa.length === 0 ? (
-            <p className="text-sm text-[#A69C88]">Sin hilos todavía. Podés arrancar uno acá aunque todavía no tengas el contacto.</p>
-          ) : (
-            <div className="space-y-1.5">
-              {hilosDeEstaEmpresa.map((h) => (
-                <button key={h.id} onClick={() => onOpen("hilo", h.id)} className="w-full text-left text-sm flex items-center justify-between">
-                  <span className="font-semibold text-[#2A2118]">{h.titulo}</span>
-                  <span className="text-xs text-[#8A8272]">{etiquetaVinculoHilo(h, core)}</span>
-                </button>
-              ))}
+          <button onClick={() => setVerHilos((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
+            {verHilos ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verHilos ? "Ocultar hilos de seguimiento" : "Ver hilos de seguimiento"}
+          </button>
+          {verHilos && (
+            <div className="mt-2.5">
+              <div className="flex justify-end mb-1.5">
+                <button onClick={() => setShowNuevoHiloEmpresa(true)} className="text-xs font-bold text-[#B0452E] flex items-center gap-1"><Plus size={12} /> Nuevo hilo</button>
+              </div>
+              {hilosDeEstaEmpresa.length === 0 ? (
+                <p className="text-sm text-[#A69C88]">Sin hilos todavía. Podés arrancar uno acá aunque todavía no tengas el contacto.</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {hilosDeEstaEmpresa.map((h) => (
+                    <button key={h.id} onClick={() => onOpen("hilo", h.id)} className="w-full text-left text-sm flex items-center justify-between">
+                      <span className="font-semibold text-[#2A2118]">{h.titulo}</span>
+                      <span className="text-xs text-[#8A8272]">{etiquetaVinculoHilo(h, core)}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {hilosCerradosDeEmpresa.length > 0 && (
+                <div className="mt-3">
+                  <button onClick={() => setVerCerrados((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
+                    {verCerrados ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verCerrados ? "Ocultar" : "Ver"} hilos cerrados ({hilosCerradosDeEmpresa.length})
+                  </button>
+                  {verCerrados && (
+                    <div className="space-y-1.5 mt-2">
+                      {hilosCerradosDeEmpresa.map((h) => (
+                        <button key={h.id} onClick={() => onOpen("hilo", h.id)} className="w-full text-left text-sm flex items-center justify-between">
+                          <span className="font-semibold text-[#2A2118] line-through text-[#A69C88]">{h.titulo}</span>
+                          <span className="text-xs text-[#8A8272]">{etiquetaVinculoHilo(h, core)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
 
-        <VinculosDeFicha core={core} setCore={setCore} entidadTipo="Empresa" entidadId={id} onOpen={onOpen} />
+        {subsidiarias.length > 0 && (
+          <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
+            <button onClick={() => setVerGrupo((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
+              {verGrupo ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verGrupo ? "Ocultar empresas del grupo" : "Ver empresas del grupo"}
+            </button>
+            {verGrupo && (
+              <div className="space-y-1 mt-2.5">
+                {subsidiarias.map((s) => (
+                  <button key={s.id} onClick={() => onOpen("empresa", s.id)} className="block w-full text-left text-sm font-semibold text-[#2A2118]">{s.denominacion}</button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {showNuevoHiloEmpresa && (
@@ -5611,9 +5643,12 @@ function ObraForm({ initial, core, setCore, onSave, onDelete, onClose }) {
 function ObraDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen }) {
   const obra = core.obras.find((o) => o.id === id);
   const [showNuevoHiloObra, setShowNuevoHiloObra] = useState(false);
+  const [verHilos, setVerHilos] = useState(false);
+  const [verCerrados, setVerCerrados] = useState(false);
   if (!obra) return <div><BackHeader onClose={onClose} /><p className="text-sm text-[#8A8272]">Esta obra ya no existe.</p></div>;
   const hilosIdsDeEstaObra = new Set(contrapartesDe(core, "Obra", id, "Hilo").map(({ c }) => c.id));
   const hilosDeEstaObra = core.hilos.filter((h) => hilosIdsDeEstaObra.has(h.id) && h.estado === "Activo");
+  const hilosCerradosDeObra = core.hilos.filter((h) => hilosIdsDeEstaObra.has(h.id) && h.estado === "Cerrado");
   return (
     <div>
       <BackHeader onClose={onClose} />
@@ -5629,27 +5664,50 @@ function ObraDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
           </div>
         </div>
         <TagsSection core={core} setCore={setCore} entidadTipo="Obra" entidadId={id} />
+        <VinculosDeFicha core={core} setCore={setCore} entidadTipo="Obra" entidadId={id} onOpen={onOpen} />
 
         <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-[11px] font-bold tracking-wide text-[#6B6352]">Hilos de esta obra</p>
-            <button onClick={() => setShowNuevoHiloObra(true)} className="text-xs font-bold text-[#B0452E]">+ Nuevo hilo</button>
-          </div>
-          {hilosDeEstaObra.length === 0 ? (
-            <p className="text-sm text-[#A69C88]">Sin hilos todavía. Podés arrancar uno acá aunque todavía no sepas la empresa o el contacto.</p>
-          ) : (
-            <div className="space-y-1.5">
-              {hilosDeEstaObra.map((h) => (
-                <button key={h.id} onClick={() => onOpen("hilo", h.id)} className="w-full text-left text-sm flex items-center justify-between">
-                  <span className="font-semibold text-[#2A2118]">{h.titulo}</span>
-                  <span className="text-xs text-[#8A8272]">{etiquetaVinculoHilo(h, core)}</span>
-                </button>
-              ))}
+          <button onClick={() => setVerHilos((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
+            {verHilos ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verHilos ? "Ocultar hilos de seguimiento" : "Ver hilos de seguimiento"}
+          </button>
+          {verHilos && (
+            <div className="mt-2.5">
+              <div className="flex justify-end mb-1.5">
+                <button onClick={() => setShowNuevoHiloObra(true)} className="text-xs font-bold text-[#B0452E] flex items-center gap-1"><Plus size={12} /> Nuevo hilo</button>
+              </div>
+              {hilosDeEstaObra.length === 0 ? (
+                <p className="text-sm text-[#A69C88]">Sin hilos todavía. Podés arrancar uno acá aunque todavía no sepas la empresa o el contacto.</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {hilosDeEstaObra.map((h) => (
+                    <button key={h.id} onClick={() => onOpen("hilo", h.id)} className="w-full text-left text-sm flex items-center justify-between">
+                      <span className="font-semibold text-[#2A2118]">{h.titulo}</span>
+                      <span className="text-xs text-[#8A8272]">{etiquetaVinculoHilo(h, core)}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {hilosCerradosDeObra.length > 0 && (
+                <div className="mt-3">
+                  <button onClick={() => setVerCerrados((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
+                    {verCerrados ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verCerrados ? "Ocultar" : "Ver"} hilos cerrados ({hilosCerradosDeObra.length})
+                  </button>
+                  {verCerrados && (
+                    <div className="space-y-1.5 mt-2">
+                      {hilosCerradosDeObra.map((h) => (
+                        <button key={h.id} onClick={() => onOpen("hilo", h.id)} className="w-full text-left text-sm flex items-center justify-between">
+                          <span className="font-semibold text-[#2A2118] line-through text-[#A69C88]">{h.titulo}</span>
+                          <span className="text-xs text-[#8A8272]">{etiquetaVinculoHilo(h, core)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
-
-        <VinculosDeFicha core={core} setCore={setCore} entidadTipo="Obra" entidadId={id} onOpen={onOpen} />
       </div>
       {showNuevoHiloObra && (
         <Modal title="Nuevo hilo" onClose={() => setShowNuevoHiloObra(false)}>
