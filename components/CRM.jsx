@@ -14,7 +14,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.15.0";
+const APP_VERSION = "2.16.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -6830,7 +6830,7 @@ function TiposRelacionView({ core, setCore }) {
 function ConfigView({ core, setCore, acciones, setAcciones }) {
   const [section, setSection] = useState("parametros");
   const [confirmVaciar, setConfirmVaciar] = useState(false);
-  const [confirmBorrarMovimientosPrueba, setConfirmBorrarMovimientosPrueba] = useState(false);
+  const [confirmBorrarDatosPrueba, setConfirmBorrarDatosPrueba] = useState(false);
   const [avisoDatosPrueba, setAvisoDatosPrueba] = useState(false);
 
   // Crea (si no existen ya, por nombre) 3 personas/empresas/obras de prueba vinculadas
@@ -6865,14 +6865,19 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
     });
   };
 
-  // Borra solo los hilos (seguimientos y tareas) y acciones vinculados a personas,
-  // empresas u obras cuyo nombre empieza con "Persona/Empresa/Obra Prueba" — deja
-  // esas personas/empresas/obras intactas, para borrarlas a mano desde cada ABM.
+  // Borra todo lo de prueba: personas, empresas y obras cuyo nombre empieza con
+  // "Persona/Empresa/Obra Prueba", los hilos (seguimientos y tareas) y acciones
+  // vinculados a ellas, y todo vínculo/etiqueta donde intervengan — sin tocar
+  // ninguna otra entidad real, aunque esté relacionada con una de prueba.
   const esNombreDePrueba = (nombre, prefijo) => (nombre || "").trim().toLowerCase().startsWith(prefijo);
-  const borrarMovimientosPrueba = () => {
+  const borrarDatosPrueba = () => {
     const personaPruebaIds = new Set(core.personas.filter((p) => esNombreDePrueba(p.nombre, "persona prueba")).map((p) => p.id));
     const empresaPruebaIds = new Set(core.empresas.filter((e) => esNombreDePrueba(e.denominacion, "empresa prueba")).map((e) => e.id));
     const obraPruebaIds = new Set(core.obras.filter((o) => esNombreDePrueba(o.nombre, "obra prueba")).map((o) => o.id));
+    const esEntidadPrueba = (tipo, id) =>
+      (tipo === "Persona" && personaPruebaIds.has(id)) ||
+      (tipo === "Empresa" && empresaPruebaIds.has(id)) ||
+      (tipo === "Obra" && obraPruebaIds.has(id));
     const hiloTocaPruebaDirecto = (h) =>
       participantesActivos(h, core).some((pa) => personaPruebaIds.has(pa.personaId)) ||
       empresasDeHilo(h, core).some((e) => empresaPruebaIds.has(e.id)) ||
@@ -6886,11 +6891,20 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
 
     setCore((prev) => ({
       ...prev,
+      personas: prev.personas.filter((p) => !personaPruebaIds.has(p.id)),
+      empresas: prev.empresas.filter((e) => !empresaPruebaIds.has(e.id)),
+      obras: prev.obras.filter((o) => !obraPruebaIds.has(o.id)),
       hilos: prev.hilos.filter((h) => !hilosABorrarIds.has(h.id)),
-      vinculos: (prev.vinculos || []).filter((v) => !(v.origenTipo === "Hilo" && hilosABorrarIds.has(v.origenId)) && !(v.destinoTipo === "Hilo" && hilosABorrarIds.has(v.destinoId))),
+      vinculos: (prev.vinculos || []).filter((v) =>
+        !(v.origenTipo === "Hilo" && hilosABorrarIds.has(v.origenId)) &&
+        !(v.destinoTipo === "Hilo" && hilosABorrarIds.has(v.destinoId)) &&
+        !esEntidadPrueba(v.origenTipo, v.origenId) &&
+        !esEntidadPrueba(v.destinoTipo, v.destinoId)
+      ),
+      entidadEtiqueta: (prev.entidadEtiqueta || []).filter((r) => !esEntidadPrueba(r.entidadTipo, r.entidadId)),
     }));
     setAcciones((prev) => prev.filter((a) => !hilosABorrarIds.has(a.hiloId)));
-    setConfirmBorrarMovimientosPrueba(false);
+    setConfirmBorrarDatosPrueba(false);
   };
 
   // Borra personas, empresas, obras, hilos (seguimientos y tareas), vínculos y acciones,
@@ -7146,10 +7160,10 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
         {avisoDatosPrueba && <p className="text-xs font-bold text-[var(--tema-exito)] mt-1">Datos de prueba generados ✓</p>}
         <p className="text-xs text-[#A69C88] mt-1 mb-3">Crea 3 personas, 3 empresas y 3 obras de prueba (vinculadas entre sí de a pares). Si ya existen, no las duplica.</p>
 
-        <button onClick={() => setConfirmBorrarMovimientosPrueba(true)} className="text-xs font-bold tracking-wide text-[var(--tema-peligro)] flex items-center gap-1.5">
-          <Trash2 size={13} /> Borrar movimientos de prueba
+        <button onClick={() => setConfirmBorrarDatosPrueba(true)} className="text-xs font-bold tracking-wide text-[var(--tema-peligro)] flex items-center gap-1.5">
+          <Trash2 size={13} /> Borrar datos de prueba
         </button>
-        <p className="text-xs text-[#A69C88] mt-1">Borra los seguimientos, tareas y acciones vinculados a personas, empresas u obras cuyo nombre empieza con "Persona/Empresa/Obra Prueba". No borra esas personas, empresas ni obras — eso lo hacés vos desde cada ABM.</p>
+        <p className="text-xs text-[#A69C88] mt-1">Borra las personas, empresas y obras cuyo nombre empieza con "Persona/Empresa/Obra Prueba", junto con sus seguimientos, tareas, acciones, vínculos y etiquetas asignadas. No toca ninguna otra entidad, aunque esté relacionada con una de prueba.</p>
       </div>
 
       <div className="mt-6 pt-4 border-t border-[#E4DECF]">
@@ -7161,12 +7175,12 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
 
       <p className="text-center text-[10px] font-mono text-[#C9C1AE] mt-6">Versión {APP_VERSION}</p>
 
-      {confirmBorrarMovimientosPrueba && (
-        <Modal title="¿Borrar movimientos de prueba?" onClose={() => setConfirmBorrarMovimientosPrueba(false)}>
-          <p className="text-sm text-[#2A2118] mb-4">Esto borra los seguimientos, tareas y acciones vinculados a "Persona/Empresa/Obra Prueba". Las personas, empresas y obras de prueba quedan como están. No se puede deshacer.</p>
+      {confirmBorrarDatosPrueba && (
+        <Modal title="¿Borrar datos de prueba?" onClose={() => setConfirmBorrarDatosPrueba(false)}>
+          <p className="text-sm text-[#2A2118] mb-4">Esto borra las personas, empresas y obras "Persona/Empresa/Obra Prueba", junto con sus seguimientos, tareas, acciones, vínculos y etiquetas asignadas. No se puede deshacer.</p>
           <div className="flex gap-2">
-            <button onClick={() => setConfirmBorrarMovimientosPrueba(false)} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
-            <button onClick={borrarMovimientosPrueba} style={{ backgroundColor: "var(--tema-peligro)", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, borrar</button>
+            <button onClick={() => setConfirmBorrarDatosPrueba(false)} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
+            <button onClick={borrarDatosPrueba} style={{ backgroundColor: "var(--tema-peligro)", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, borrar</button>
           </div>
         </Modal>
       )}
