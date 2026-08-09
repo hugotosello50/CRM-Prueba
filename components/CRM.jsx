@@ -14,7 +14,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.12.1";
+const APP_VERSION = "2.12.2";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -3402,7 +3402,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
               ))}
             </span>
           )}
-          {primary && tipoPrimary && <span className="min-w-0 flex-1 truncate text-right text-xs font-mono text-[#6B6352]" title={tipoPrimary.nombre}>{tipoPrimary.nombre}</span>}
+          {primary && tipoPrimary && <span className="min-w-0 flex-1 truncate text-right text-xs font-mono font-bold text-black" title={tipoPrimary.nombre}>{tipoPrimary.nombre}</span>}
           {primary && (
             <span className="shrink-0 text-[11px] font-bold font-mono px-2 py-1 rounded-sm bg-[#F1DFB9] text-[#5C3F18]">
               {fmtDate(masUrgente.fechaProgramada)}
@@ -4259,7 +4259,7 @@ function AccionCard({ accion, acciones, core, onOpen, onEdit, onDelete }) {
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-1.5">
           <Chip tone={isPend ? "estadoPendiente" : "estadoRealizada"}>{accion.estado}</Chip>
-          {tipo && <span className="text-sm font-bold text-black">{tipo.nombre}</span>}
+          {tipo && <span className="text-sm font-semibold text-[#2A2118]">{tipo.nombre}</span>}
           <span className="text-[9px] font-mono text-[#C9C1AE]">{fmtNumero(accion.numero)}</span>
         </div>
         <div className="flex items-center gap-2">
