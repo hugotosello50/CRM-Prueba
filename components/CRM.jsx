@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef, Fragment, Component } from "react";
 import * as XLSX from "xlsx";
+import { HexColorPicker } from "react-colorful";
 import {
   Plus, X, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Search, Settings, Users, Building2,
   HardHat, CalendarClock, Trash2, Pencil, Check, AlertTriangle,
@@ -13,7 +14,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.10.1";
+const APP_VERSION = "2.11.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -21,6 +22,68 @@ const TR_DUENA = "TR_DUENA";
 const TR_CABECERA = "TR_CABECERA";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
+
+// ---------------------------------------------------------------------------
+// Esquema de colores de la app (Configuración > Apariencia)
+// ---------------------------------------------------------------------------
+// Estructura: fondo, tarjetas, texto, bordes y botones principales de la app.
+// Vínculos y acciones: menciones @, "Ver/Ocultar X", abrir ficha, eliminar, confirmar, "+ agregar".
+// Estados y semántica: urgencia de Seguimientos, prioridad de acciones, y estado de hilos/acciones.
+// Cada grupo se separa con una línea en el desplegable de Apariencia, pero cada color se elige
+// individualmente — el agrupamiento es solo porque hoy comparten un mismo color de origen.
+const TEMA_DEFAULT = {
+  botonActivo: "#1B4D2E", botonInactivo: "#D9F0DE", tarjeta: "#FFFFFF", linea: "#E4DECF", fondo: "#F7F5F0", ink: "#2A2118", mutedBase: "#6B6352",
+  vinculo: "#B0452E", peligro: "#B0452E", exito: "#3F6B4A", acento: "#E8871E",
+  urgenciaVencida: "#B0452E", urgenciaProxima: "#E8871E", urgenciaLejana: "#3F6B4A", urgenciaSinFecha: "#C9C1AE",
+  prioridadAlta: "#B0452E", prioridadMedia: "#F4A742", prioridadBaja: "#E7E2D8",
+  estadoActivo: "#3F6B4A", estadoCerradoInactivo: "#E7E2D8", estadoPendiente: "#F4A742", estadoRealizada: "#3F6B4A",
+  marcadorTareas: "#6B4FA0",
+};
+
+// Metadatos para renderizar los selectores en Configuración > Apariencia: cada grupo se
+// separa con una línea, pero cada color adentro se elige individualmente.
+const TEMA_GRUPOS = [
+  {
+    titulo: "Vínculos y acciones",
+    ayuda: "Menciones @, \"Ver/Ocultar X\", abrir una ficha, eliminar, confirmar y los botones \"+\".",
+    subgrupos: [
+      [
+        { clave: "vinculo", label: "Vínculos (menciones @, \"Ver/Ocultar\", abrir ficha)" },
+        { clave: "peligro", label: "Peligro (eliminar, cancelar, error)" },
+        { clave: "exito", label: "Éxito (confirmaciones)" },
+        { clave: "acento", label: "Acento (botones \"+\" de agregar)" },
+      ],
+    ],
+  },
+  {
+    titulo: "Urgencia en Seguimientos",
+    ayuda: "El color de la solapa según qué tan cerca está la fecha programada.",
+    subgrupos: [
+      [
+        { clave: "urgenciaVencida", label: "Vencida" },
+        { clave: "prioridadAlta", label: "Prioridad alta" },
+      ],
+      [
+        { clave: "urgenciaProxima", label: "Próxima a vencer" },
+        { clave: "prioridadMedia", label: "Prioridad media" },
+        { clave: "estadoPendiente", label: "Estado: pendiente" },
+      ],
+      [
+        { clave: "urgenciaLejana", label: "Con tiempo" },
+        { clave: "estadoActivo", label: "Estado: activo" },
+        { clave: "estadoRealizada", label: "Estado: realizada" },
+      ],
+      [
+        { clave: "urgenciaSinFecha", label: "Sin fecha programada" },
+        { clave: "prioridadBaja", label: "Prioridad baja" },
+        { clave: "estadoCerradoInactivo", label: "Estado: cerrado / inactivo" },
+      ],
+      [
+        { clave: "marcadorTareas", label: "Marcador de Tareas" },
+      ],
+    ],
+  },
+];
 
 // Tipos de relación de ejemplo: los dos fijos (dueña / cabecera) + los que salen de los
 // cargos clásicos, ya convertidos a relación asimétrica ("{Cargo} de" / "Tiene como {Cargo} a").
@@ -91,7 +154,7 @@ const seedCore = () => ({
     { id: uid("et"), etiquetaId: "ET02", entidadTipo: "Obra", entidadId: "O001" },
   ],
   parametros: { umbralDiaLleno: 8, diasHabiles: [1, 2, 3, 4, 5], fechasNoHabiles: [], diasUrgente: 3, diasProximos: 7, googleContactsLabel: "CRM", tituloApp: "Seguimiento comercial", nombreSinColumnaSeguimientos: "Sin columna", nombreSinColumnaTareas: "Sin columna" },
-  tema: { botonActivo: "#1B4D2E", botonInactivo: "#D9F0DE", tarjeta: "#FFFFFF", linea: "#E4DECF", fondo: "#F7F5F0", ink: "#2A2118", mutedBase: "#6B6352" },
+  tema: { ...TEMA_DEFAULT },
   kanbanColumnas: [
     { id: "K1", nombre: "Por hacer", orden: 0 },
     { id: "K2", nombre: "En curso", orden: 1 },
@@ -202,7 +265,7 @@ function normalizeCore(c) {
   // Unifica todo al sistema de vínculos (migra las tablas viejas si todavía están).
   migrarAVinculos(out);
   out.parametros = { umbralDiaLleno: 8, diasHabiles: [1, 2, 3, 4, 5], fechasNoHabiles: [], diasUrgente: 3, diasProximos: 7, googleContactsLabel: "CRM", tituloApp: "Seguimiento comercial", nombreSinColumnaSeguimientos: "Sin columna", nombreSinColumnaTareas: "Sin columna", ...(out.parametros || {}) };
-  out.tema = { ...{ botonActivo: "#1B4D2E", botonInactivo: "#D9F0DE", tarjeta: "#FFFFFF", linea: "#E4DECF", fondo: "#F7F5F0", ink: "#2A2118", mutedBase: "#6B6352" }, ...(out.tema || {}) };
+  out.tema = { ...TEMA_DEFAULT, ...(out.tema || {}) };
   if (!Array.isArray(out.kanbanColumnas)) out.kanbanColumnas = seed.kanbanColumnas;
   if (!Array.isArray(out.kanbanColumnasTareas)) out.kanbanColumnasTareas = seed.kanbanColumnasTareas;
   return out;
@@ -550,13 +613,19 @@ function WhatsAppLink({ persona, size = 14 }) {
 // ---------------------------------------------------------------------------
 // UI primitives
 // ---------------------------------------------------------------------------
-function Chip({ children, tone = "neutral" }) {
+// El "tone" es el nombre del rol de color (core.tema) que corresponde a ese estado —
+// no un color fijo — así cada estado se puede recolorear por separado en Configuración.
+function Chip({ children, tone = "estadoCerradoInactivo" }) {
   const tones = {
-    neutral: "bg-[#E7E2D8] text-[#4A4438]",
-    amber: "bg-[#F4A742] text-[#2A2118]",
-    green: "bg-[#3F6B4A] text-[#F2F0E9]",
-    slate: "bg-[#2A2F36] text-[#F2F0E9]",
-    red: "bg-[#B0452E] text-[#F2F0E9]",
+    estadoCerradoInactivo: "bg-[var(--tema-estadoCerradoInactivo)] text-[#4A4438]",
+    prioridadBaja: "bg-[var(--tema-prioridadBaja)] text-[#4A4438]",
+    estadoPendiente: "bg-[var(--tema-estadoPendiente)] text-[#2A2118]",
+    prioridadMedia: "bg-[var(--tema-prioridadMedia)] text-[#2A2118]",
+    urgenciaProxima: "bg-[var(--tema-urgenciaProxima)] text-[#2A2118]",
+    estadoActivo: "bg-[var(--tema-estadoActivo)] text-[#F2F0E9]",
+    estadoRealizada: "bg-[var(--tema-estadoRealizada)] text-[#F2F0E9]",
+    prioridadAlta: "bg-[var(--tema-prioridadAlta)] text-[#F2F0E9]",
+    urgenciaVencida: "bg-[var(--tema-urgenciaVencida)] text-[#F2F0E9]",
   };
   return <span className={`text-[10px] font-bold tracking-widest px-2 py-1 rounded-sm ${tones[tone]}`}>{children}</span>;
 }
@@ -572,7 +641,7 @@ function ChipsAgregados({ items, core, coleccion, labelKey, onQuitar }) {
         const item = (core[coleccion] || []).find((x) => x.id === id);
         if (!item) return null;
         return (
-          <span key={id} className="flex items-center gap-1 bg-[#D9F0DE] text-[#1B4D2E] text-xs font-bold px-2 py-1 rounded-sm">
+          <span key={id} className="flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-sm" style={{ backgroundColor: core.tema.botonInactivo, color: core.tema.botonActivo }}>
             {item[labelKey]}
             {onQuitar && <button type="button" onClick={() => onQuitar(id)} aria-label="Quitar"><X size={12} /></button>}
           </span>
@@ -584,7 +653,7 @@ function ChipsAgregados({ items, core, coleccion, labelKey, onQuitar }) {
 
 function IconBtn({ onClick, children, label, danger }) {
   return (
-    <button onClick={onClick} aria-label={label} className={`p-1.5 rounded-sm ${danger ? "text-[#C9A08A] hover:text-[#B0452E]" : "text-[#8A8272] hover:text-[#2A2118]"}`}>
+    <button onClick={onClick} aria-label={label} className={`p-1.5 rounded-sm ${danger ? "text-[#C9A08A] hover:text-[var(--tema-peligro)]" : "text-[#8A8272] hover:text-[#2A2118]"}`}>
       {children}
     </button>
   );
@@ -596,7 +665,7 @@ function PrimaryBtn({ onClick, children, full, disabled, core }) {
       onClick={onClick}
       disabled={disabled}
       style={disabled ? undefined : core ? { backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) } : undefined}
-      className={`${full ? "w-full" : ""} ${disabled ? "bg-[#E7E2D8] text-[#A69C88] cursor-not-allowed" : core ? "hover:opacity-90" : "bg-[#E8871E] text-[#2A2118] hover:bg-[#D6791A]"} rounded-sm px-3.5 py-2.5 font-bold text-sm transition-colors flex items-center justify-center gap-1.5`}
+      className={`${full ? "w-full" : ""} ${disabled ? "bg-[#E7E2D8] text-[#A69C88] cursor-not-allowed" : core ? "hover:opacity-90" : "bg-[var(--tema-acento)] text-[#2A2118] hover:bg-[#D6791A]"} rounded-sm px-3.5 py-2.5 font-bold text-sm transition-colors flex items-center justify-center gap-1.5`}
     >
       {children}
     </button>
@@ -612,7 +681,7 @@ function Field({ label, children }) {
   );
 }
 
-const inputCls = "w-full bg-white border border-[#D8D2C4] rounded-sm px-3 py-2 text-sm text-[#2A2118] placeholder-[#A69C88] focus:outline-none focus:ring-2 focus:ring-[#E8871E] focus:border-transparent";
+const inputCls = "w-full bg-white border border-[#D8D2C4] rounded-sm px-3 py-2 text-sm text-[#2A2118] placeholder-[#A69C88] focus:outline-none focus:ring-2 focus:ring-[var(--tema-acento)] focus:border-transparent";
 
 // Selector de fecha y hora usado en toda la app donde se programa una acción o tarea: la
 // fecha queda siempre a la vista, y la hora es opcional — se activa con "+ Establecer hora",
@@ -637,7 +706,7 @@ function SelectorFechaHora({ fecha, hora, onFecha, onHora, labelFecha = "Fecha" 
           <input ref={timeRef} type="time" autoFocus className={inputCls} value={horaTemp} onChange={(e) => setHoraTemp(e.target.value)} />
           <div className="flex gap-2 mt-1.5">
             <button type="button" onClick={cancelarHora} className="flex-1 border border-[#D8D2C4] rounded-sm py-1.5 text-xs font-bold text-[#6B6352]">Cancelar</button>
-            <button type="button" onClick={aceptarHora} className="flex-1 bg-[#E8871E] text-[#2A2118] rounded-sm py-1.5 text-xs font-bold">Aceptar</button>
+            <button type="button" onClick={aceptarHora} className="flex-1 bg-[var(--tema-acento)] text-[#2A2118] rounded-sm py-1.5 text-xs font-bold">Aceptar</button>
           </div>
         </div>
       ) : hora ? (
@@ -648,7 +717,7 @@ function SelectorFechaHora({ fecha, hora, onFecha, onHora, labelFecha = "Fecha" 
           <IconBtn label="Quitar hora" danger onClick={quitarHora}><X size={14} /></IconBtn>
         </div>
       ) : (
-        <button type="button" onClick={abrirHora} className="text-xs font-bold text-[#B0452E]">+ Establecer hora</button>
+        <button type="button" onClick={abrirHora} className="text-xs font-bold text-[var(--tema-vinculo)]">+ Establecer hora</button>
       )}
     </div>
   );
@@ -678,6 +747,38 @@ function Modal({ title, onClose, children }) {
   );
 }
 
+// Selector de color reutilizable (Configuración > Apariencia): reemplaza el <input type="color">
+// nativo del navegador por un picker propio (gradiente + campo hex) en un modal.
+function ColorField({ label, value, onChange }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="flex items-center justify-between py-1">
+      <label className="text-sm text-[#2A2118]">{label}</label>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label={`Elegir color para ${label}`}
+        className="w-10 h-8 rounded-sm border border-[#E4DECF] cursor-pointer shrink-0"
+        style={{ backgroundColor: value }}
+      />
+      {open && (
+        <Modal title={label} onClose={() => setOpen(false)}>
+          <div className="crm-color-picker">
+            <HexColorPicker color={value} onChange={onChange} style={{ width: "100%", height: 180 }} />
+          </div>
+          <input
+            className="mt-3 w-full text-sm font-mono text-center border border-[#D8D2C4] rounded-sm px-2 py-2"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            maxLength={7}
+          />
+          <button type="button" onClick={() => setOpen(false)} style={{ backgroundColor: "var(--tema-acento)", color: "#2A2118" }} className="w-full mt-3 rounded-sm py-2.5 font-bold text-sm">Listo</button>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
 // Arma el texto de aviso de uso para un modal de confirmación de borrado: si el registro
 // está siendo usado por otros, avisa cuántos y qué les pasa; si no, lo dice explícitamente.
 function textoUsoRegistro(count, singular, plural, consecuencia) {
@@ -693,7 +794,7 @@ function ConfirmDeleteModal({ title, texto, onCancel, onConfirm, confirmLabel = 
       <p className="text-sm text-[#2A2118] mb-4">{texto || "No se puede deshacer."}</p>
       <div className="flex gap-2">
         <button onClick={onCancel} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
-        <button onClick={onConfirm} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">{confirmLabel}</button>
+        <button onClick={onConfirm} style={{ backgroundColor: "var(--tema-peligro)", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">{confirmLabel}</button>
       </div>
     </Modal>
   );
@@ -791,7 +892,7 @@ function TextoConMenciones({ texto, onOpen }) {
     if (match.index > ultimo) partes.push(<Fragment key={`t${key++}`}>{texto.slice(ultimo, match.index)}</Fragment>);
     const [, nombre, tipo, id] = match;
     partes.push(
-      <button key={`m${key++}`} type="button" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onOpen(tipo.toLowerCase(), id); }} className="font-bold text-[#B0452E] hover:underline underline-offset-2">
+      <button key={`m${key++}`} type="button" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onOpen(tipo.toLowerCase(), id); }} className="font-bold text-[var(--tema-vinculo)] hover:underline underline-offset-2">
         @{nombre}
       </button>
     );
@@ -940,8 +1041,8 @@ function SelectConCrear({ label, opciones, value, onChange, onCrear, placeholder
             onChange={(e) => setNombreNuevo(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && confirmarCrear()}
           />
-          <button type="button" onClick={confirmarCrear} className="text-[#3F6B4A]"><Check size={18} /></button>
-          <button type="button" onClick={() => { setCreando(false); setNombreNuevo(""); }} className="text-[#B0452E]"><X size={18} /></button>
+          <button type="button" onClick={confirmarCrear} className="text-[var(--tema-exito)]"><Check size={18} /></button>
+          <button type="button" onClick={() => { setCreando(false); setNombreNuevo(""); }} className="text-[var(--tema-peligro)]"><X size={18} /></button>
         </div>
       )}
     </Field>
@@ -973,7 +1074,7 @@ function TagsSection({ core, setCore, entidadTipo, entidadId }) {
             <button onClick={() => quitar(rel.id)} aria-label="Quitar etiqueta"><X size={10} /></button>
           </span>
         ))}
-        <button onClick={() => setShowPicker(true)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-1 px-1 py-1">
+        <button onClick={() => setShowPicker(true)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-1 px-1 py-1">
           <Tag size={11} /> {tags.length === 0 ? "Agregar etiqueta" : "Agregar"}
         </button>
       </div>
@@ -1260,6 +1361,9 @@ export default function CRM({ userId, onLogout }) {
     <ErrorBoundary onReset={() => window.location.reload()}>
     <div className="relative h-[100dvh] overflow-hidden bg-[#F7F5F0] flex justify-center">
       <style>{`
+        :root {
+          ${Object.keys(TEMA_DEFAULT).map((clave) => `--tema-${clave}: ${core.tema[clave]};`).join("\n          ")}
+        }
         .bg-white { background-color: ${core.tema.tarjeta} !important; }
         .bg-\\[\\#F7F5F0\\] { background-color: ${core.tema.fondo} !important; }
         .border-\\[\\#E4DECF\\] { border-color: ${core.tema.linea} !important; }
@@ -1277,7 +1381,7 @@ export default function CRM({ userId, onLogout }) {
         <header className="mb-4 px-1 flex items-start justify-between gap-2 shrink-0">
           <div>
             <h1 className="text-xl font-extrabold text-[#2A2118] tracking-tight">{core.parametros.tituloApp || "Seguimiento comercial"}</h1>
-            <p className={`text-[10px] font-bold tracking-wide mt-0.5 ${guardado === "error" ? "text-[#B0452E]" : "text-[#A69C88]"}`}>
+            <p className={`text-[10px] font-bold tracking-wide mt-0.5 ${guardado === "error" ? "text-[var(--tema-peligro)]" : "text-[#A69C88]"}`}>
               {guardado === "guardando" ? "Guardando..." : guardado === "error" ? "Error al guardar" : "Guardado"}
             </p>
           </div>
@@ -1381,7 +1485,7 @@ export default function CRM({ userId, onLogout }) {
               {onLogout && (
                 <button
                   onClick={() => { setShowMenu(false); onLogout(); }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-sm text-sm font-semibold text-[#B0452E]"
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-sm text-sm font-semibold text-[var(--tema-peligro)]"
                 >
                   <LogOut size={16} /> Cerrar sesión
                 </button>
@@ -1432,7 +1536,7 @@ function ResumenHoyModal({ core, acciones, onOpen, onClose }) {
         ) : (
           <div className="mb-3">{hoy.map((a) => <Fila key={a.id} a={a} />)}</div>
         )}
-        <p className="text-[10px] font-bold tracking-wide text-[#B0452E] mb-1.5">Vencidas{vencidas.length > 0 ? ` (${vencidas.length})` : ""}</p>
+        <p className="text-[10px] font-bold tracking-wide text-[var(--tema-urgenciaVencida)] mb-1.5">Vencidas{vencidas.length > 0 ? ` (${vencidas.length})` : ""}</p>
         {vencidas.length === 0 ? (
           <p className="text-xs text-[#A69C88]">No hay pendientes vencidas.</p>
         ) : (
@@ -1460,8 +1564,8 @@ class ErrorBoundary extends Component {
   render() {
     if (this.state.error) {
       return (
-        <div className="bg-white border border-[#B0452E] rounded-sm p-4">
-          <p className="text-sm font-extrabold text-[#B0452E] mb-1.5">Se produjo un error</p>
+        <div className="bg-white border border-[var(--tema-peligro)] rounded-sm p-4">
+          <p className="text-sm font-extrabold text-[var(--tema-peligro)] mb-1.5">Se produjo un error</p>
           <p className="text-xs text-[#6B6352] mb-3">Sacá una captura de esta pantalla completa y mandámela — con eso alcanza para arreglarlo.</p>
           <pre className="text-[11px] leading-snug bg-[#F7F5F0] border border-[#E4DECF] rounded-sm p-2.5 whitespace-pre-wrap break-words text-[#2A2118] mb-3 max-h-64 overflow-auto">
             {String(this.state.error?.message || this.state.error)}
@@ -1470,7 +1574,7 @@ class ErrorBoundary extends Component {
           {this.props.onReset && (
             <button
               onClick={() => { this.setState({ error: null }); this.props.onReset(); }}
-              className="w-full rounded-sm py-2.5 font-bold text-sm bg-[#E8871E] text-[#2A2118]"
+              className="w-full rounded-sm py-2.5 font-bold text-sm bg-[var(--tema-acento)] text-[#2A2118]"
             >
               Volver
             </button>
@@ -1675,7 +1779,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
                 return (
                   <div key={eid} className="flex items-center justify-between gap-2 bg-[#F7F5F0] border border-[#E4DECF] rounded-sm px-2.5 py-1.5 text-sm">
                     <span className="font-semibold text-[#2A2118]">{e.denominacion}</span>
-                    <button type="button" onClick={() => quitarEmpresa(eid)} className="text-[#B0452E]"><X size={14} /></button>
+                    <button type="button" onClick={() => quitarEmpresa(eid)} className="text-[var(--tema-peligro)]"><X size={14} /></button>
                   </div>
                 );
               })}
@@ -1710,7 +1814,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
             );
           })()}
           {personaFija && (
-            <button type="button" onClick={() => setShowVincularEmpresa(true)} className="text-xs font-bold text-[#B0452E] mt-1.5">+ Vincular otra empresa a este contacto</button>
+            <button type="button" onClick={() => setShowVincularEmpresa(true)} className="text-xs font-bold text-[var(--tema-vinculo)] mt-1.5">+ Vincular otra empresa a este contacto</button>
           )}
         </Field>
       )}
@@ -1725,7 +1829,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
                 return (
                   <div key={oid} className="flex items-center justify-between gap-2 bg-[#F7F5F0] border border-[#E4DECF] rounded-sm px-2.5 py-1.5 text-sm">
                     <span className="font-semibold text-[#2A2118]">{o.nombre}</span>
-                    <button type="button" onClick={() => quitarObra(oid)} className="text-[#B0452E]"><X size={14} /></button>
+                    <button type="button" onClick={() => quitarObra(oid)} className="text-[var(--tema-peligro)]"><X size={14} /></button>
                   </div>
                 );
               })}
@@ -1764,7 +1868,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
               type="button"
               disabled={empresaIds.length === 0}
               onClick={() => setShowVincularObra(true)}
-              className={`text-xs font-bold mt-1.5 ${empresaIds.length > 0 ? "text-[#B0452E]" : "text-[#C9C1AE] cursor-not-allowed"}`}
+              className={`text-xs font-bold mt-1.5 ${empresaIds.length > 0 ? "text-[var(--tema-vinculo)]" : "text-[#C9C1AE] cursor-not-allowed"}`}
             >
               + Vincular obra a una empresa
             </button>
@@ -1777,13 +1881,13 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
       )}
 
       {!showPrimerContacto ? (
-        <button type="button" onClick={() => setShowPrimerContacto(true)} className="text-xs font-bold text-[#B0452E] mb-3">
+        <button type="button" onClick={() => setShowPrimerContacto(true)} className="text-xs font-bold text-[var(--tema-vinculo)] mb-3">
           + Cargar primer contacto y próxima acción
         </button>
       ) : (
         <div className="border-t border-[#E4DECF] my-3 pt-3">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-[11px] font-bold tracking-wide text-[#B0452E]">Primer contacto</p>
+            <p className="text-[11px] font-bold tracking-wide text-[var(--tema-vinculo)]">Primer contacto</p>
             <button type="button" onClick={() => setShowPrimerContacto(false)} className="text-xs font-bold text-[#6B6352]">Quitar</button>
           </div>
           <SelectConCrear
@@ -1866,7 +1970,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
                     onHora={setHoraEspecifica}
                   />
                   {especificaInhabil && (
-                    <div className="bg-[#FBEEE7] border border-[#E8871E] rounded-sm p-2.5 mb-3">
+                    <div className="bg-[#FBEEE7] border border-[var(--tema-acento)] rounded-sm p-2.5 mb-3">
                       <p className="text-xs text-[#2A2118]">Ese día está marcado como no hábil. Si guardás de nuevo, se confirma igual.</p>
                     </div>
                   )}
@@ -1900,7 +2004,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
 
       <div className="flex gap-2">
         <button onClick={onCancelar} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
-        <button onClick={submit} disabled={!titulo.trim() || faltaVinculo} className={`flex-1 rounded-sm py-2.5 font-bold text-sm ${!titulo.trim() || faltaVinculo ? "bg-[#E7E2D8] text-[#A69C88] cursor-not-allowed" : "bg-[#E8871E] text-[#2A2118]"}`}>
+        <button onClick={submit} disabled={!titulo.trim() || faltaVinculo} className={`flex-1 rounded-sm py-2.5 font-bold text-sm ${!titulo.trim() || faltaVinculo ? "bg-[#E7E2D8] text-[#A69C88] cursor-not-allowed" : "bg-[var(--tema-acento)] text-[#2A2118]"}`}>
           {especificaInhabil && confirmarEspecifica ? "Sí, crear igual" : "Crear hilo"}
         </button>
       </div>
@@ -2055,7 +2159,7 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
             onClick={crearTareaRapida}
             disabled={!tituloNuevo.trim()}
             aria-label="Agregar tarea"
-            className="shrink-0 w-10 h-10 rounded-sm flex items-center justify-center bg-[#E8871E] text-[#2A2118] disabled:bg-[#E7E2D8] disabled:text-[#C9C1AE] disabled:cursor-not-allowed"
+            className="shrink-0 w-10 h-10 rounded-sm flex items-center justify-center bg-[var(--tema-acento)] text-[#2A2118] disabled:bg-[#E7E2D8] disabled:text-[#C9C1AE] disabled:cursor-not-allowed"
           >
             <Plus size={18} />
           </button>
@@ -2069,7 +2173,7 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
       </div>
 
       {dragging && (
-        <p className="text-center text-xs font-bold text-[#B0452E] tracking-wide mb-1.5 animate-pulse">
+        <p className="text-center text-xs font-bold text-[var(--tema-vinculo)] tracking-wide mb-1.5 animate-pulse">
           Soltá sobre una pestaña para mover la tarea
         </p>
       )}
@@ -2122,7 +2226,7 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
 
       {tareasCerradas.length > 0 && (
         <div className="mt-4">
-          <button onClick={() => setVerCerradas((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
+          <button onClick={() => setVerCerradas((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
             {verCerradas ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verCerradas ? "Ocultar" : "Ver"} tareas completadas ({tareasCerradas.length})
           </button>
           {verCerradas && (
@@ -2165,7 +2269,7 @@ function EditarFechaTareaForm({ hilo, pendiente, setAcciones, onClose }) {
       <SelectorFechaHora fecha={fecha} hora={hora} onFecha={setFecha} onHora={setHora} />
       <PrimaryBtn full onClick={guardar}>Guardar</PrimaryBtn>
       {pendiente && !pendiente.notaHecho && (
-        <button onClick={quitarFecha} className="w-full text-center text-xs font-bold text-[#B0452E] mt-2">Quitar fecha (la tarea queda sin programar)</button>
+        <button onClick={quitarFecha} className="w-full text-center text-xs font-bold text-[var(--tema-peligro)] mt-2">Quitar fecha (la tarea queda sin programar)</button>
       )}
     </div>
   );
@@ -2204,7 +2308,7 @@ function TareaCard({ hilo, core, setCore, acciones, setAcciones, onOpen, onInici
     <div className="bg-white border border-[#E4DECF] rounded-sm p-3" style={{ opacity: arrastrando ? 0.35 : 1 }}>
       <div className="flex items-start gap-2.5">
         <CasillaFinalizar hilo={hilo} acciones={accionesDelHilo} setCore={setCore} size={18} />
-        <div className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: "#EFE6F7", color: "#6B4FA0" }}>
+        <div className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: "#EFE6F7", color: "var(--tema-marcadorTareas)" }}>
           <ListChecks size={14} />
         </div>
         <div role="button" tabIndex={0} onClick={() => onOpen("hilo", hilo.id)} onKeyDown={(e) => e.key === "Enter" && onOpen("hilo", hilo.id)} className="flex-1 min-w-0 text-left cursor-pointer">
@@ -2213,7 +2317,7 @@ function TareaCard({ hilo, core, setCore, acciones, setAcciones, onOpen, onInici
             <p className="text-xs text-[#8A8272] mt-0.5 font-mono">{tipo?.nombre ? `${tipo.nombre} · ` : ""}{fmtDateHora(pendiente.fechaProgramada, pendiente.horaProgramada)}</p>
           )}
           {hiloRelacionado && (
-            <p className="text-[11px] text-[#B0452E] font-bold mt-0.5">Vinculada a: {hiloRelacionado.titulo}</p>
+            <p className="text-[11px] text-[var(--tema-vinculo)] font-bold mt-0.5">Vinculada a: {hiloRelacionado.titulo}</p>
           )}
         </div>
         {setAcciones && (
@@ -2246,7 +2350,7 @@ function TareaCard({ hilo, core, setCore, acciones, setAcciones, onOpen, onInici
               onClick={() => toggleSubtarea(s.id)}
               aria-label={s.hecha ? "Marcar subtarea como pendiente" : "Marcar subtarea como completada"}
               className="shrink-0 rounded-full flex items-center justify-center mt-0.5"
-              style={{ width: 14, height: 14, backgroundColor: s.hecha ? "#3F6B4A" : "#FFFFFF", border: `2px solid ${s.hecha ? "#3F6B4A" : "#C9C1AE"}` }}
+              style={{ width: 14, height: 14, backgroundColor: s.hecha ? "var(--tema-estadoRealizada)" : "#FFFFFF", border: `2px solid ${s.hecha ? "var(--tema-estadoRealizada)" : "#C9C1AE"}` }}
             >
               {s.hecha && <Check size={9} color="#FFFFFF" strokeWidth={3} />}
             </button>
@@ -2264,7 +2368,7 @@ function TareaCard({ hilo, core, setCore, acciones, setAcciones, onOpen, onInici
             <IconBtn label="Eliminar subtarea" danger onClick={() => setDeletingSubtareaId(s.id)}><Trash2 size={11} /></IconBtn>
           </div>
         ))}
-        <button type="button" onClick={() => setShowNuevaSubtarea(true)} className="text-[10px] font-bold tracking-wide text-[#B0452E] mt-1">+ Agregar subtarea</button>
+        <button type="button" onClick={() => setShowNuevaSubtarea(true)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] mt-1">+ Agregar subtarea</button>
       </div>
 
       {showFecha && (
@@ -2390,13 +2494,13 @@ function CalendarioView({ core, setCore, acciones, setAcciones, onOpen, t }) {
   }, [pendientes, core.hilos]);
 
   const umbral = core.parametros.umbralDiaLleno;
-  const COLOR_TAREA = "#6B4FA0";
+  const COLOR_TAREA = "var(--tema-marcadorTareas)";
 
   const tonoDia = (iso) => {
     const n = countsClienteByDate[iso] || 0;
     if (n === 0) return null;
-    if (n >= umbral) return "red";
-    return "amber";
+    if (n >= umbral) return "urgenciaVencida";
+    return "urgenciaProxima";
   };
 
   const irHoy = () => { setRef(parseISO(t)); setDiaSeleccionado(t); };
@@ -2452,13 +2556,13 @@ function CalendarioView({ core, setCore, acciones, setAcciones, onOpen, t }) {
         <IconBtn label="Anterior" onClick={irAnterior}><ChevronLeft size={18} /></IconBtn>
         <div className="text-center">
           <p className="text-sm font-extrabold text-[#2A2118]">{tituloRango}</p>
-          <button onClick={irHoy} className="text-[10px] font-bold tracking-wide text-[#B0452E]">Hoy</button>
+          <button onClick={irHoy} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)]">Hoy</button>
         </div>
         <IconBtn label="Siguiente" onClick={irSiguiente}><ChevronRight size={18} /></IconBtn>
       </div>
 
       <div className="flex items-center justify-center gap-4 mb-2">
-        <span className="flex items-center gap-1 text-[10px] font-bold text-[#6B6352]"><span className="w-2 h-2 rounded-full bg-[#E8871E]" /> Hilos de clientes</span>
+        <span className="flex items-center gap-1 text-[10px] font-bold text-[#6B6352]"><span className="w-2 h-2 rounded-full bg-[var(--tema-acento)]" /> Hilos de clientes</span>
         <span className="flex items-center gap-1 text-[10px] font-bold text-[#6B6352]"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: COLOR_TAREA }} /> Tareas</span>
       </div>
     </div>
@@ -2479,12 +2583,12 @@ function CalendarioView({ core, setCore, acciones, setAcciones, onOpen, t }) {
                 <button
                   key={iso}
                   onClick={() => setDiaSeleccionado(iso)}
-                  className={`relative aspect-square rounded-sm flex items-center justify-center ${isSel ? "ring-2 ring-[#E8871E]" : ""} ${inMonth ? "bg-white border border-[#E4DECF]" : "bg-transparent"}`}
+                  className={`relative aspect-square rounded-sm flex items-center justify-center ${isSel ? "ring-2 ring-[var(--tema-acento)]" : ""} ${inMonth ? "bg-white border border-[#E4DECF]" : "bg-transparent"}`}
                 >
-                  <span className={`absolute top-1 left-1 text-[10px] leading-none ${inMonth ? (isToday ? "font-extrabold text-[#B0452E]" : "text-[#8A8272]") : "text-[#E4DECF]"}`}>{date.getDate()}</span>
+                  <span className={`absolute top-1 left-1 text-[10px] leading-none ${inMonth ? (isToday ? "font-extrabold text-[var(--tema-vinculo)]" : "text-[#8A8272]") : "text-[#E4DECF]"}`}>{date.getDate()}</span>
                   {inMonth && (countCli > 0 || countTar > 0) && (
                     <div className="flex items-center gap-0.5">
-                      {countCli > 0 && <span className={`text-base font-extrabold ${tone === "red" ? "text-[#B0452E]" : "text-[#E8871E]"}`}>{countCli}</span>}
+                      {countCli > 0 && <span className={`text-base font-extrabold ${tone === "red" ? "text-[var(--tema-urgenciaVencida)]" : "text-[var(--tema-urgenciaProxima)]"}`}>{countCli}</span>}
                       {countTar > 0 && <span className="text-base font-extrabold" style={{ color: COLOR_TAREA }}>{countTar}</span>}
                     </div>
                   )}
@@ -2505,9 +2609,9 @@ function CalendarioView({ core, setCore, acciones, setAcciones, onOpen, t }) {
               <button
                 key={iso}
                 onClick={() => setDiaSeleccionado(iso)}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-sm ${isSel ? "ring-2 ring-[#E8871E]" : ""} bg-white border border-[#E4DECF]`}
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-sm ${isSel ? "ring-2 ring-[var(--tema-acento)]" : ""} bg-white border border-[#E4DECF]`}
               >
-                <span className={`text-sm ${isToday ? "font-extrabold text-[#B0452E]" : "text-[#2A2118]"}`}>{DIAS_SEMANA[(date.getDay() + 6) % 7]} {date.getDate()}/{date.getMonth() + 1}</span>
+                <span className={`text-sm ${isToday ? "font-extrabold text-[var(--tema-vinculo)]" : "text-[#2A2118]"}`}>{DIAS_SEMANA[(date.getDay() + 6) % 7]} {date.getDate()}/{date.getMonth() + 1}</span>
                 <div className="flex items-center gap-1.5">
                   {countCli > 0 && <Chip tone={tone}>{countCli}</Chip>}
                   {countTar > 0 && <span className="text-[10px] font-bold tracking-widest px-2 py-1 rounded-sm text-white" style={{ backgroundColor: COLOR_TAREA }}>{countTar}</span>}
@@ -2581,7 +2685,7 @@ function CasillaFinalizar({ hilo, acciones, setCore, size = 20 }) {
         onClick={onClick}
         aria-label={finalizado ? "Reabrir" : "Marcar como finalizada"}
         className="shrink-0 rounded-full flex items-center justify-center"
-        style={{ width: size, height: size, backgroundColor: finalizado ? "#3F6B4A" : "#FFFFFF", border: `2px solid ${finalizado ? "#3F6B4A" : "#C9C1AE"}` }}
+        style={{ width: size, height: size, backgroundColor: finalizado ? "var(--tema-estadoRealizada)" : "#FFFFFF", border: `2px solid ${finalizado ? "var(--tema-estadoRealizada)" : "#C9C1AE"}` }}
       >
         {finalizado && <Check size={size * 0.65} color="#FFFFFF" strokeWidth={3} />}
       </button>
@@ -2603,7 +2707,7 @@ function TextoCierreForm({ onConfirmar, onCancelar }) {
       </Field>
       <div className="flex gap-2">
         <button onClick={onCancelar} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
-        <button onClick={() => onConfirmar(texto)} style={{ backgroundColor: "#3F6B4A", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Cerrar</button>
+        <button onClick={() => onConfirmar(texto)} style={{ backgroundColor: "var(--tema-exito)", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Cerrar</button>
       </div>
     </div>
   );
@@ -2699,8 +2803,8 @@ function ExcelTabsBar({ core, tabs, activeId, incluirSinTab, sinColumnaNombre, o
               placeholder="Nombre..."
               className="w-20 text-[10px] px-1 py-0.5 border border-[#D8D2C4] rounded-sm focus:outline-none"
             />
-            <button onClick={confirmarCrear} className="text-[#3F6B4A]"><Check size={14} /></button>
-            <button onClick={() => { setCreando(false); setNombreNuevo(""); }} className="text-[#B0452E]"><X size={14} /></button>
+            <button onClick={confirmarCrear} className="text-[var(--tema-exito)]"><Check size={14} /></button>
+            <button onClick={() => { setCreando(false); setNombreNuevo(""); }} className="text-[var(--tema-peligro)]"><X size={14} /></button>
           </div>
         ) : (
           <button onClick={() => setCreando(true)} className="shrink-0 flex items-center justify-center w-8 h-8 text-[#8A8272]"><Plus size={15} /></button>
@@ -2715,7 +2819,7 @@ function ExcelTabsBar({ core, tabs, activeId, incluirSinTab, sinColumnaNombre, o
           <button
             onClick={() => onDelete(activeId)}
             disabled={contarTab(activeId) > 0}
-            className={`text-[10px] font-bold tracking-wide flex items-center gap-1 ${contarTab(activeId) > 0 ? "text-[#C9C1AE] cursor-not-allowed" : "text-[#B0452E]"}`}
+            className={`text-[10px] font-bold tracking-wide flex items-center gap-1 ${contarTab(activeId) > 0 ? "text-[#C9C1AE] cursor-not-allowed" : "text-[var(--tema-vinculo)]"}`}
           >
             <Trash2 size={11} /> Eliminar "{tabActivaNombre}"{contarTab(activeId) > 0 ? " (vaciala primero)" : ""}
           </button>
@@ -2769,10 +2873,10 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, t, soloTipo 
   }, [pendientesColumna, t, core.parametros.diasProximos]);
 
   const BUCKET_TABS = [
-    ["vencidas", "Vencidas", buckets.vencidas.length, "red"],
-    ["hoy", "Hoy", buckets.hoy.length, "amber"],
-    ["proximos", `${core.parametros.diasProximos ?? 7} días`, buckets.proximos.length, "neutral"],
-    ["todas", "Todas", buckets.todas.length, "slate"],
+    ["vencidas", "Vencidas", buckets.vencidas.length],
+    ["hoy", "Hoy", buckets.hoy.length],
+    ["proximos", `${core.parametros.diasProximos ?? 7} días`, buckets.proximos.length],
+    ["todas", "Todas", buckets.todas.length],
   ];
 
   const listAcciones = useMemo(
@@ -2858,7 +2962,7 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, t, soloTipo 
     <div>
     <div className="sticky top-0 z-10 bg-[#F7F5F0]">
       {dragging && (
-        <p className="text-center text-xs font-bold text-[#B0452E] tracking-wide mb-1.5 animate-pulse">
+        <p className="text-center text-xs font-bold text-[var(--tema-vinculo)] tracking-wide mb-1.5 animate-pulse">
           Soltá sobre una pestaña para mover el hilo
         </p>
       )}
@@ -2914,7 +3018,7 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, t, soloTipo 
       <div className="flex items-center gap-1.5 mb-3 flex-wrap">
         <button
           onClick={() => setShowNuevoHilo(true)}
-          style={{ backgroundColor: "#E8871E", color: "#2A2118" }}
+          style={{ backgroundColor: "var(--tema-acento)", color: "#2A2118" }}
           className="h-8 flex items-center gap-1 text-[10px] font-bold tracking-wide px-2 rounded-sm shrink-0"
         >
           <Plus size={14} /> Hilo
@@ -3041,7 +3145,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   const masUrgente = primary ? bucket.reduce((min, a) => (a.fechaProgramada < min.fechaProgramada ? a : min), primary) : null;
   const diasFaltantes = masUrgente ? diasEntre(hoy, masUrgente.fechaProgramada) : null;
   const diasUrgente = core.parametros.diasUrgente ?? 3;
-  const colorBorde = !masUrgente ? "#C9C1AE" : diasFaltantes < 0 ? "#B0452E" : diasFaltantes <= diasUrgente ? "#E8871E" : "#3F6B4A";
+  const colorBorde = !masUrgente ? "var(--tema-urgenciaSinFecha)" : diasFaltantes < 0 ? "var(--tema-urgenciaVencida)" : diasFaltantes <= diasUrgente ? "var(--tema-urgenciaProxima)" : "var(--tema-urgenciaLejana)";
   const nombrePrincipal = esTarea ? hilo.titulo : (personasDelHilo.length > 0 ? personasDelHilo.map((p) => p.nombre).join(", ") : etiquetaVinculoHilo(hilo, core));
 
   const desvincularTarea = (tareaId) => setCore((prev) => ({
@@ -3135,7 +3239,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
           {esTarea && <IconBtn label="Editar título" onClick={() => setShowEditarTitulo(true)}><Pencil size={13} /></IconBtn>}
         </div>
         {persona && <WhatsAppLink persona={persona} size={15} />}
-        {hilo.estado === "Cerrado" && <Chip tone="neutral">{hilo.estado}</Chip>}
+        {hilo.estado === "Cerrado" && <Chip tone="estadoCerradoInactivo">{hilo.estado}</Chip>}
         {onIniciarDrag && (
           <button
             onPointerDown={(e) => { e.preventDefault(); onIniciarDrag(); }}
@@ -3151,7 +3255,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
 
       {/* Vínculos: al pie del encabezado, antes de la línea */}
       <div className="mt-1.5">
-        <button onClick={() => setVerVinculos((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
+        <button onClick={() => setVerVinculos((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
           {verVinculos ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verVinculos ? "Ocultar vínculos" : "Ver vínculos"}
         </button>
         {verVinculos && (
@@ -3160,7 +3264,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <p className="text-[10px] font-bold tracking-wide text-[#8A8272]">Hilo</p>
-                  {!hiloRelacionado && <button onClick={() => setShowVincularCliente(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>}
+                  {!hiloRelacionado && <button onClick={() => setShowVincularCliente(true)} className="text-xs font-bold text-[var(--tema-vinculo)]">+ Vincular</button>}
                 </div>
                 {hiloRelacionado ? (
                   <div className="flex items-center justify-between gap-2 text-sm">
@@ -3209,10 +3313,10 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       {primary && (
         <div className="mt-1.5">
           <div className="flex items-center gap-3 flex-wrap">
-            <button onClick={() => setVerContextoPrimary((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
+            <button onClick={() => setVerContextoPrimary((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
               {verContextoPrimary ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verContextoPrimary ? "Ocultar contexto" : "Ver contexto"}
             </button>
-            <button onClick={() => { setVerResumen((v) => !v); setVerDetalle(false); }} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
+            <button onClick={() => { setVerResumen((v) => !v); setVerDetalle(false); }} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
               {verResumen ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verResumen ? "Ocultar resumen" : "Ver resumen"}
             </button>
           </div>
@@ -3242,7 +3346,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
                       ))}
                     </div>
                   )}
-                  <button onClick={() => setVerDetalle((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5 mt-2">
+                  <button onClick={() => setVerDetalle((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 mt-2">
                     {verDetalle ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verDetalle ? "Ocultar resumen detallado" : "Ver resumen detallado"}
                   </button>
                 </>
@@ -3253,7 +3357,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       )}
 
       {bucket.length > 1 && (
-        <p className="text-[10px] text-[#B0452E] font-bold tracking-wide mt-1.5">⚠ Este hilo tiene {bucket.length} acciones pendientes a la vez — revisalo, no debería pasar.</p>
+        <p className="text-[10px] text-[var(--tema-peligro)] font-bold tracking-wide mt-1.5">⚠ Este hilo tiene {bucket.length} acciones pendientes a la vez — revisalo, no debería pasar.</p>
       )}
 
       <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-dashed border-[#E4DECF] flex-nowrap">
@@ -3266,7 +3370,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
             >
               <ListChecks size={11} /> {tareasVinculadas.length} tarea{tareasVinculadas.length === 1 ? "" : "s"}
             </button>
-            <button type="button" onClick={() => setShowAgregarTarea(true)} aria-label="Agregar tarea" className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center">
+            <button type="button" onClick={() => setShowAgregarTarea(true)} aria-label="Agregar tarea" className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center">
               <Plus size={13} />
             </button>
           </div>
@@ -3312,12 +3416,12 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
             <div key={tv.id} className="flex items-center justify-between gap-2 text-sm bg-[#F7F5F0] border border-[#E4DECF] rounded-sm px-2 py-1.5">
               <button onClick={() => onOpen("hilo", tv.id)} className="text-left flex-1 min-w-0 flex items-center gap-1.5">
                 <span className={tv.estado === "Cerrado" ? "line-through text-[#A69C88]" : "text-[#2A2118] font-semibold"}>{tv.titulo}</span>
-                {tv.estado === "Cerrado" && <Chip tone="neutral">Cerrada</Chip>}
+                {tv.estado === "Cerrado" && <Chip tone="estadoCerradoInactivo">Cerrada</Chip>}
               </button>
               <IconBtn label="Desvincular" danger onClick={() => setConfirmar({ texto: "¿Desvincular esta tarea del hilo?", onConfirm: () => desvincularTarea(tv.id) })}><X size={14} /></IconBtn>
             </div>
           ))}
-          <button onClick={() => setShowAgregarTarea(true)} className="text-xs font-bold text-[#B0452E]">+ Agregar tarea</button>
+          <button onClick={() => setShowAgregarTarea(true)} className="text-xs font-bold text-[var(--tema-vinculo)]">+ Agregar tarea</button>
         </div>
       )}
 
@@ -3435,7 +3539,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
           <p className="text-sm text-[#2A2118] mb-4">{textoUsoRegistro(accionesDelHilo.filter((a) => a.id !== deletingAccionId && (a.origenId === deletingAccionId || a.destinoId === deletingAccionId)).length, "acción", "acciones", "Van a perder la referencia de contexto (\"Ver contexto\") a esta acción.")}</p>
           <div className="flex gap-2">
             <button onClick={() => setDeletingAccionId(null)} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
-            <button onClick={() => { deleteAccion(deletingAccionId); setDeletingAccionId(null); }} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, eliminar</button>
+            <button onClick={() => { deleteAccion(deletingAccionId); setDeletingAccionId(null); }} style={{ backgroundColor: "var(--tema-peligro)", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, eliminar</button>
           </div>
         </Modal>
       )}
@@ -3473,7 +3577,7 @@ function ReprogramarModal({ fechaActual, core, onClose, onSave }) {
         <input type="date" className={inputCls} value={fecha} onChange={(e) => { setFecha(e.target.value); setConfirmar(false); }} />
       </Field>
       {inhabil && (
-        <div className="bg-[#FBEEE7] border border-[#E8871E] rounded-sm p-2.5 mb-3">
+        <div className="bg-[#FBEEE7] border border-[var(--tema-acento)] rounded-sm p-2.5 mb-3">
           <p className="text-xs text-[#2A2118]">Ese día está marcado como no hábil (fin de semana, día bloqueado, o fecha puntual que agregaste). ¿Confirmás igual?</p>
         </div>
       )}
@@ -3577,13 +3681,13 @@ function PersonasView({ core, setCore, onOpen }) {
               ? "No se pudo conectar con Google. Probá de nuevo."
               : "Traé tus contactos automáticamente desde Google (nombre y teléfono)."}
           </p>
-          <button onClick={conectarGoogle} className="shrink-0 bg-[#E8871E] text-[#2A2118] rounded-sm px-3 py-1.5 font-bold text-xs">
+          <button onClick={conectarGoogle} className="shrink-0 bg-[var(--tema-acento)] text-[#2A2118] rounded-sm px-3 py-1.5 font-bold text-xs">
             {googleEstado === "reconectar" ? "Reconectar" : "Conectar Google"}
           </button>
         </div>
       )}
       {googleEstado === "sinEtiqueta" && (
-        <div className="bg-[#FBEEE7] border border-[#E8871E] rounded-sm p-3 mb-3">
+        <div className="bg-[#FBEEE7] border border-[var(--tema-acento)] rounded-sm p-3 mb-3">
           <p className="text-xs text-[#2A2118]">
             Conectado, pero todavía no encontré la etiqueta <b>"{googleLabel}"</b> en tus Contactos de Google. Creala ahí y asignásela a los contactos que querés traer acá — los personales, sin esa etiqueta, no se importan.
           </p>
@@ -3603,7 +3707,7 @@ function PersonasView({ core, setCore, onOpen }) {
           <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#A69C88]" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar persona..." className={`${inputCls} pl-8`} />
         </div>
-        <button onClick={() => setModal({})} className="shrink-0 bg-[#E8871E] text-[#2A2118] rounded-sm px-3 py-1 flex flex-col items-center justify-center gap-0.5 leading-none">
+        <button onClick={() => setModal({})} className="shrink-0 bg-[var(--tema-acento)] text-[#2A2118] rounded-sm px-3 py-1 flex flex-col items-center justify-center gap-0.5 leading-none">
           <span className="text-[9px] font-bold">{core.personas.length}</span>
           <Plus size={16} />
         </button>
@@ -3646,7 +3750,7 @@ function PersonasView({ core, setCore, onOpen }) {
           <p className="text-sm text-[#2A2118] mb-4">{textoUsoRegistro(usoDeletingId, "vínculo", "vínculos", "Se borran junto con la persona (empresas, obras, hilos).")} Su historial de acciones no se toca (queda huérfano, referenciado por un id inexistente).</p>
           <div className="flex gap-2">
             <button onClick={() => setDeletingId(null)} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
-            <button onClick={() => { deletePersona(deletingId); setDeletingId(null); }} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, eliminar</button>
+            <button onClick={() => { deletePersona(deletingId); setDeletingId(null); }} style={{ backgroundColor: "var(--tema-peligro)", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, eliminar</button>
           </div>
         </Modal>
       )}
@@ -3723,7 +3827,7 @@ function PersonaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
                 return (
                   <div key={eid} className="flex items-center justify-between gap-2 bg-[#F7F5F0] border border-[#E4DECF] rounded-sm px-2.5 py-1.5 text-sm">
                     <span className="font-semibold text-[#2A2118]">{e.denominacion}</span>
-                    <button type="button" onClick={() => quitarEmpresa(eid)} className="text-[#B0452E]"><X size={14} /></button>
+                    <button type="button" onClick={() => quitarEmpresa(eid)} className="text-[var(--tema-peligro)]"><X size={14} /></button>
                   </div>
                 );
               })}
@@ -3780,7 +3884,7 @@ function PersonaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
                 return (
                   <div key={oid} className="flex items-center justify-between gap-2 bg-[#F7F5F0] border border-[#E4DECF] rounded-sm px-2.5 py-1.5 text-sm">
                     <span className="font-semibold text-[#2A2118]">{o.nombre}</span>
-                    <button type="button" onClick={() => quitarObra(oid)} className="text-[#B0452E]"><X size={14} /></button>
+                    <button type="button" onClick={() => quitarObra(oid)} className="text-[var(--tema-peligro)]"><X size={14} /></button>
                   </div>
                 );
               })}
@@ -3830,14 +3934,14 @@ function PersonaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
       <div className="flex items-center gap-2 mt-2">
         {confirmarEliminar ? (
           <>
-            <span className="flex-1 text-xs text-[#B0452E] font-semibold">{textoUsoRegistro(vinculosDeEntidad(core, "Persona", initial.id, true).length, "vínculo", "vínculos", "Se borran junto con la persona.")}</span>
+            <span className="flex-1 text-xs text-[var(--tema-peligro)] font-semibold">{textoUsoRegistro(vinculosDeEntidad(core, "Persona", initial.id, true).length, "vínculo", "vínculos", "Se borran junto con la persona.")}</span>
             <button type="button" onClick={() => setConfirmarEliminar(false)} className="shrink-0 border border-[#D8D2C4] rounded-sm px-3 py-2.5 text-xs font-bold text-[#6B6352]">Cancelar</button>
-            <button type="button" onClick={onDelete} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="shrink-0 rounded-sm px-3 py-2.5 text-xs font-bold">Sí, eliminar</button>
+            <button type="button" onClick={onDelete} style={{ backgroundColor: "var(--tema-peligro)", color: "#FFFFFF" }} className="shrink-0 rounded-sm px-3 py-2.5 text-xs font-bold">Sí, eliminar</button>
           </>
         ) : (
           <>
             <PrimaryBtn onClick={submit} full>Guardar</PrimaryBtn>
-            {onDelete && <button type="button" onClick={() => setConfirmarEliminar(true)} className="shrink-0 border border-[#E4DECF] rounded-sm px-3 text-[#B0452E]"><Trash2 size={16} /></button>}
+            {onDelete && <button type="button" onClick={() => setConfirmarEliminar(true)} className="shrink-0 border border-[#E4DECF] rounded-sm px-3 text-[var(--tema-peligro)]"><Trash2 size={16} /></button>}
           </>
         )}
       </div>
@@ -3862,13 +3966,13 @@ function VinculosDeFicha({ core, setCore, entidadTipo, entidadId, onOpen }) {
 
   return (
     <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-      <button onClick={() => setVerVinculos((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
+      <button onClick={() => setVerVinculos((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
         {verVinculos ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verVinculos ? "Ocultar relaciones" : "Ver relaciones"}
       </button>
       {verVinculos && (
         <div className="mt-2.5">
           <div className="flex justify-end mb-1.5">
-            <button onClick={() => setShowVincular(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>
+            <button onClick={() => setShowVincular(true)} className="text-xs font-bold text-[var(--tema-vinculo)]">+ Vincular</button>
           </div>
           {items.length === 0 ? (
             <p className="text-sm text-[#A69C88]">Sin vínculos cargados.</p>
@@ -3890,7 +3994,7 @@ function VinculosDeFicha({ core, setCore, entidadTipo, entidadId, onOpen }) {
                       ) : (
                         <span className="font-semibold text-[#2A2118]">{label}</span>
                       )}
-                      {v.principal && <Star size={11} className="inline text-[#E8871E] ml-1" />}
+                      {v.principal && <Star size={11} className="inline text-[var(--tema-acento)] ml-1" />}
                     </button>
                     {persona && <WhatsAppLink persona={persona} size={15} />}
                     <IconBtn label="Editar vínculo" onClick={() => setEditVinculo(v)}><Pencil size={14} /></IconBtn>
@@ -4000,13 +4104,13 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
         <VinculosDeFicha core={core} setCore={setCore} entidadTipo="Persona" entidadId={id} onOpen={onOpen} />
 
         <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-          <button onClick={() => setVerHilos((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
+          <button onClick={() => setVerHilos((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
             {verHilos ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verHilos ? "Ocultar hilos de seguimiento" : "Ver hilos de seguimiento"}
           </button>
           {verHilos && (
             <div className="mt-2.5">
               <div className="flex justify-end mb-1.5">
-                <button onClick={() => setShowNuevoHilo(true)} className="text-xs font-bold text-[#B0452E] flex items-center gap-1"><Plus size={12} /> Nuevo hilo</button>
+                <button onClick={() => setShowNuevoHilo(true)} className="text-xs font-bold text-[var(--tema-vinculo)] flex items-center gap-1"><Plus size={12} /> Nuevo hilo</button>
               </div>
               {hilosActivos.length === 0 ? (
                 <EmptyState icon={<GitBranch size={22} />} text="Todavía no hay hilos de seguimiento con esta persona." />
@@ -4018,7 +4122,7 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
 
               {hilosCerrados.length > 0 && (
                 <div className="mt-3">
-                  <button onClick={() => setVerCerrados((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
+                  <button onClick={() => setVerCerrados((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
                     {verCerrados ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verCerrados ? "Ocultar" : "Ver"} hilos cerrados ({hilosCerrados.length})
                   </button>
                   {verCerrados && (
@@ -4033,13 +4137,13 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
         </div>
 
         <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-          <button onClick={() => setVerTareas((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
+          <button onClick={() => setVerTareas((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
             {verTareas ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verTareas ? "Ocultar tareas" : "Ver tareas"}
           </button>
           {verTareas && (
             <div className="mt-2.5">
               <div className="flex justify-end mb-1.5">
-                <button onClick={() => setShowAgregarTareaEntidad(true)} className="text-xs font-bold text-[#B0452E] flex items-center gap-1"><Plus size={12} /> Agregar tarea</button>
+                <button onClick={() => setShowAgregarTareaEntidad(true)} className="text-xs font-bold text-[var(--tema-vinculo)] flex items-center gap-1"><Plus size={12} /> Agregar tarea</button>
               </div>
               {tareasDeLaPersona.length === 0 ? (
                 <p className="text-sm text-[#A69C88]">Sin tareas todavía.</p>
@@ -4114,7 +4218,7 @@ function HiloRow({ hilo, core, acciones, onOpen }) {
           <p className={`truncate ${persona ? "text-sm text-[#6B6352] mt-0.5" : "text-[15px] font-semibold text-[#2A2118]"}`} title={textoPlanoDeMenciones(hilo.titulo)}><TextoConMenciones texto={hilo.titulo} onOpen={onOpen} /></p>
           <p className="text-xs text-[#8A8272] mt-0.5">{[empresas.map((e) => e.denominacion).join(", "), obras.map((o) => o.nombre).join(", ")].filter(Boolean).join(" · ") || "Sin empresa/obra"}</p>
         </div>
-        <Chip tone={hilo.estado === "Activo" ? "green" : "neutral"}>{hilo.estado}</Chip>
+        <Chip tone={hilo.estado === "Activo" ? "estadoActivo" : "estadoCerradoInactivo"}>{hilo.estado}</Chip>
       </div>
       <div className="flex items-center justify-between mt-2">
         <span className="text-xs text-[#8A8272]">
@@ -4135,13 +4239,13 @@ function AccionCard({ accion, acciones, core, onOpen, onEdit, onDelete }) {
   const [verContexto, setVerContexto] = useState(false);
   const tipo = core.tiposAccion.find((t) => t.id === accion.tipoAccionId);
   const isPend = accion.estado === "Pendiente";
-  const prioTone = accion.prioridad === "Alta" ? "red" : accion.prioridad === "Media" ? "amber" : "neutral";
+  const prioTone = accion.prioridad === "Alta" ? "prioridadAlta" : accion.prioridad === "Media" ? "prioridadMedia" : "prioridadBaja";
   const destino = accion.destinoId ? (acciones || []).find((a) => a.id === accion.destinoId) : null;
   return (
-    <div className={`border-l-4 ${isPend ? "border-[#E8871E]" : "border-[#3F6B4A]"} border-y border-r border-[#E4DECF] rounded-sm p-3`} style={{ backgroundColor: isPend ? "#FFFFFF" : "#F2F1EF" }}>
+    <div className={`border-l-4 ${isPend ? "border-[var(--tema-estadoPendiente)]" : "border-[var(--tema-estadoRealizada)]"} border-y border-r border-[#E4DECF] rounded-sm p-3`} style={{ backgroundColor: isPend ? "#FFFFFF" : "#F2F1EF" }}>
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-1.5">
-          <Chip tone={isPend ? "amber" : "green"}>{accion.estado}</Chip>
+          <Chip tone={isPend ? "estadoPendiente" : "estadoRealizada"}>{accion.estado}</Chip>
           {tipo && <span className="text-sm font-semibold text-[#2A2118]">{tipo.nombre}</span>}
           <span className="text-[9px] font-mono text-[#C9C1AE]">{fmtNumero(accion.numero)}</span>
         </div>
@@ -4155,7 +4259,7 @@ function AccionCard({ accion, acciones, core, onOpen, onEdit, onDelete }) {
       <div className="flex items-center gap-2 mt-1.5">
         {accion.prioridad && <Chip tone={prioTone}>{accion.prioridad}</Chip>}
         {accion.recurrente && <span className="text-[10px] text-[#8A8272] flex items-center gap-1"><Repeat size={11} /> cada {accion.repiteCadaN} {accion.repiteUnidad}</span>}
-        <button onClick={() => setVerContexto((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5 ml-auto">
+        <button onClick={() => setVerContexto((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 ml-auto">
           {verContexto ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verContexto ? "Ocultar contexto" : "Ver contexto"}
         </button>
       </div>
@@ -4216,7 +4320,7 @@ function VincularEmpresaForm({ core, setCore, onClose, onSave, excluirIds }) {
         />
       </Field>
       <button type="button" disabled={!empresaId} onClick={agregarExistente} className="w-full border border-[#E4DECF] rounded-sm py-2.5 font-bold text-sm text-[#2A2118] disabled:text-[#C9C1AE] disabled:cursor-not-allowed mb-3">+ Agregar</button>
-      <button type="button" onClick={onClose} className="w-full mt-1 bg-[#E8871E] text-[#2A2118] rounded-sm py-2.5 font-bold text-sm">Listo</button>
+      <button type="button" onClick={onClose} className="w-full mt-1 bg-[var(--tema-acento)] text-[#2A2118] rounded-sm py-2.5 font-bold text-sm">Listo</button>
 
       {showNuevaEmpresa && (
         <EmpresaForm
@@ -4297,7 +4401,7 @@ function VincularEntidadAHiloForm({ core, setCore, vinculadasKeys, onVincular, o
         <button type="button" onClick={() => setCrear("Obra")} className="border border-[#E4DECF] rounded-sm py-2 font-bold text-[11px] text-[#2A2118]">+ Obra</button>
       </div>
 
-      <button type="button" onClick={onClose} className="w-full mt-1 bg-[#E8871E] text-[#2A2118] rounded-sm py-2.5 font-bold text-sm">Listo</button>
+      <button type="button" onClick={onClose} className="w-full mt-1 bg-[var(--tema-acento)] text-[#2A2118] rounded-sm py-2.5 font-bold text-sm">Listo</button>
 
       {crear === "Persona" && (
         <PersonaForm
@@ -4386,7 +4490,7 @@ function VinculosDeHilo({ hilo, hiloId, core, setCore, onOpen, agregarPersona, s
   return (
     <div>
       <div className="flex justify-end mb-1.5">
-        <button onClick={() => setShowVincular(true)} className="text-xs font-bold text-[#B0452E]">+ Vincular</button>
+        <button onClick={() => setShowVincular(true)} className="text-xs font-bold text-[var(--tema-vinculo)]">+ Vincular</button>
       </div>
       {grupos.length === 0 ? (
         <p className="text-sm text-[#A69C88]">Sin vínculos cargados.</p>
@@ -4401,7 +4505,7 @@ function VinculosDeHilo({ hilo, hiloId, core, setCore, onOpen, agregarPersona, s
                       <div key={v.id} className="flex items-center justify-between gap-2 text-sm">
                         <button onClick={() => onOpen("persona", item.id)} className="text-left flex-1 min-w-0">
                           <span className="font-semibold text-[#2A2118]">{item.nombre}</span>
-                          {v.principal && <Star size={11} className="inline text-[#E8871E] ml-1" />}
+                          {v.principal && <Star size={11} className="inline text-[var(--tema-acento)] ml-1" />}
                           <span className="text-xs text-[#A69C88]"> · desde {fmtDate(v.desde)}</span>
                         </button>
                         <div className="flex items-center gap-1">
@@ -4423,7 +4527,7 @@ function VinculosDeHilo({ hilo, hiloId, core, setCore, onOpen, agregarPersona, s
       )}
       {participantesInactivos.length > 0 && (
         <div className="mt-2">
-          <button onClick={() => setVerHistorialPersonas((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
+          <button onClick={() => setVerHistorialPersonas((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
             {verHistorialPersonas ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verHistorialPersonas ? "Ocultar historial de interlocutores" : "Ver historial de interlocutores"} ({participantesInactivos.length})
           </button>
           {verHistorialPersonas && (
@@ -4533,7 +4637,7 @@ function EditarHiloPrincipalForm({ hilo, core, setCore, onClose }) {
               return (
                 <div key={eid} className="flex items-center justify-between gap-2 bg-[#F7F5F0] border border-[#E4DECF] rounded-sm px-2.5 py-1.5 text-sm">
                   <span className="font-semibold text-[#2A2118]">{e.denominacion}</span>
-                  <button type="button" onClick={() => quitarEmpresa(eid)} className="text-[#B0452E]"><X size={14} /></button>
+                  <button type="button" onClick={() => quitarEmpresa(eid)} className="text-[var(--tema-peligro)]"><X size={14} /></button>
                 </div>
               );
             })}
@@ -4570,7 +4674,7 @@ function EditarHiloPrincipalForm({ hilo, core, setCore, onClose }) {
               return (
                 <div key={oid} className="flex items-center justify-between gap-2 bg-[#F7F5F0] border border-[#E4DECF] rounded-sm px-2.5 py-1.5 text-sm">
                   <span className="font-semibold text-[#2A2118]">{o.nombre}</span>
-                  <button type="button" onClick={() => quitarObra(oid)} className="text-[#B0452E]"><X size={14} /></button>
+                  <button type="button" onClick={() => quitarObra(oid)} className="text-[var(--tema-peligro)]"><X size={14} /></button>
                 </div>
               );
             })}
@@ -4604,7 +4708,7 @@ function EditarHiloPrincipalForm({ hilo, core, setCore, onClose }) {
 
       <div className="flex gap-2">
         <button onClick={onClose} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
-        <button onClick={guardar} disabled={!titulo.trim() || faltaVinculo} className={`flex-1 rounded-sm py-2.5 font-bold text-sm ${!titulo.trim() || faltaVinculo ? "bg-[#E7E2D8] text-[#A69C88] cursor-not-allowed" : "bg-[#E8871E] text-[#2A2118]"}`}>
+        <button onClick={guardar} disabled={!titulo.trim() || faltaVinculo} className={`flex-1 rounded-sm py-2.5 font-bold text-sm ${!titulo.trim() || faltaVinculo ? "bg-[#E7E2D8] text-[#A69C88] cursor-not-allowed" : "bg-[var(--tema-acento)] text-[#2A2118]"}`}>
           Guardar cambios
         </button>
       </div>
@@ -4857,7 +4961,7 @@ function AvanzarHiloForm({ hilo, pendienteActual, core, setCore, acciones, setAc
 
   return (
     <Modal title={`${esTarea ? "Avanzar tarea" : "Avanzar hilo"} — ${textoPlanoDeMenciones(hilo.titulo)}`} onClose={onClose}>
-      <p className="text-[11px] font-bold tracking-wide text-[#B0452E] mb-2">{pendienteActual ? "Lo que acabás de hacer" : "Registrar contacto"}</p>
+      <p className="text-[11px] font-bold tracking-wide text-[var(--tema-vinculo)] mb-2">{pendienteActual ? "Lo que acabás de hacer" : "Registrar contacto"}</p>
       {!esTarea && (
         <SelectConCrear
           label="Tipo de acción"
@@ -4946,7 +5050,7 @@ function AvanzarHiloForm({ hilo, pendienteActual, core, setCore, acciones, setAc
                   onHora={setHoraEspecifica}
                 />
                 {especificaInhabil && (
-                  <div className="bg-[#FBEEE7] border border-[#E8871E] rounded-sm p-2.5 mb-3">
+                  <div className="bg-[#FBEEE7] border border-[var(--tema-acento)] rounded-sm p-2.5 mb-3">
                     <p className="text-xs text-[#2A2118]">Ese día está marcado como no hábil. Si guardás de nuevo, se confirma igual.</p>
                   </div>
                 )}
@@ -5016,13 +5120,13 @@ function EditAccionForm({ accion, core, setCore, otrasAccionesDelHilo = [], onCl
         <button
           type="button"
           onClick={() => setEstado("Realizada")}
-          style={{ backgroundColor: estado === "Realizada" ? "#3F6B4A" : "#E7E2D8", color: estado === "Realizada" ? "#FFFFFF" : "#6B6352" }}
+          style={{ backgroundColor: estado === "Realizada" ? "var(--tema-estadoRealizada)" : "#E7E2D8", color: estado === "Realizada" ? "#FFFFFF" : "#6B6352" }}
           className="flex-1 py-2 rounded-sm text-sm font-bold"
         >Realizada</button>
         <button
           type="button"
           onClick={() => setEstado("Pendiente")}
-          style={{ backgroundColor: estado === "Pendiente" ? "#E8871E" : "#E7E2D8", color: estado === "Pendiente" ? "#2A2118" : "#6B6352" }}
+          style={{ backgroundColor: estado === "Pendiente" ? "var(--tema-estadoPendiente)" : "#E7E2D8", color: estado === "Pendiente" ? "#2A2118" : "#6B6352" }}
           className="flex-1 py-2 rounded-sm text-sm font-bold"
         >Pendiente</button>
       </div>
@@ -5045,7 +5149,7 @@ function EditAccionForm({ accion, core, setCore, otrasAccionesDelHilo = [], onCl
       ) : (
         <>
           {yaHayPendiente && (
-            <div className="bg-[#FBEEE7] border border-[#B0452E] rounded-sm p-2.5 mb-3">
+            <div className="bg-[#FBEEE7] border border-[var(--tema-peligro)] rounded-sm p-2.5 mb-3">
               <p className="text-xs text-[#2A2118]">Este hilo ya tiene otra acción pendiente. No se puede guardar como Pendiente hasta resolver esa — reprogramala o marcala como Realizada primero.</p>
             </div>
           )}
@@ -5057,7 +5161,7 @@ function EditAccionForm({ accion, core, setCore, otrasAccionesDelHilo = [], onCl
             labelFecha="Fecha programada"
           />
           {inhabil && (
-            <div className="bg-[#FBEEE7] border border-[#E8871E] rounded-sm p-2.5 mb-3">
+            <div className="bg-[#FBEEE7] border border-[var(--tema-acento)] rounded-sm p-2.5 mb-3">
               <p className="text-xs text-[#2A2118]">Ese día está marcado como no hábil. Si guardás de nuevo, se confirma igual.</p>
             </div>
           )}
@@ -5158,7 +5262,7 @@ function VincularObraForm({ core, setCore, empresaId, onClose, onVinculada }) {
           }}
         />
       )}
-      <button type="button" onClick={onClose} className="w-full mt-1 bg-[#E8871E] text-[#2A2118] rounded-sm py-2.5 font-bold text-sm">Listo</button>
+      <button type="button" onClick={onClose} className="w-full mt-1 bg-[var(--tema-acento)] text-[#2A2118] rounded-sm py-2.5 font-bold text-sm">Listo</button>
     </Modal>
   );
 }
@@ -5198,7 +5302,7 @@ function EmpresasView({ core, setCore, onOpen }) {
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar empresa..." className={`${inputCls} pl-8`} />
         </div>
         <button onClick={() => setShowImportar(true)} aria-label="Importar desde Excel" className="shrink-0 border border-[#E4DECF] rounded-sm px-3.5 py-2 font-bold text-[#6B6352]"><FileSpreadsheet size={18} /></button>
-        <button onClick={() => setModal({})} className="shrink-0 bg-[#E8871E] text-[#2A2118] rounded-sm px-3 py-1 flex flex-col items-center justify-center gap-0.5 leading-none">
+        <button onClick={() => setModal({})} className="shrink-0 bg-[var(--tema-acento)] text-[#2A2118] rounded-sm px-3 py-1 flex flex-col items-center justify-center gap-0.5 leading-none">
           <span className="text-[9px] font-bold">{core.empresas.length}</span>
           <Plus size={16} />
         </button>
@@ -5222,10 +5326,10 @@ function EmpresasView({ core, setCore, onOpen }) {
                     {nPersonas > 0 ? (
                       <p className="text-xs text-[#8A8272] truncate" title={`${e.ciudad ? e.ciudad + " · " : ""}${nPersonas} contacto${nPersonas !== 1 ? "s" : ""}`}>{e.ciudad ? `${e.ciudad} · ` : ""}{nPersonas} contacto{nPersonas !== 1 ? "s" : ""}</p>
                     ) : (
-                      <Chip tone="amber">A definir</Chip>
+                      <Chip tone="estadoPendiente">A definir</Chip>
                     )}
                     {nSubsidiarias > 0 && (
-                      <p className="text-[11px] text-[#3F6B4A] font-semibold flex items-center gap-1 mt-0.5"><Layers size={11} /> Cabecera · {nSubsidiarias} empresa{nSubsidiarias !== 1 ? "s" : ""} del grupo</p>
+                      <p className="text-[11px] text-[var(--tema-vinculo)] font-semibold flex items-center gap-1 mt-0.5"><Layers size={11} /> Cabecera · {nSubsidiarias} empresa{nSubsidiarias !== 1 ? "s" : ""} del grupo</p>
                     )}
                     {cabecera && (
                       <p className="text-[11px] text-[#8A8272] flex items-center gap-1 mt-0.5"><Layers size={11} /> Grupo {cabecera.denominacion}</p>
@@ -5247,7 +5351,7 @@ function EmpresasView({ core, setCore, onOpen }) {
           <p className="text-sm text-[#2A2118] mb-4">{textoUsoRegistro(usoDeletingId, "vínculo", "vínculos", "Se borran junto con la empresa (personas, obras, hilos).")}</p>
           <div className="flex gap-2">
             <button onClick={() => setDeletingId(null)} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
-            <button onClick={() => { del(deletingId); setDeletingId(null); }} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, eliminar</button>
+            <button onClick={() => { del(deletingId); setDeletingId(null); }} style={{ backgroundColor: "var(--tema-peligro)", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, eliminar</button>
           </div>
         </Modal>
       )}
@@ -5287,7 +5391,7 @@ function EmpresaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
 
       {esNueva && (
         <div className="border-t border-[#E4DECF] my-3 pt-3">
-          <p className="text-[11px] font-bold tracking-wide text-[#B0452E] mb-2">Persona que la representa</p>
+          <p className="text-[11px] font-bold tracking-wide text-[var(--tema-vinculo)] mb-2">Persona que la representa</p>
           <div className="flex gap-1.5 mb-2">
             <button type="button" onClick={() => setPersonaModo("existente")} style={{ backgroundColor: personaModo === "existente" ? "#2A2F36" : "#E7E2D8", color: personaModo === "existente" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-2 rounded-sm text-xs font-bold">Existente</button>
             <button type="button" onClick={() => setPersonaModo("adefinir")} style={{ backgroundColor: personaModo === "adefinir" ? "#2A2F36" : "#E7E2D8", color: personaModo === "adefinir" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-2 rounded-sm text-xs font-bold">A definir</button>
@@ -5341,14 +5445,14 @@ function EmpresaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
       <div className="flex items-center gap-2 mt-2">
         {confirmarEliminar ? (
           <>
-            <span className="flex-1 text-xs text-[#B0452E] font-semibold">{textoUsoRegistro(vinculosDeEntidad(core, "Empresa", initial.id, true).length, "vínculo", "vínculos", "Se borran junto con la empresa.")}</span>
+            <span className="flex-1 text-xs text-[var(--tema-peligro)] font-semibold">{textoUsoRegistro(vinculosDeEntidad(core, "Empresa", initial.id, true).length, "vínculo", "vínculos", "Se borran junto con la empresa.")}</span>
             <button type="button" onClick={() => setConfirmarEliminar(false)} className="shrink-0 border border-[#D8D2C4] rounded-sm px-3 py-2.5 text-xs font-bold text-[#6B6352]">Cancelar</button>
-            <button type="button" onClick={onDelete} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="shrink-0 rounded-sm px-3 py-2.5 text-xs font-bold">Sí, eliminar</button>
+            <button type="button" onClick={onDelete} style={{ backgroundColor: "var(--tema-peligro)", color: "#FFFFFF" }} className="shrink-0 rounded-sm px-3 py-2.5 text-xs font-bold">Sí, eliminar</button>
           </>
         ) : (
           <>
             <PrimaryBtn onClick={submit} full>Guardar</PrimaryBtn>
-            {onDelete && <button type="button" onClick={() => setConfirmarEliminar(true)} className="shrink-0 border border-[#E4DECF] rounded-sm px-3 text-[#B0452E]"><Trash2 size={16} /></button>}
+            {onDelete && <button type="button" onClick={() => setConfirmarEliminar(true)} className="shrink-0 border border-[#E4DECF] rounded-sm px-3 text-[var(--tema-peligro)]"><Trash2 size={16} /></button>}
           </>
         )}
       </div>
@@ -5464,7 +5568,7 @@ function ImportarEmpresasForm({ core, setCore, onClose }) {
       <button type="button" onClick={descargarPlantilla} className="w-full flex items-center justify-center gap-2 border border-[#E4DECF] rounded-sm py-2.5 font-bold text-sm text-[#2A2118] mb-3">
         <Download size={16} /> Descargar plantilla
       </button>
-      <button type="button" onClick={() => inputRef.current?.click()} className="w-full flex items-center justify-center gap-2 rounded-sm py-2.5 font-bold text-sm bg-[#E8871E] text-[#2A2118] mb-3">
+      <button type="button" onClick={() => inputRef.current?.click()} className="w-full flex items-center justify-center gap-2 rounded-sm py-2.5 font-bold text-sm bg-[var(--tema-acento)] text-[#2A2118] mb-3">
         <FileSpreadsheet size={16} /> Elegir archivo completado
       </button>
       <input ref={inputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={onFile} />
@@ -5484,7 +5588,7 @@ function ImportarEmpresasForm({ core, setCore, onClose }) {
       </div>
 
       {resultado?.error && (
-        <p className="text-sm text-[#B0452E] bg-[#FBEEE7] border border-[#E8871E] rounded-sm p-2.5">{resultado.error}</p>
+        <p className="text-sm text-[var(--tema-peligro)] bg-[#FBEEE7] border border-[var(--tema-peligro)] rounded-sm p-2.5">{resultado.error}</p>
       )}
       {resultado && !resultado.error && (
         <p className="text-sm text-[#2A2118] bg-[#F7F5F0] border border-[#E4DECF] rounded-sm p-2.5">
@@ -5531,7 +5635,7 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
             {empresa.cuit && <p className="text-xs text-[#8A8272] mt-0.5">CUIT {empresa.cuit}</p>}
             {(empresa.direccion || empresa.ciudad) && <p className="text-xs text-[#8A8272] mt-0.5">{[empresa.direccion, empresa.ciudad].filter(Boolean).join(" · ")}</p>}
             {cabecera && (
-              <button onClick={() => onOpen("empresa", cabecera.id)} className="text-xs font-semibold text-[#3F6B4A] flex items-center gap-1 mt-1">
+              <button onClick={() => onOpen("empresa", cabecera.id)} className="text-xs font-semibold text-[var(--tema-vinculo)] flex items-center gap-1 mt-1">
                 <Layers size={12} /> Grupo {cabecera.denominacion}
               </button>
             )}
@@ -5545,13 +5649,13 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
         <VinculosDeFicha core={core} setCore={setCore} entidadTipo="Empresa" entidadId={id} onOpen={onOpen} />
 
         <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-          <button onClick={() => setVerHilos((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
+          <button onClick={() => setVerHilos((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
             {verHilos ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verHilos ? "Ocultar hilos de seguimiento" : "Ver hilos de seguimiento"}
           </button>
           {verHilos && (
             <div className="mt-2.5">
               <div className="flex justify-end mb-1.5">
-                <button onClick={() => setShowNuevoHiloEmpresa(true)} className="text-xs font-bold text-[#B0452E] flex items-center gap-1"><Plus size={12} /> Nuevo hilo</button>
+                <button onClick={() => setShowNuevoHiloEmpresa(true)} className="text-xs font-bold text-[var(--tema-vinculo)] flex items-center gap-1"><Plus size={12} /> Nuevo hilo</button>
               </div>
               {hilosDeEstaEmpresa.length === 0 ? (
                 <p className="text-sm text-[#A69C88]">Sin hilos todavía. Podés arrancar uno acá aunque todavía no tengas el contacto.</p>
@@ -5563,7 +5667,7 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
 
               {hilosCerradosDeEmpresa.length > 0 && (
                 <div className="mt-3">
-                  <button onClick={() => setVerCerrados((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
+                  <button onClick={() => setVerCerrados((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
                     {verCerrados ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verCerrados ? "Ocultar" : "Ver"} hilos cerrados ({hilosCerradosDeEmpresa.length})
                   </button>
                   {verCerrados && (
@@ -5578,13 +5682,13 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
         </div>
 
         <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-          <button onClick={() => setVerTareas((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
+          <button onClick={() => setVerTareas((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
             {verTareas ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verTareas ? "Ocultar tareas" : "Ver tareas"}
           </button>
           {verTareas && (
             <div className="mt-2.5">
               <div className="flex justify-end mb-1.5">
-                <button onClick={() => setShowAgregarTareaEntidad(true)} className="text-xs font-bold text-[#B0452E] flex items-center gap-1"><Plus size={12} /> Agregar tarea</button>
+                <button onClick={() => setShowAgregarTareaEntidad(true)} className="text-xs font-bold text-[var(--tema-vinculo)] flex items-center gap-1"><Plus size={12} /> Agregar tarea</button>
               </div>
               {tareasDeLaEmpresa.length === 0 ? (
                 <p className="text-sm text-[#A69C88]">Sin tareas todavía.</p>
@@ -5599,7 +5703,7 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
 
         {subsidiarias.length > 0 && (
           <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-            <button onClick={() => setVerGrupo((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
+            <button onClick={() => setVerGrupo((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
               {verGrupo ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verGrupo ? "Ocultar empresas del grupo" : "Ver empresas del grupo"}
             </button>
             {verGrupo && (
@@ -5693,7 +5797,7 @@ function ObrasView({ core, setCore, onOpen }) {
           <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#A69C88]" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar obra..." className={`${inputCls} pl-8`} />
         </div>
-        <button onClick={() => setModal({})} className="shrink-0 bg-[#E8871E] text-[#2A2118] rounded-sm px-3 py-1 flex flex-col items-center justify-center gap-0.5 leading-none">
+        <button onClick={() => setModal({})} className="shrink-0 bg-[var(--tema-acento)] text-[#2A2118] rounded-sm px-3 py-1 flex flex-col items-center justify-center gap-0.5 leading-none">
           <span className="text-[9px] font-bold">{core.obras.length}</span>
           <Plus size={16} />
         </button>
@@ -5714,7 +5818,7 @@ function ObrasView({ core, setCore, onOpen }) {
                     {empresas.length ? (
                       <p className="text-xs text-[#8A8272] truncate" title={empresas.join(", ")}>{empresas.join(", ")}</p>
                     ) : (
-                      <Chip tone="amber">A definir</Chip>
+                      <Chip tone="estadoPendiente">A definir</Chip>
                     )}
                   </div>
                 </button>
@@ -5732,7 +5836,7 @@ function ObrasView({ core, setCore, onOpen }) {
           <p className="text-sm text-[#2A2118] mb-4">{textoUsoRegistro(usoDeletingId, "vínculo", "vínculos", "Se borran junto con la obra (empresas, personas, hilos).")}</p>
           <div className="flex gap-2">
             <button onClick={() => setDeletingId(null)} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
-            <button onClick={() => { del(deletingId); setDeletingId(null); }} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, eliminar</button>
+            <button onClick={() => { del(deletingId); setDeletingId(null); }} style={{ backgroundColor: "var(--tema-peligro)", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, eliminar</button>
           </div>
         </Modal>
       )}
@@ -5771,7 +5875,7 @@ function ObraForm({ initial, core, setCore, onSave, onDelete, onClose }) {
 
       {esNueva && (
         <div className="border-t border-[#E4DECF] my-3 pt-3">
-          <p className="text-[11px] font-bold tracking-wide text-[#B0452E] mb-2">Empresa a la que pertenece</p>
+          <p className="text-[11px] font-bold tracking-wide text-[var(--tema-vinculo)] mb-2">Empresa a la que pertenece</p>
           <div className="flex gap-1.5 mb-2">
             <button type="button" onClick={() => setEmpresaModo("existente")} style={{ backgroundColor: empresaModo === "existente" ? "#2A2F36" : "#E7E2D8", color: empresaModo === "existente" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-2 rounded-sm text-xs font-bold">Existente</button>
             <button type="button" onClick={() => setEmpresaModo("adefinir")} style={{ backgroundColor: empresaModo === "adefinir" ? "#2A2F36" : "#E7E2D8", color: empresaModo === "adefinir" ? "#FFFFFF" : "#6B6352" }} className="flex-1 py-2 rounded-sm text-xs font-bold">A definir</button>
@@ -5820,14 +5924,14 @@ function ObraForm({ initial, core, setCore, onSave, onDelete, onClose }) {
       <div className="flex items-center gap-2 mt-2">
         {confirmarEliminar ? (
           <>
-            <span className="flex-1 text-xs text-[#B0452E] font-semibold">{textoUsoRegistro(vinculosDeEntidad(core, "Obra", initial.id, true).length, "vínculo", "vínculos", "Se borran junto con la obra.")}</span>
+            <span className="flex-1 text-xs text-[var(--tema-peligro)] font-semibold">{textoUsoRegistro(vinculosDeEntidad(core, "Obra", initial.id, true).length, "vínculo", "vínculos", "Se borran junto con la obra.")}</span>
             <button type="button" onClick={() => setConfirmarEliminar(false)} className="shrink-0 border border-[#D8D2C4] rounded-sm px-3 py-2.5 text-xs font-bold text-[#6B6352]">Cancelar</button>
-            <button type="button" onClick={onDelete} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="shrink-0 rounded-sm px-3 py-2.5 text-xs font-bold">Sí, eliminar</button>
+            <button type="button" onClick={onDelete} style={{ backgroundColor: "var(--tema-peligro)", color: "#FFFFFF" }} className="shrink-0 rounded-sm px-3 py-2.5 text-xs font-bold">Sí, eliminar</button>
           </>
         ) : (
           <>
             <PrimaryBtn onClick={submit} full>Guardar</PrimaryBtn>
-            {onDelete && <button type="button" onClick={() => setConfirmarEliminar(true)} className="shrink-0 border border-[#E4DECF] rounded-sm px-3 text-[#B0452E]"><Trash2 size={16} /></button>}
+            {onDelete && <button type="button" onClick={() => setConfirmarEliminar(true)} className="shrink-0 border border-[#E4DECF] rounded-sm px-3 text-[var(--tema-peligro)]"><Trash2 size={16} /></button>}
           </>
         )}
       </div>
@@ -5865,13 +5969,13 @@ function ObraDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
         <VinculosDeFicha core={core} setCore={setCore} entidadTipo="Obra" entidadId={id} onOpen={onOpen} />
 
         <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-          <button onClick={() => setVerHilos((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
+          <button onClick={() => setVerHilos((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
             {verHilos ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verHilos ? "Ocultar hilos de seguimiento" : "Ver hilos de seguimiento"}
           </button>
           {verHilos && (
             <div className="mt-2.5">
               <div className="flex justify-end mb-1.5">
-                <button onClick={() => setShowNuevoHiloObra(true)} className="text-xs font-bold text-[#B0452E] flex items-center gap-1"><Plus size={12} /> Nuevo hilo</button>
+                <button onClick={() => setShowNuevoHiloObra(true)} className="text-xs font-bold text-[var(--tema-vinculo)] flex items-center gap-1"><Plus size={12} /> Nuevo hilo</button>
               </div>
               {hilosDeEstaObra.length === 0 ? (
                 <p className="text-sm text-[#A69C88]">Sin hilos todavía. Podés arrancar uno acá aunque todavía no sepas la empresa o el contacto.</p>
@@ -5883,7 +5987,7 @@ function ObraDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
 
               {hilosCerradosDeObra.length > 0 && (
                 <div className="mt-3">
-                  <button onClick={() => setVerCerrados((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
+                  <button onClick={() => setVerCerrados((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
                     {verCerrados ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verCerrados ? "Ocultar" : "Ver"} hilos cerrados ({hilosCerradosDeObra.length})
                   </button>
                   {verCerrados && (
@@ -5898,13 +6002,13 @@ function ObraDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
         </div>
 
         <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-          <button onClick={() => setVerTareas((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
+          <button onClick={() => setVerTareas((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
             {verTareas ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verTareas ? "Ocultar tareas" : "Ver tareas"}
           </button>
           {verTareas && (
             <div className="mt-2.5">
               <div className="flex justify-end mb-1.5">
-                <button onClick={() => setShowAgregarTareaEntidad(true)} className="text-xs font-bold text-[#B0452E] flex items-center gap-1"><Plus size={12} /> Agregar tarea</button>
+                <button onClick={() => setShowAgregarTareaEntidad(true)} className="text-xs font-bold text-[var(--tema-vinculo)] flex items-center gap-1"><Plus size={12} /> Agregar tarea</button>
               </div>
               {tareasDeLaObra.length === 0 ? (
                 <p className="text-sm text-[#A69C88]">Sin tareas todavía.</p>
@@ -6082,8 +6186,8 @@ function InformesView({ core, acciones }) {
   );
 }
 
-function IndicadorCard({ label, value, tone = "neutral" }) {
-  const tones = { neutral: "#2A2118", red: "#B0452E", green: "#3F6B4A", amber: "#E8871E" };
+function IndicadorCard({ label, value, tone = "ink" }) {
+  const tones = { ink: "var(--tema-ink)", urgenciaVencida: "var(--tema-urgenciaVencida)", estadoActivo: "var(--tema-estadoActivo)", estadoPendiente: "var(--tema-estadoPendiente)", estadoCerradoInactivo: "var(--tema-estadoCerradoInactivo)" };
   return (
     <div className="bg-white border border-[#E4DECF] rounded-sm p-3">
       <p className="text-[10px] font-bold tracking-wide text-[#8A8272] mb-1">{label}</p>
@@ -6113,12 +6217,12 @@ function TableroControl({ core, acciones }) {
   return (
     <div>
       <div className="grid grid-cols-2 gap-2 mb-4">
-        <IndicadorCard label="Hilos activos" value={hilosActivos} tone="green" />
+        <IndicadorCard label="Hilos activos" value={hilosActivos} tone="estadoActivo" />
         <IndicadorCard label="Hilos cerrados" value={hilosCerrados} />
-        <IndicadorCard label="Acciones vencidas" value={vencidas} tone={vencidas > 0 ? "red" : "neutral"} />
-        <IndicadorCard label="Pendientes totales" value={pendientes.length} tone="amber" />
-        <IndicadorCard label="Realizadas este mes" value={realizadasEsteMes} tone="green" />
-        <IndicadorCard label={`Sin contacto +${umbralSinContacto}d`} value={sinContacto} tone={sinContacto > 0 ? "red" : "neutral"} />
+        <IndicadorCard label="Acciones vencidas" value={vencidas} tone={vencidas > 0 ? "urgenciaVencida" : "ink"} />
+        <IndicadorCard label="Pendientes totales" value={pendientes.length} tone="estadoPendiente" />
+        <IndicadorCard label="Realizadas este mes" value={realizadasEsteMes} tone="estadoRealizada" />
+        <IndicadorCard label={`Sin contacto +${umbralSinContacto}d`} value={sinContacto} tone={sinContacto > 0 ? "urgenciaVencida" : "ink"} />
       </div>
       <p className="text-xs text-[#A69C88]">Estos indicadores se recalculan solos con tus datos actuales. El detalle de cada uno (por ejemplo, quiénes son los "sin contacto") está en la solapa Informes.</p>
     </div>
@@ -6189,7 +6293,7 @@ function ReportTable({ headers, rows, onExportar, emptyText }) {
   return (
     <div>
       <div className="flex justify-end mb-2">
-        <button onClick={onExportar} disabled={rows.length === 0} style={rows.length === 0 ? { backgroundColor: "#E7E2D8", color: "#A69C88", cursor: "not-allowed" } : { backgroundColor: "#3F6B4A", color: "#FFFFFF" }} className="flex items-center gap-1.5 text-xs font-bold tracking-wide px-2.5 py-1.5 rounded-sm">
+        <button onClick={onExportar} disabled={rows.length === 0} style={rows.length === 0 ? { backgroundColor: "#E7E2D8", color: "#A69C88", cursor: "not-allowed" } : { backgroundColor: "var(--tema-exito)", color: "#FFFFFF" }} className="flex items-center gap-1.5 text-xs font-bold tracking-wide px-2.5 py-1.5 rounded-sm">
           <Download size={13} /> Exportar a Excel
         </button>
       </div>
@@ -6376,7 +6480,7 @@ function TiposAccionView({ core, setCore, acciones }) {
           <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#A69C88]" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar tipo de acción..." className={`${inputCls} pl-8`} />
         </div>
-        <button onClick={() => setModal({})} className="shrink-0 bg-[#E8871E] text-[#2A2118] rounded-sm px-3 py-1 flex flex-col items-center justify-center gap-0.5 leading-none">
+        <button onClick={() => setModal({})} className="shrink-0 bg-[var(--tema-acento)] text-[#2A2118] rounded-sm px-3 py-1 flex flex-col items-center justify-center gap-0.5 leading-none">
           <span className="text-[9px] font-bold">{core.tiposAccion.length}</span>
           <Plus size={16} />
         </button>
@@ -6403,7 +6507,7 @@ function TiposAccionView({ core, setCore, acciones }) {
           <p className="text-sm text-[#2A2118] mb-4">{textoUsoRegistro(usoDeletingId, "acción", "acciones", "Van a quedar sin tipo asignado.")}</p>
           <div className="flex gap-2">
             <button onClick={() => setDeletingId(null)} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
-            <button onClick={() => { delTipo(deletingId); setDeletingId(null); }} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, eliminar</button>
+            <button onClick={() => { delTipo(deletingId); setDeletingId(null); }} style={{ backgroundColor: "var(--tema-peligro)", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, eliminar</button>
           </div>
         </Modal>
       )}
@@ -6438,7 +6542,7 @@ function EtiquetasView({ core, setCore }) {
           <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#A69C88]" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar etiqueta..." className={`${inputCls} pl-8`} />
         </div>
-        <button onClick={() => setModal({})} className="shrink-0 bg-[#E8871E] text-[#2A2118] rounded-sm px-3 py-1 flex flex-col items-center justify-center gap-0.5 leading-none">
+        <button onClick={() => setModal({})} className="shrink-0 bg-[var(--tema-acento)] text-[#2A2118] rounded-sm px-3 py-1 flex flex-col items-center justify-center gap-0.5 leading-none">
           <span className="text-[9px] font-bold">{core.etiquetas.length}</span>
           <Plus size={16} />
         </button>
@@ -6468,7 +6572,7 @@ function EtiquetasView({ core, setCore }) {
           <p className="text-sm text-[#2A2118] mb-4">{textoUsoRegistro(usoDeletingId, "registro", "registros", "Se les va a quitar esta etiqueta.")}</p>
           <div className="flex gap-2">
             <button onClick={() => setDeletingId(null)} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
-            <button onClick={() => { delEtiqueta(deletingId); setDeletingId(null); }} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, eliminar</button>
+            <button onClick={() => { delEtiqueta(deletingId); setDeletingId(null); }} style={{ backgroundColor: "var(--tema-peligro)", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, eliminar</button>
           </div>
         </Modal>
       )}
@@ -6499,7 +6603,7 @@ function CategoriasView({ core, setCore }) {
           <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#A69C88]" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar categoría..." className={`${inputCls} pl-8`} />
         </div>
-        <button onClick={() => setModal({})} className="shrink-0 bg-[#E8871E] text-[#2A2118] rounded-sm px-3 py-1 flex flex-col items-center justify-center gap-0.5 leading-none">
+        <button onClick={() => setModal({})} className="shrink-0 bg-[var(--tema-acento)] text-[#2A2118] rounded-sm px-3 py-1 flex flex-col items-center justify-center gap-0.5 leading-none">
           <span className="text-[9px] font-bold">{(core.categorias || []).length}</span>
           <Plus size={16} />
         </button>
@@ -6526,7 +6630,7 @@ function CategoriasView({ core, setCore }) {
           <p className="text-sm text-[#2A2118] mb-4">{textoUsoRegistro(usoDeletingId, "etiqueta", "etiquetas", "Van a quedar sin categoría.")}</p>
           <div className="flex gap-2">
             <button onClick={() => setDeletingId(null)} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
-            <button onClick={() => { delCategoria(deletingId); setDeletingId(null); }} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, eliminar</button>
+            <button onClick={() => { delCategoria(deletingId); setDeletingId(null); }} style={{ backgroundColor: "var(--tema-peligro)", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, eliminar</button>
           </div>
         </Modal>
       )}
@@ -6565,7 +6669,7 @@ function TiposRelacionView({ core, setCore }) {
           <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#A69C88]" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar tipo de relación..." className={`${inputCls} pl-8`} />
         </div>
-        <button onClick={() => setModal({})} className="shrink-0 bg-[#E8871E] text-[#2A2118] rounded-sm px-3 py-1 flex flex-col items-center justify-center gap-0.5 leading-none">
+        <button onClick={() => setModal({})} className="shrink-0 bg-[var(--tema-acento)] text-[#2A2118] rounded-sm px-3 py-1 flex flex-col items-center justify-center gap-0.5 leading-none">
           <span className="text-[9px] font-bold">{(core.tiposRelacion || []).length}</span>
           <Plus size={16} />
         </button>
@@ -6599,7 +6703,7 @@ function TiposRelacionView({ core, setCore }) {
           <p className="text-sm text-[#2A2118] mb-4">{textoUsoRegistro(usoDeletingId, "vínculo", "vínculos", "También se van a borrar esos vínculos.")}</p>
           <div className="flex gap-2">
             <button onClick={() => setDeletingId(null)} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
-            <button onClick={() => { delTipo(deletingId); setDeletingId(null); }} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, eliminar</button>
+            <button onClick={() => { delTipo(deletingId); setDeletingId(null); }} style={{ backgroundColor: "var(--tema-peligro)", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, eliminar</button>
           </div>
         </Modal>
       )}
@@ -6696,20 +6800,20 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
   const setTituloApp = (v) => setCore((prev) => ({ ...prev, parametros: { ...prev.parametros, tituloApp: v } }));
 
   const setTemaColor = (clave, valor) => setCore((prev) => ({ ...prev, tema: { ...prev.tema, [clave]: valor } }));
-  const restablecerTema = () => setCore((prev) => ({ ...prev, tema: { botonActivo: "#1B4D2E", botonInactivo: "#D9F0DE", tarjeta: "#FFFFFF", linea: "#E4DECF", fondo: "#F7F5F0", ink: "#2A2118", mutedBase: "#6B6352" } }));
+  const restablecerTema = () => setCore((prev) => ({ ...prev, tema: { ...TEMA_DEFAULT } }));
 
   const PALETAS = [
     {
       id: "panel-obra-oscuro", nombre: "Panel de obra (oscuro)",
-      tema: { botonActivo: "#5FB8C4", botonInactivo: "#232C37", tarjeta: "#1E262F", linea: "#303B47", fondo: "#171D24", ink: "#E7ECF2", mutedBase: "#8E9AA8" },
+      tema: { ...TEMA_DEFAULT, botonActivo: "#5FB8C4", botonInactivo: "#232C37", tarjeta: "#1E262F", linea: "#303B47", fondo: "#171D24", ink: "#E7ECF2", mutedBase: "#8E9AA8" },
     },
     {
       id: "panel-obra-claro", nombre: "Panel de obra (claro)",
-      tema: { botonActivo: "#1F7A86", botonInactivo: "#F3F5F6", tarjeta: "#FFFFFF", linea: "#D8DEE4", fondo: "#FFFFFF", ink: "#1B2430", mutedBase: "#5B6674" },
+      tema: { ...TEMA_DEFAULT, botonActivo: "#1F7A86", botonInactivo: "#F3F5F6", tarjeta: "#FFFFFF", linea: "#D8DEE4", fondo: "#FFFFFF", ink: "#1B2430", mutedBase: "#5B6674" },
     },
     {
       id: "ficha-viva", nombre: "Ficha viva",
-      tema: { botonActivo: "#3B5B8C", botonInactivo: "#EFE6D4", tarjeta: "#FBF8F1", linea: "#D9CBAF", fondo: "#F4EEE1", ink: "#2B2420", mutedBase: "#736555" },
+      tema: { ...TEMA_DEFAULT, botonActivo: "#3B5B8C", botonInactivo: "#EFE6D4", tarjeta: "#FBF8F1", linea: "#D9CBAF", fondo: "#F4EEE1", ink: "#2B2420", mutedBase: "#736555" },
     },
   ];
   const aplicarPaleta = (tema) => setCore((prev) => ({ ...prev, tema }));
@@ -6782,13 +6886,13 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
           <div className="bg-white border border-[#E4DECF] rounded-sm p-4">
             <p className="text-[11px] font-bold tracking-wide text-[#6B6352] mb-2">Colores de urgencia en Seguimientos</p>
             <div className="flex items-center gap-2 mb-2 text-sm">
-              <span className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: "#B0452E" }} /> Vencida
+              <span className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: "var(--tema-urgenciaVencida)" }} /> Vencida
             </div>
             <div className="flex items-center gap-2 mb-2 text-sm">
-              <span className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: "#E8871E" }} /> Próxima a vencer
+              <span className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: "var(--tema-urgenciaProxima)" }} /> Próxima a vencer
             </div>
             <div className="flex items-center gap-2 mb-3 text-sm">
-              <span className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: "#3F6B4A" }} /> Con tiempo
+              <span className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: "var(--tema-urgenciaLejana)" }} /> Con tiempo
             </div>
             <Field label="¿Cuántos días de acá en adelante se consideran 'próxima a vencer' (amarillo)?">
               <input type="number" min={0} className={inputCls} value={core.parametros.diasUrgente ?? 3} onChange={(e) => setDiasUrgente(e.target.value)} />
@@ -6805,7 +6909,7 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
                   <button
                     key={num}
                     onClick={() => toggleDiaHabil(num)}
-                    style={{ backgroundColor: activo ? "#3F6B4A" : "#E7E2D8", color: activo ? "#FFFFFF" : "#6B6352" }}
+                    style={activo ? { backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) } : { backgroundColor: core.tema.botonInactivo, color: core.tema.ink }}
                     className="py-2 rounded-sm text-xs font-bold"
                   >
                     {label}
@@ -6820,7 +6924,7 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
             <p className="text-[11px] font-bold tracking-wide text-[#6B6352] mb-2">Fechas puntuales no hábiles</p>
             <div className="flex gap-2 mb-3">
               <input type="date" className={inputCls} value={nuevaFechaNoHabil} onChange={(e) => setNuevaFechaNoHabil(e.target.value)} />
-              <button onClick={agregarFechaNoHabil} className="shrink-0 bg-[#E8871E] text-[#2A2118] rounded-sm px-3 font-bold"><Plus size={16} /></button>
+              <button onClick={agregarFechaNoHabil} className="shrink-0 bg-[var(--tema-acento)] text-[#2A2118] rounded-sm px-3 font-bold"><Plus size={16} /></button>
             </div>
             {(core.parametros.fechasNoHabiles || []).length === 0 ? (
               <p className="text-sm text-[#A69C88]">No agregaste fechas puntuales todavía (ej: feriados, días que no atendés).</p>
@@ -6862,15 +6966,9 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
           </div>
 
           <div className="bg-white border border-[#E4DECF] rounded-sm p-4">
-            <p className="text-[11px] font-bold tracking-wide text-[#6B6352] mb-3">Botones</p>
-            <div className="flex items-center justify-between mb-3">
-              <label className="text-sm text-[#2A2118]">Botón activo (seleccionado)</label>
-              <input type="color" value={core.tema.botonActivo} onChange={(e) => setTemaColor("botonActivo", e.target.value)} className="w-10 h-8 rounded-sm border border-[#E4DECF] cursor-pointer" />
-            </div>
-            <div className="flex items-center justify-between">
-              <label className="text-sm text-[#2A2118]">Botón inactivo</label>
-              <input type="color" value={core.tema.botonInactivo} onChange={(e) => setTemaColor("botonInactivo", e.target.value)} className="w-10 h-8 rounded-sm border border-[#E4DECF] cursor-pointer" />
-            </div>
+            <p className="text-[11px] font-bold tracking-wide text-[#6B6352] mb-2">Botones</p>
+            <ColorField label="Botón activo (seleccionado)" value={core.tema.botonActivo} onChange={(v) => setTemaColor("botonActivo", v)} />
+            <ColorField label="Botón inactivo" value={core.tema.botonInactivo} onChange={(v) => setTemaColor("botonInactivo", v)} />
             <div className="flex gap-2 mt-3">
               <button
                 style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}
@@ -6888,59 +6986,58 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
           </div>
 
           <div className="bg-white border border-[#E4DECF] rounded-sm p-4">
-            <p className="text-[11px] font-bold tracking-wide text-[#6B6352] mb-3">Fondo y tarjetas</p>
-            <div className="flex items-center justify-between mb-3">
-              <label className="text-sm text-[#2A2118]">Fondo de la página</label>
-              <input type="color" value={core.tema.fondo} onChange={(e) => setTemaColor("fondo", e.target.value)} className="w-10 h-8 rounded-sm border border-[#E4DECF] cursor-pointer" />
-            </div>
-            <div className="flex items-center justify-between">
-              <label className="text-sm text-[#2A2118]">Fondo de las tarjetas</label>
-              <input type="color" value={core.tema.tarjeta} onChange={(e) => setTemaColor("tarjeta", e.target.value)} className="w-10 h-8 rounded-sm border border-[#E4DECF] cursor-pointer" />
-            </div>
+            <p className="text-[11px] font-bold tracking-wide text-[#6B6352] mb-2">Fondo y tarjetas</p>
+            <ColorField label="Fondo de la página" value={core.tema.fondo} onChange={(v) => setTemaColor("fondo", v)} />
+            <ColorField label="Fondo de las tarjetas" value={core.tema.tarjeta} onChange={(v) => setTemaColor("tarjeta", v)} />
           </div>
 
           <div className="bg-white border border-[#E4DECF] rounded-sm p-4">
-            <p className="text-[11px] font-bold tracking-wide text-[#6B6352] mb-3">Texto</p>
-            <div className="flex items-center justify-between mb-3">
-              <label className="text-sm text-[#2A2118]">Texto principal</label>
-              <input type="color" value={core.tema.ink} onChange={(e) => setTemaColor("ink", e.target.value)} className="w-10 h-8 rounded-sm border border-[#E4DECF] cursor-pointer" />
-            </div>
-            <div className="flex items-center justify-between">
-              <label className="text-sm text-[#2A2118]">Texto secundario</label>
-              <input type="color" value={core.tema.mutedBase} onChange={(e) => setTemaColor("mutedBase", e.target.value)} className="w-10 h-8 rounded-sm border border-[#E4DECF] cursor-pointer" />
-            </div>
+            <p className="text-[11px] font-bold tracking-wide text-[#6B6352] mb-2">Texto</p>
+            <ColorField label="Texto principal" value={core.tema.ink} onChange={(v) => setTemaColor("ink", v)} />
+            <ColorField label="Texto secundario" value={core.tema.mutedBase} onChange={(v) => setTemaColor("mutedBase", v)} />
           </div>
 
           <div className="bg-white border border-[#E4DECF] rounded-sm p-4">
-            <p className="text-[11px] font-bold tracking-wide text-[#6B6352] mb-3">Líneas</p>
-            <div className="flex items-center justify-between">
-              <label className="text-sm text-[#2A2118]">Color de bordes y separadores</label>
-              <input type="color" value={core.tema.linea} onChange={(e) => setTemaColor("linea", e.target.value)} className="w-10 h-8 rounded-sm border border-[#E4DECF] cursor-pointer" />
-            </div>
+            <p className="text-[11px] font-bold tracking-wide text-[#6B6352] mb-2">Líneas</p>
+            <ColorField label="Color de bordes y separadores" value={core.tema.linea} onChange={(v) => setTemaColor("linea", v)} />
           </div>
 
-          <button onClick={restablecerTema} className="text-xs font-bold tracking-wide text-[#B0452E]">Restablecer colores originales</button>
+          {TEMA_GRUPOS.map((grupo) => (
+            <div key={grupo.titulo} className="bg-white border border-[#E4DECF] rounded-sm p-4">
+              <p className="text-[11px] font-bold tracking-wide text-[#6B6352] mb-1">{grupo.titulo}</p>
+              <p className="text-xs text-[#A69C88] mb-2">{grupo.ayuda}</p>
+              {grupo.subgrupos.map((subgrupo, i) => (
+                <div key={i} className={i > 0 ? "border-t border-[#E4DECF] mt-2 pt-2" : ""}>
+                  {subgrupo.map((rol) => (
+                    <ColorField key={rol.clave} label={rol.label} value={core.tema[rol.clave]} onChange={(v) => setTemaColor(rol.clave, v)} />
+                  ))}
+                </div>
+              ))}
+            </div>
+          ))}
 
-          <p className="text-xs text-[#A69C88]">Esto cambia el fondo, el texto, los botones principales, las tarjetas y las líneas divisorias en toda la app. Los bordes de urgencia de Seguimientos (rojo/amarillo/verde) y los colores de prioridad no se ven afectados — esos siguen su propia lógica.</p>
+          <button onClick={restablecerTema} className="text-xs font-bold tracking-wide text-[var(--tema-vinculo)]">Restablecer colores originales</button>
+
+          <p className="text-xs text-[#A69C88]">Esto cambia todos los colores de la app — fondo, texto, botones, tarjetas, líneas divisorias, vínculos, y los colores de urgencia, prioridad y estado de Seguimientos.</p>
         </div>
       )}
 
       <div className="mt-6 pt-4 border-t border-[#E4DECF]">
         <p className="text-[11px] font-bold tracking-wide text-[#6B6352] mb-2">Datos de prueba</p>
-        <button onClick={generarDatosPrueba} className="text-xs font-bold tracking-wide text-[#3F6B4A] flex items-center gap-1.5">
+        <button onClick={generarDatosPrueba} className="text-xs font-bold tracking-wide text-[var(--tema-exito)] flex items-center gap-1.5">
           <Plus size={13} /> Generar datos de prueba
         </button>
-        {avisoDatosPrueba && <p className="text-xs font-bold text-[#3F6B4A] mt-1">Datos de prueba generados ✓</p>}
+        {avisoDatosPrueba && <p className="text-xs font-bold text-[var(--tema-exito)] mt-1">Datos de prueba generados ✓</p>}
         <p className="text-xs text-[#A69C88] mt-1 mb-3">Crea 3 personas, 3 empresas y 3 obras de prueba (vinculadas entre sí de a pares). Si ya existen, no las duplica.</p>
 
-        <button onClick={() => setConfirmBorrarMovimientosPrueba(true)} className="text-xs font-bold tracking-wide text-[#B0452E] flex items-center gap-1.5">
+        <button onClick={() => setConfirmBorrarMovimientosPrueba(true)} className="text-xs font-bold tracking-wide text-[var(--tema-peligro)] flex items-center gap-1.5">
           <Trash2 size={13} /> Borrar movimientos de prueba
         </button>
         <p className="text-xs text-[#A69C88] mt-1">Borra los seguimientos, tareas y acciones vinculados a personas, empresas u obras cuyo nombre empieza con "Persona/Empresa/Obra Prueba". No borra esas personas, empresas ni obras — eso lo hacés vos desde cada ABM.</p>
       </div>
 
       <div className="mt-6 pt-4 border-t border-[#E4DECF]">
-        <button onClick={() => setConfirmVaciar(true)} className="text-xs font-bold tracking-wide text-[#B0452E] flex items-center gap-1.5">
+        <button onClick={() => setConfirmVaciar(true)} className="text-xs font-bold tracking-wide text-[var(--tema-peligro)] flex items-center gap-1.5">
           <AlertTriangle size={13} /> Vaciar todos los datos cargados
         </button>
         <p className="text-xs text-[#A69C88] mt-1">Borra personas, empresas, obras, seguimientos, tareas, vínculos y acciones. No toca etiquetas, categorías, tipos de relación, tipos de acción ni la apariencia.</p>
@@ -6953,7 +7050,7 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
           <p className="text-sm text-[#2A2118] mb-4">Esto borra los seguimientos, tareas y acciones vinculados a "Persona/Empresa/Obra Prueba". Las personas, empresas y obras de prueba quedan como están. No se puede deshacer.</p>
           <div className="flex gap-2">
             <button onClick={() => setConfirmBorrarMovimientosPrueba(false)} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
-            <button onClick={borrarMovimientosPrueba} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, borrar</button>
+            <button onClick={borrarMovimientosPrueba} style={{ backgroundColor: "var(--tema-peligro)", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, borrar</button>
           </div>
         </Modal>
       )}
@@ -6963,7 +7060,7 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
           <p className="text-sm text-[#2A2118] mb-4">Esto borra permanentemente todas las personas, empresas, obras, seguimientos, tareas, vínculos y acciones. Las etiquetas, categorías, tipos de relación, tipos de acción y la apariencia quedan como están. No se puede deshacer.</p>
           <div className="flex gap-2">
             <button onClick={() => setConfirmVaciar(false)} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
-            <button onClick={vaciarDatos} style={{ backgroundColor: "#B0452E", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, vaciar todo</button>
+            <button onClick={vaciarDatos} style={{ backgroundColor: "var(--tema-peligro)", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm">Sí, vaciar todo</button>
           </div>
         </Modal>
       )}
@@ -7204,7 +7301,7 @@ function VincularRelacionForm({ core, setCore, entidadFija, onClose }) {
   return (
     <Modal title="Vincular" onClose={onClose}>
       <RelacionForm core={core} setCore={setCore} entidadFija={entidadFija} />
-      <button type="button" onClick={onClose} className="w-full mt-1 bg-[#E8871E] text-[#2A2118] rounded-sm py-2.5 font-bold text-sm">Listo</button>
+      <button type="button" onClick={onClose} className="w-full mt-1 bg-[var(--tema-acento)] text-[#2A2118] rounded-sm py-2.5 font-bold text-sm">Listo</button>
     </Modal>
   );
 }
@@ -7238,7 +7335,7 @@ function RelacionesView({ core, setCore, onOpen }) {
             <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#A69C88]" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por nombre..." className={`${inputCls} pl-8`} />
           </div>
-          <button onClick={() => setShowNuevo(true)} className="shrink-0 bg-[#E8871E] text-[#2A2118] rounded-sm px-3 py-1 flex flex-col items-center justify-center gap-0.5 leading-none">
+          <button onClick={() => setShowNuevo(true)} className="shrink-0 bg-[var(--tema-acento)] text-[#2A2118] rounded-sm px-3 py-1 flex flex-col items-center justify-center gap-0.5 leading-none">
             <span className="text-[9px] font-bold">{vinculos.length}</span>
             <Plus size={16} />
           </button>
@@ -7259,7 +7356,7 @@ function RelacionesView({ core, setCore, onOpen }) {
                 <div className="min-w-0 flex-1">
                   <p className="font-semibold text-[#2A2118]">
                     <button onClick={() => onOpen(v.origenTipo.toLowerCase(), v.origenId)} title={origenLabel}>{origenLabel}</button>
-                    {v.principal && <Star size={11} className="inline text-[#E8871E] ml-1" />}
+                    {v.principal && <Star size={11} className="inline text-[var(--tema-acento)] ml-1" />}
                   </p>
                   <p className="text-[#8A8272]">
                     {nombreRelacionLado(tr, true) || "vinculado a"}{" "}
@@ -7278,7 +7375,7 @@ function RelacionesView({ core, setCore, onOpen }) {
       {showNuevo && (
         <Modal title="Nuevo vínculo" onClose={() => setShowNuevo(false)}>
           <RelacionForm core={core} setCore={setCore} />
-          <button type="button" onClick={() => setShowNuevo(false)} className="w-full mt-1 bg-[#E8871E] text-[#2A2118] rounded-sm py-2.5 font-bold text-sm">Listo</button>
+          <button type="button" onClick={() => setShowNuevo(false)} className="w-full mt-1 bg-[var(--tema-acento)] text-[#2A2118] rounded-sm py-2.5 font-bold text-sm">Listo</button>
         </Modal>
       )}
       {editVinculo && <EditVinculoForm core={core} setCore={setCore} vinculo={editVinculo} onClose={() => setEditVinculo(null)} />}
