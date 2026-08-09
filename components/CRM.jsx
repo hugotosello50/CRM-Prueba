@@ -14,7 +14,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.12.0";
+const APP_VERSION = "2.12.1";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -2659,7 +2659,7 @@ function CalendarioView({ core, setCore, acciones, setAcciones, onOpen, t }) {
 // Kanban (reemplaza la vista "Lista" de Agenda)
 // ---------------------------------------------------------------------------
 // Barra de pestañas editable con look de "hojas de Excel": pestaña activa conectada al contenido,
-// doble clic (o el link "Renombrar") para editar el nombre, "+" para crear, "Eliminar" si está vacía.
+// doble clic para editar el nombre, "+" para crear, "Eliminar" si está vacía.
 // Casilla para marcar un hilo (o tarea) como finalizado. Si ya tiene historial, pide un texto
 // de cierre para dejarlo registrado; si no tiene nada registrado todavía, cierra directo.
 function CasillaFinalizar({ hilo, acciones, setCore, size = 20 }) {
@@ -2814,11 +2814,8 @@ function ExcelTabsBar({ core, tabs, activeId, incluirSinTab, sinColumnaNombre, o
         )}
       </div>
 
-      <div className="flex justify-end gap-3 mt-1.5 mb-1">
-        <button onClick={() => setEditandoId(activeId)} className="text-[10px] font-bold tracking-wide text-[#6B6352] flex items-center gap-1">
-          <Pencil size={11} /> Renombrar
-        </button>
-        {activeId !== null && (
+      {activeId !== null && (
+        <div className="flex justify-end gap-3 mt-1.5 mb-1">
           <button
             onClick={() => onDelete(activeId)}
             disabled={contarTab(activeId) > 0}
@@ -2826,8 +2823,8 @@ function ExcelTabsBar({ core, tabs, activeId, incluirSinTab, sinColumnaNombre, o
           >
             <Trash2 size={11} /> Eliminar "{tabActivaNombre}"{contarTab(activeId) > 0 ? " (vaciala primero)" : ""}
           </button>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2874,13 +2871,6 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, t, soloTipo 
       todas: pendientesColumna,
     };
   }, [pendientesColumna, t, core.parametros.diasProximos]);
-
-  const BUCKET_TABS = [
-    ["vencidas", "Vencidas", buckets.vencidas.length],
-    ["hoy", "Hoy", buckets.hoy.length],
-    ["proximos", `${core.parametros.diasProximos ?? 7} días`, buckets.proximos.length],
-    ["todas", "Todas", buckets.todas.length],
-  ];
 
   const listAcciones = useMemo(
     () =>
@@ -2991,30 +2981,6 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, t, soloTipo 
       />
 
       <div className="border-t border-[#E4DECF] my-3" />
-
-      <div className="grid grid-cols-4 gap-1 mb-3">
-        {BUCKET_TABS.map(([key, label, count, tone]) => {
-          const colorTexto = bucket === key ? contrastText(core.tema.botonActivo) : core.tema.ink;
-          return (
-            <button
-              key={key}
-              onClick={() => setBucket(key)}
-              style={bucket === key ? { backgroundColor: core.tema.botonActivo, color: colorTexto } : { backgroundColor: core.tema.botonInactivo, color: colorTexto }}
-              className="h-8 flex items-center justify-center gap-1 text-[10px] font-bold tracking-wide rounded-sm transition-colors"
-            >
-              {label}
-              {count > 0 && (
-                <span
-                  className="inline-flex items-center justify-center min-w-[1.15rem] h-[1.15rem] px-1 rounded-full border text-[9px] font-bold leading-none"
-                  style={{ borderColor: colorTexto, color: colorTexto }}
-                >
-                  {count}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
 
       <div className="border-t border-[#E4DECF] my-3" />
 
@@ -4293,7 +4259,7 @@ function AccionCard({ accion, acciones, core, onOpen, onEdit, onDelete }) {
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-1.5">
           <Chip tone={isPend ? "estadoPendiente" : "estadoRealizada"}>{accion.estado}</Chip>
-          {tipo && <span className="text-sm font-semibold text-[#2A2118]">{tipo.nombre}</span>}
+          {tipo && <span className="text-sm font-bold text-black">{tipo.nombre}</span>}
           <span className="text-[9px] font-mono text-[#C9C1AE]">{fmtNumero(accion.numero)}</span>
         </div>
         <div className="flex items-center gap-2">
