@@ -14,7 +14,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.18.0";
+const APP_VERSION = "2.18.1";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -3487,8 +3487,15 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   if (esTarea) {
     return (
       <div className="bg-white border border-[#E4DECF] rounded-sm p-3 relative" style={{ opacity: arrastrando ? 0.35 : 1 }}>
-        {/* Encabezado mínimo: solo el título y una fecha/hora chica quedan siempre visibles. */}
+        {/* Encabezado mínimo: casilla, ícono, título+fecha chica y editar quedan siempre visibles. */}
         <div className="flex items-start gap-2.5 min-w-0">
+          <CasillaFinalizar hilo={hilo} acciones={accionesDelHilo} setCore={setCore} size={18} />
+          <div
+            className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-extrabold"
+            style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}
+          >
+            <ListChecks size={15} />
+          </div>
           <div className="min-w-0 flex-1">
             <p className="text-base font-extrabold text-[#2A2118] truncate" title={textoPlanoDeMenciones(hilo.titulo)}><TextoConMenciones texto={hilo.titulo} onOpen={onOpen} /></p>
             {primary && (primary.fechaProgramada || primary.horaProgramada) && (
@@ -3497,6 +3504,8 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
               </p>
             )}
           </div>
+          <IconBtn label="Editar título" onClick={() => setShowEditarTitulo(true)}><Pencil size={13} /></IconBtn>
+          {hilo.estado === "Cerrado" && <Chip tone="estadoCerradoInactivo">{hilo.estado}</Chip>}
           {onIniciarDrag && (
             <button
               onPointerDown={(e) => { e.preventDefault(); onIniciarDrag(); }}
@@ -3528,18 +3537,6 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
 
         {verDetallesTarea && (
           <div className="mt-3 pt-3 border-t border-dashed border-[#E4DECF] space-y-3">
-            <div className="flex items-center gap-2.5">
-              <CasillaFinalizar hilo={hilo} acciones={accionesDelHilo} setCore={setCore} size={18} />
-              <div
-                className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-extrabold"
-                style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}
-              >
-                <ListChecks size={15} />
-              </div>
-              <IconBtn label="Editar título" onClick={() => setShowEditarTitulo(true)}><Pencil size={13} /></IconBtn>
-              {hilo.estado === "Cerrado" && <Chip tone="estadoCerradoInactivo">{hilo.estado}</Chip>}
-            </div>
-
             {bloqueVinculosRelaciones}
 
             {primary && (
