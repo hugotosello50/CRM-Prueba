@@ -14,7 +14,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.13.0";
+const APP_VERSION = "2.13.1";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -1537,19 +1537,19 @@ function ResumenHoyModal({ core, acciones, onOpen, onClose }) {
   return (
     <Modal title="Resumen de hoy" onClose={onClose}>
       <div>
-        <p className="text-[10px] font-bold tracking-wide text-[#6B6352] mb-1.5">Hoy{hoy.length > 0 ? ` (${hoy.length})` : ""}</p>
+        <p className="text-sm font-bold tracking-wide text-[#6B6352] mb-1.5">Hoy{hoy.length > 0 ? ` (${hoy.length})` : ""}</p>
         {hoy.length === 0 ? (
           <p className="text-xs text-[#A69C88] mb-3">Nada programado para hoy.</p>
         ) : (
           <div className="mb-3">{hoy.map((a) => <Fila key={a.id} a={a} />)}</div>
         )}
-        <p className="text-[10px] font-bold tracking-wide text-[var(--tema-urgenciaVencida)] mb-1.5">Vencidas{vencidas.length > 0 ? ` (${vencidas.length})` : ""}</p>
+        <p className="text-sm font-bold tracking-wide text-[var(--tema-urgenciaVencida)] mb-1.5">Vencidas{vencidas.length > 0 ? ` (${vencidas.length})` : ""}</p>
         {vencidas.length === 0 ? (
           <p className="text-xs text-[#A69C88] mb-3">No hay pendientes vencidas.</p>
         ) : (
           <div className="mb-3">{vencidas.map((a) => <Fila key={a.id} a={a} />)}</div>
         )}
-        <p className="text-[10px] font-bold tracking-wide text-[#6B6352] mb-1.5">Próximos {diasProximos} días{proximos.length > 0 ? ` (${proximos.length})` : ""}</p>
+        <p className="text-sm font-bold tracking-wide text-[#6B6352] mb-1.5">Próximos {diasProximos} días{proximos.length > 0 ? ` (${proximos.length})` : ""}</p>
         {proximos.length === 0 ? (
           <p className="text-xs text-[#A69C88]">Nada programado para los próximos {diasProximos} días.</p>
         ) : (
