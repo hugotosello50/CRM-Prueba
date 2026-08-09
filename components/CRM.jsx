@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.9.0";
+const APP_VERSION = "2.9.1";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -5399,13 +5399,8 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
               {hilosDeEstaEmpresa.length === 0 ? (
                 <p className="text-sm text-[#A69C88]">Sin hilos todavía. Podés arrancar uno acá aunque todavía no tengas el contacto.</p>
               ) : (
-                <div className="space-y-1.5">
-                  {hilosDeEstaEmpresa.map((h) => (
-                    <button key={h.id} onClick={() => onOpen("hilo", h.id)} className="w-full text-left text-sm flex items-center justify-between">
-                      <span className="font-semibold text-[#2A2118]">{h.titulo}</span>
-                      <span className="text-xs text-[#8A8272]">{etiquetaVinculoHilo(h, core)}</span>
-                    </button>
-                  ))}
+                <div className="space-y-2">
+                  {hilosDeEstaEmpresa.map((h) => <HiloRow key={h.id} hilo={h} core={core} acciones={acciones} onOpen={onOpen} />)}
                 </div>
               )}
 
@@ -5415,13 +5410,8 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
                     {verCerrados ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verCerrados ? "Ocultar" : "Ver"} hilos cerrados ({hilosCerradosDeEmpresa.length})
                   </button>
                   {verCerrados && (
-                    <div className="space-y-1.5 mt-2">
-                      {hilosCerradosDeEmpresa.map((h) => (
-                        <button key={h.id} onClick={() => onOpen("hilo", h.id)} className="w-full text-left text-sm flex items-center justify-between">
-                          <span className="font-semibold text-[#2A2118] line-through text-[#A69C88]">{h.titulo}</span>
-                          <span className="text-xs text-[#8A8272]">{etiquetaVinculoHilo(h, core)}</span>
-                        </button>
-                      ))}
+                    <div className="space-y-2 mt-2">
+                      {hilosCerradosDeEmpresa.map((h) => <HiloRow key={h.id} hilo={h} core={core} acciones={acciones} onOpen={onOpen} />)}
                     </div>
                   )}
                 </div>
@@ -5678,13 +5668,8 @@ function ObraDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
               {hilosDeEstaObra.length === 0 ? (
                 <p className="text-sm text-[#A69C88]">Sin hilos todavía. Podés arrancar uno acá aunque todavía no sepas la empresa o el contacto.</p>
               ) : (
-                <div className="space-y-1.5">
-                  {hilosDeEstaObra.map((h) => (
-                    <button key={h.id} onClick={() => onOpen("hilo", h.id)} className="w-full text-left text-sm flex items-center justify-between">
-                      <span className="font-semibold text-[#2A2118]">{h.titulo}</span>
-                      <span className="text-xs text-[#8A8272]">{etiquetaVinculoHilo(h, core)}</span>
-                    </button>
-                  ))}
+                <div className="space-y-2">
+                  {hilosDeEstaObra.map((h) => <HiloRow key={h.id} hilo={h} core={core} acciones={acciones} onOpen={onOpen} />)}
                 </div>
               )}
 
@@ -5694,13 +5679,8 @@ function ObraDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
                     {verCerrados ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verCerrados ? "Ocultar" : "Ver"} hilos cerrados ({hilosCerradosDeObra.length})
                   </button>
                   {verCerrados && (
-                    <div className="space-y-1.5 mt-2">
-                      {hilosCerradosDeObra.map((h) => (
-                        <button key={h.id} onClick={() => onOpen("hilo", h.id)} className="w-full text-left text-sm flex items-center justify-between">
-                          <span className="font-semibold text-[#2A2118] line-through text-[#A69C88]">{h.titulo}</span>
-                          <span className="text-xs text-[#8A8272]">{etiquetaVinculoHilo(h, core)}</span>
-                        </button>
-                      ))}
+                    <div className="space-y-2 mt-2">
+                      {hilosCerradosDeObra.map((h) => <HiloRow key={h.id} hilo={h} core={core} acciones={acciones} onOpen={onOpen} />)}
                     </div>
                   )}
                 </div>
