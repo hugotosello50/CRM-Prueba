@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.9.1";
+const APP_VERSION = "2.10.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -403,6 +403,21 @@ function obraIdsDirectasDePersona(core, personaId) {
 function hilosDePersona(core, personaId) {
   const ids = new Set(contrapartesDe(core, "Persona", personaId, "Hilo").map(({ c }) => c.id));
   return core.hilos.filter((h) => ids.has(h.id));
+}
+// Todas las tareas relacionadas a una entidad (Persona/Empresa/Obra): vinculadas
+// directamente, o vinculadas a alguno de sus hilos de seguimiento (vía hiloRelacionadoId)
+// — sin duplicar si una tarea cae en los dos casos.
+function tareasDeEntidad(core, entidadTipo, entidadId) {
+  const hilosIds = new Set(contrapartesDe(core, entidadTipo, entidadId, "Hilo").map(({ c }) => c.id));
+  const tareasDirectas = core.hilos.filter((h) => hilosIds.has(h.id) && h.tipo === "tarea");
+  const idsHilosCliente = new Set(core.hilos.filter((h) => hilosIds.has(h.id) && h.tipo === "cliente").map((h) => h.id));
+  const tareasIndirectas = core.hilos.filter((h) => h.tipo === "tarea" && h.hiloRelacionadoId && idsHilosCliente.has(h.hiloRelacionadoId));
+  const vistos = new Set();
+  const todas = [];
+  for (const t of [...tareasDirectas, ...tareasIndirectas]) {
+    if (!vistos.has(t.id)) { vistos.add(t.id); todas.push(t); }
+  }
+  return todas;
 }
 // ¿Existe ya un vínculo (activo) entre dos entidades, con un tipo de relación dado (o cualquiera)?
 function existeVinculo(core, oTipo, oId, dTipo, dId, tipoRelacionId = undefined) {
@@ -3954,12 +3969,15 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
   const [showNuevoHilo, setShowNuevoHilo] = useState(false);
   const [verHilos, setVerHilos] = useState(false);
   const [verCerrados, setVerCerrados] = useState(false);
+  const [verTareas, setVerTareas] = useState(false);
+  const [showAgregarTareaEntidad, setShowAgregarTareaEntidad] = useState(false);
 
   if (!persona) return <div><BackHeader onClose={onClose} /><p className="text-sm text-[#8A8272]">Esta persona ya no existe.</p></div>;
 
-  const hilosDeLaPersona = hilosDePersona(core, id);
+  const hilosDeLaPersona = hilosDePersona(core, id).filter((h) => h.tipo === "cliente");
   const hilosActivos = hilosDeLaPersona.filter((h) => h.estado === "Activo");
   const hilosCerrados = hilosDeLaPersona.filter((h) => h.estado === "Cerrado");
+  const tareasDeLaPersona = tareasDeEntidad(core, "Persona", id);
 
   return (
     <div>
@@ -4013,6 +4031,26 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
             </div>
           )}
         </div>
+
+        <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
+          <button onClick={() => setVerTareas((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
+            {verTareas ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verTareas ? "Ocultar tareas" : "Ver tareas"}
+          </button>
+          {verTareas && (
+            <div className="mt-2.5">
+              <div className="flex justify-end mb-1.5">
+                <button onClick={() => setShowAgregarTareaEntidad(true)} className="text-xs font-bold text-[#B0452E] flex items-center gap-1"><Plus size={12} /> Agregar tarea</button>
+              </div>
+              {tareasDeLaPersona.length === 0 ? (
+                <p className="text-sm text-[#A69C88]">Sin tareas todavía.</p>
+              ) : (
+                <div className="space-y-2">
+                  {tareasDeLaPersona.map((t) => <TareaCard key={t.id} hilo={t} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onOpen={onOpen} />)}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {showNuevoHilo && (
@@ -4025,6 +4063,34 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
             setAcciones={setAcciones}
             onCancelar={() => setShowNuevoHilo(false)}
             onCreated={(hiloId) => { setShowNuevoHilo(false); onOpen("hilo", hiloId); }}
+          />
+        </Modal>
+      )}
+
+      {showAgregarTareaEntidad && (
+        <Modal title="Agregar tarea" onClose={() => setShowAgregarTareaEntidad(false)}>
+          <AgregarTareaAEntidadForm
+            core={core}
+            tareasExcluidas={tareasDeLaPersona.map((t) => t.id)}
+            onVincular={(tareaId) => {
+              setCore((prev) => ({ ...prev, vinculos: [...(prev.vinculos || []), vinc("Persona", id, "Hilo", tareaId, null, false, todayISO())] }));
+              setShowAgregarTareaEntidad(false);
+            }}
+            onCrear={(nuevoHilo, fecha, hora) => {
+              setCore((prev) => ({
+                ...prev,
+                hilos: [nuevoHilo, ...prev.hilos],
+                vinculos: [...(prev.vinculos || []), vinc("Persona", id, "Hilo", nuevoHilo.id, null, false, todayISO())],
+              }));
+              if (fecha) {
+                setAcciones((prev) => {
+                  const siguienteNumero = Math.max(0, ...prev.map((a) => a.numero || 0)) + 1;
+                  return [{ id: uid("A"), hiloId: nuevoHilo.id, tipoAccionId: "", estado: "Pendiente", fechaRealizada: "", fechaProgramada: fecha, horaProgramada: hora, prioridad: "Media", notaPlanificada: nuevoHilo.titulo, notaHecho: "", origenId: null, destinoId: null, numero: siguienteNumero, recurrente: false, repiteCadaN: null, repiteUnidad: null, fechaCreacion: todayISO(), secuencia: Date.now() }, ...prev];
+                });
+              }
+              setShowAgregarTareaEntidad(false);
+            }}
+            onClose={() => setShowAgregarTareaEntidad(false)}
           />
         </Modal>
       )}
@@ -4605,6 +4671,92 @@ function AgregarTareaAlHiloForm({ core, hiloClienteId, personasDelHilo, onVincul
           </Field>
           {disponibles.length === 0 ? (
             <p className="text-sm text-[#A69C88]">No encontré tareas sueltas con ese criterio — probá creando una nueva.</p>
+          ) : (
+            <div className="space-y-1.5 max-h-72 overflow-y-auto">
+              {disponibles.map((h) => (
+                <button
+                  key={h.id}
+                  onClick={() => onVincular(h.id)}
+                  className="w-full text-left bg-[#F7F5F0] border border-[#E4DECF] rounded-sm p-2.5 text-sm font-semibold text-[#2A2118]"
+                >
+                  {h.titulo}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          <Field label="Título de la tarea *"><CampoConMenciones core={core} autoFocus value={titulo} onChange={setTitulo} /></Field>
+          <Field label="Columna del Kanban de Tareas (opcional)">
+            <select className={inputCls} value={columnaId} onChange={(e) => setColumnaId(e.target.value)}>
+              <option value="">— Sin columna —</option>
+              {columnas.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            </select>
+          </Field>
+          <SelectorFechaHora fecha={fecha} hora={hora} onFecha={setFecha} onHora={setHora} labelFecha="Fecha (opcional)" />
+          <p className="text-xs text-[#A69C88] mb-3">Si cargás fecha, se crea con esa acción pendiente. Si no, la tarea queda sin fecha hasta que la avances.</p>
+          <PrimaryBtn full onClick={crear}>Crear tarea</PrimaryBtn>
+        </>
+      )}
+      <button type="button" onClick={onClose} className="w-full mt-3 border border-[#E4DECF] rounded-sm py-2.5 font-bold text-sm text-[#2A2118]">Listo</button>
+    </>
+  );
+}
+
+// Igual que AgregarTareaAlHiloForm, pero vincula la tarea directamente a una Persona/
+// Empresa/Obra (vínculo genérico) en vez de a un hilo de cliente puntual.
+function AgregarTareaAEntidadForm({ core, tareasExcluidas, onVincular, onCrear, onClose }) {
+  const [modo, setModo] = useState("existente"); // 'existente' | 'nueva'
+  const [q, setQ] = useState("");
+  const [titulo, setTitulo] = useState("");
+  const [columnaId, setColumnaId] = useState("");
+  const [fecha, setFecha] = useState("");
+  const [hora, setHora] = useState("");
+  const columnas = core.kanbanColumnasTareas || [];
+
+  const disponibles = useMemo(() => {
+    const excluidas = new Set(tareasExcluidas);
+    const sueltas = core.hilos.filter((h) => h.tipo === "tarea" && !excluidas.has(h.id));
+    const texto = q.trim().toLowerCase();
+    return texto ? sueltas.filter((h) => h.titulo.toLowerCase().includes(texto)) : sueltas;
+  }, [core.hilos, q, tareasExcluidas]);
+
+  const crear = () => {
+    if (!titulo.trim()) return;
+    const nuevoHilo = {
+      id: uid("H"), titulo: titulo.trim(),
+      estado: "Activo", fechaCreacion: todayISO(), tipo: "tarea",
+      columnaTareaId: columnaId || null, hiloRelacionadoId: null, notaCierre: "",
+    };
+    onCrear(nuevoHilo, fecha, hora);
+    setTitulo(""); setColumnaId(""); setFecha(""); setHora("");
+    setModo("existente");
+  };
+
+  return (
+    <>
+      <div className="flex gap-2 mb-3">
+        <button
+          type="button"
+          onClick={() => setModo("existente")}
+          style={{ backgroundColor: modo === "existente" ? "#2A2F36" : "#E7E2D8", color: modo === "existente" ? "#FFFFFF" : "#6B6352" }}
+          className="flex-1 py-2 rounded-sm text-sm font-bold"
+        >Tarea existente</button>
+        <button
+          type="button"
+          onClick={() => setModo("nueva")}
+          style={{ backgroundColor: modo === "nueva" ? "#2A2F36" : "#E7E2D8", color: modo === "nueva" ? "#FFFFFF" : "#6B6352" }}
+          className="flex-1 py-2 rounded-sm text-sm font-bold"
+        >Nueva tarea</button>
+      </div>
+      {modo === "existente" ? (
+        <>
+          <Field label="Buscar tarea">
+            <input autoFocus className={inputCls} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Título de la tarea..." />
+          </Field>
+          {disponibles.length === 0 ? (
+            <p className="text-sm text-[#A69C88]">No encontré tareas con ese criterio — probá creando una nueva.</p>
           ) : (
             <div className="space-y-1.5 max-h-72 overflow-y-auto">
               {disponibles.map((h) => (
@@ -5349,6 +5501,8 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
   const [verGrupo, setVerGrupo] = useState(false);
   const [verHilos, setVerHilos] = useState(false);
   const [verCerrados, setVerCerrados] = useState(false);
+  const [verTareas, setVerTareas] = useState(false);
+  const [showAgregarTareaEntidad, setShowAgregarTareaEntidad] = useState(false);
   if (!empresa) return <div><BackHeader onClose={onClose} /><p className="text-sm text-[#8A8272]">Esta empresa ya no existe.</p></div>;
 
   const cabecera = cabeceraDeEmpresa(id, core);
@@ -5357,9 +5511,10 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
 
   const hilosIdsDeEmpresa = new Set(empresaIdsIncluidas.flatMap((eid) => contrapartesDe(core, "Empresa", eid, "Hilo").map(({ c }) => c.id)));
   const hilosDeEmpresa = core.hilos.filter((h) => hilosIdsDeEmpresa.has(h.id)).map((h) => h.id);
-  const hilosDeEstaEmpresa = core.hilos.filter((h) => hilosIdsDeEmpresa.has(h.id) && h.estado === "Activo");
-  const hilosCerradosDeEmpresa = core.hilos.filter((h) => hilosIdsDeEmpresa.has(h.id) && h.estado === "Cerrado");
+  const hilosDeEstaEmpresa = core.hilos.filter((h) => hilosIdsDeEmpresa.has(h.id) && h.estado === "Activo" && h.tipo === "cliente");
+  const hilosCerradosDeEmpresa = core.hilos.filter((h) => hilosIdsDeEmpresa.has(h.id) && h.estado === "Cerrado" && h.tipo === "cliente");
   const accCount = acciones.filter((a) => hilosDeEmpresa.includes(a.hiloId)).length;
+  const tareasDeLaEmpresa = tareasDeEntidad(core, "Empresa", id);
 
   return (
     <div>
@@ -5420,6 +5575,26 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
           )}
         </div>
 
+        <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
+          <button onClick={() => setVerTareas((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
+            {verTareas ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verTareas ? "Ocultar tareas" : "Ver tareas"}
+          </button>
+          {verTareas && (
+            <div className="mt-2.5">
+              <div className="flex justify-end mb-1.5">
+                <button onClick={() => setShowAgregarTareaEntidad(true)} className="text-xs font-bold text-[#B0452E] flex items-center gap-1"><Plus size={12} /> Agregar tarea</button>
+              </div>
+              {tareasDeLaEmpresa.length === 0 ? (
+                <p className="text-sm text-[#A69C88]">Sin tareas todavía.</p>
+              ) : (
+                <div className="space-y-2">
+                  {tareasDeLaEmpresa.map((t) => <TareaCard key={t.id} hilo={t} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onOpen={onOpen} />)}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         {subsidiarias.length > 0 && (
           <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
             <button onClick={() => setVerGrupo((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
@@ -5446,6 +5621,34 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
             empresaFijaId={id}
             onCreated={(hiloId) => { setShowNuevoHiloEmpresa(false); onOpen("hilo", hiloId); }}
             onCancelar={() => setShowNuevoHiloEmpresa(false)}
+          />
+        </Modal>
+      )}
+
+      {showAgregarTareaEntidad && (
+        <Modal title="Agregar tarea" onClose={() => setShowAgregarTareaEntidad(false)}>
+          <AgregarTareaAEntidadForm
+            core={core}
+            tareasExcluidas={tareasDeLaEmpresa.map((t) => t.id)}
+            onVincular={(tareaId) => {
+              setCore((prev) => ({ ...prev, vinculos: [...(prev.vinculos || []), vinc("Empresa", id, "Hilo", tareaId, null, false, todayISO())] }));
+              setShowAgregarTareaEntidad(false);
+            }}
+            onCrear={(nuevoHilo, fecha, hora) => {
+              setCore((prev) => ({
+                ...prev,
+                hilos: [nuevoHilo, ...prev.hilos],
+                vinculos: [...(prev.vinculos || []), vinc("Empresa", id, "Hilo", nuevoHilo.id, null, false, todayISO())],
+              }));
+              if (fecha) {
+                setAcciones((prev) => {
+                  const siguienteNumero = Math.max(0, ...prev.map((a) => a.numero || 0)) + 1;
+                  return [{ id: uid("A"), hiloId: nuevoHilo.id, tipoAccionId: "", estado: "Pendiente", fechaRealizada: "", fechaProgramada: fecha, horaProgramada: hora, prioridad: "Media", notaPlanificada: nuevoHilo.titulo, notaHecho: "", origenId: null, destinoId: null, numero: siguienteNumero, recurrente: false, repiteCadaN: null, repiteUnidad: null, fechaCreacion: todayISO(), secuencia: Date.now() }, ...prev];
+                });
+              }
+              setShowAgregarTareaEntidad(false);
+            }}
+            onClose={() => setShowAgregarTareaEntidad(false)}
           />
         </Modal>
       )}
@@ -5635,10 +5838,13 @@ function ObraDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
   const [showNuevoHiloObra, setShowNuevoHiloObra] = useState(false);
   const [verHilos, setVerHilos] = useState(false);
   const [verCerrados, setVerCerrados] = useState(false);
+  const [verTareas, setVerTareas] = useState(false);
+  const [showAgregarTareaEntidad, setShowAgregarTareaEntidad] = useState(false);
   if (!obra) return <div><BackHeader onClose={onClose} /><p className="text-sm text-[#8A8272]">Esta obra ya no existe.</p></div>;
   const hilosIdsDeEstaObra = new Set(contrapartesDe(core, "Obra", id, "Hilo").map(({ c }) => c.id));
-  const hilosDeEstaObra = core.hilos.filter((h) => hilosIdsDeEstaObra.has(h.id) && h.estado === "Activo");
-  const hilosCerradosDeObra = core.hilos.filter((h) => hilosIdsDeEstaObra.has(h.id) && h.estado === "Cerrado");
+  const hilosDeEstaObra = core.hilos.filter((h) => hilosIdsDeEstaObra.has(h.id) && h.estado === "Activo" && h.tipo === "cliente");
+  const hilosCerradosDeObra = core.hilos.filter((h) => hilosIdsDeEstaObra.has(h.id) && h.estado === "Cerrado" && h.tipo === "cliente");
+  const tareasDeLaObra = tareasDeEntidad(core, "Obra", id);
   return (
     <div>
       <BackHeader onClose={onClose} />
@@ -5688,6 +5894,26 @@ function ObraDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
             </div>
           )}
         </div>
+
+        <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
+          <button onClick={() => setVerTareas((v) => !v)} className="text-[10px] font-bold tracking-wide text-[#B0452E] flex items-center gap-0.5">
+            {verTareas ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verTareas ? "Ocultar tareas" : "Ver tareas"}
+          </button>
+          {verTareas && (
+            <div className="mt-2.5">
+              <div className="flex justify-end mb-1.5">
+                <button onClick={() => setShowAgregarTareaEntidad(true)} className="text-xs font-bold text-[#B0452E] flex items-center gap-1"><Plus size={12} /> Agregar tarea</button>
+              </div>
+              {tareasDeLaObra.length === 0 ? (
+                <p className="text-sm text-[#A69C88]">Sin tareas todavía.</p>
+              ) : (
+                <div className="space-y-2">
+                  {tareasDeLaObra.map((t) => <TareaCard key={t.id} hilo={t} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onOpen={onOpen} />)}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
       {showNuevoHiloObra && (
         <Modal title="Nuevo hilo" onClose={() => setShowNuevoHiloObra(false)}>
@@ -5699,6 +5925,34 @@ function ObraDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
             obraFijaId={id}
             onCreated={(hiloId) => { setShowNuevoHiloObra(false); onOpen("hilo", hiloId); }}
             onCancelar={() => setShowNuevoHiloObra(false)}
+          />
+        </Modal>
+      )}
+
+      {showAgregarTareaEntidad && (
+        <Modal title="Agregar tarea" onClose={() => setShowAgregarTareaEntidad(false)}>
+          <AgregarTareaAEntidadForm
+            core={core}
+            tareasExcluidas={tareasDeLaObra.map((t) => t.id)}
+            onVincular={(tareaId) => {
+              setCore((prev) => ({ ...prev, vinculos: [...(prev.vinculos || []), vinc("Obra", id, "Hilo", tareaId, null, false, todayISO())] }));
+              setShowAgregarTareaEntidad(false);
+            }}
+            onCrear={(nuevoHilo, fecha, hora) => {
+              setCore((prev) => ({
+                ...prev,
+                hilos: [nuevoHilo, ...prev.hilos],
+                vinculos: [...(prev.vinculos || []), vinc("Obra", id, "Hilo", nuevoHilo.id, null, false, todayISO())],
+              }));
+              if (fecha) {
+                setAcciones((prev) => {
+                  const siguienteNumero = Math.max(0, ...prev.map((a) => a.numero || 0)) + 1;
+                  return [{ id: uid("A"), hiloId: nuevoHilo.id, tipoAccionId: "", estado: "Pendiente", fechaRealizada: "", fechaProgramada: fecha, horaProgramada: hora, prioridad: "Media", notaPlanificada: nuevoHilo.titulo, notaHecho: "", origenId: null, destinoId: null, numero: siguienteNumero, recurrente: false, repiteCadaN: null, repiteUnidad: null, fechaCreacion: todayISO(), secuencia: Date.now() }, ...prev];
+                });
+              }
+              setShowAgregarTareaEntidad(false);
+            }}
+            onClose={() => setShowAgregarTareaEntidad(false)}
           />
         </Modal>
       )}
