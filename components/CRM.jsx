@@ -14,7 +14,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.17.0";
+const APP_VERSION = "2.18.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -3075,6 +3075,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   const [verResumen, setVerResumen] = useState(false);
   const [verDetalle, setVerDetalle] = useState(false);
   const [verDetallesTarea, setVerDetallesTarea] = useState(false);
+  const [verSubtareas, setVerSubtareas] = useState(false);
   const [showNuevaSubtarea, setShowNuevaSubtarea] = useState(false);
   const [editingSubtarea, setEditingSubtarea] = useState(null);
   const [deletingSubtareaId, setDeletingSubtareaId] = useState(null);
@@ -3352,170 +3353,9 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
     </div>
   );
 
-  return (
-    <div className="bg-white border border-[#E4DECF] rounded-sm p-3 relative" style={{ opacity: arrastrando ? 0.35 : 1 }}>
-      {/* Bloque 1: persona, empresa, obra */}
-      <div className="flex items-start gap-2.5 min-w-0 mt-1">
-        <CasillaFinalizar hilo={hilo} acciones={accionesDelHilo} setCore={setCore} size={18} />
-        <div
-          className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-extrabold"
-          style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}
-        >
-          {esTarea ? <ListChecks size={15} /> : getIniciales(nombrePrincipal)}
-        </div>
-        <div className="min-w-0 flex-1 flex items-start gap-1">
-          <div className="min-w-0 flex-1">
-            {nombreLine}
-            {empresasObrasLine}
-          </div>
-          {esTarea && <IconBtn label="Editar título" onClick={() => setShowEditarTitulo(true)}><Pencil size={13} /></IconBtn>}
-        </div>
-        {persona && <WhatsAppLink persona={persona} size={15} />}
-        {hilo.estado === "Cerrado" && <Chip tone="estadoCerradoInactivo">{hilo.estado}</Chip>}
-        {onIniciarDrag && (
-          <button
-            onPointerDown={(e) => { e.preventDefault(); onIniciarDrag(); }}
-            onTouchStart={(e) => { e.preventDefault(); onIniciarDrag(); }}
-            aria-label="Arrastrar a otra columna"
-            style={{ touchAction: "none" }}
-            className="shrink-0 text-[#8A8272] cursor-grab active:cursor-grabbing p-1 -mr-1"
-          >
-            <GripVertical size={16} />
-          </button>
-        )}
-      </div>
-
-      {/* Vínculos/Relaciones: siempre visibles en un hilo de cliente; en una tarea, adentro
-          de "Ver/Ocultar detalles" junto con las subtareas y el contexto/resumen. */}
-      {esTarea ? (
-        <div className="mt-1.5">
-          <button onClick={() => setVerDetallesTarea((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
-            {verDetallesTarea ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verDetallesTarea ? "Ocultar detalles" : "Ver detalles"}
-          </button>
-          {verDetallesTarea && (
-            <div className="mt-2.5 space-y-3">
-              {bloqueSubtareas}
-              {bloqueVinculosRelaciones}
-              {bloqueContextoResumen}
-            </div>
-          )}
-        </div>
-      ) : (
-        bloqueVinculosRelaciones
-      )}
-
-      {/* Bloque 2: tema del hilo */}
-      {!esTarea && (
-        <div className="mt-2 pt-2 border-t border-dashed border-[#E4DECF]">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-[10px] font-bold tracking-wide text-[#A69C88] mb-0.5">Tema del hilo</p>
-            <IconBtn label="Editar hilo" onClick={() => setShowEditarTitulo(true)}><Pencil size={12} /></IconBtn>
-          </div>
-          <p className="text-base font-extrabold text-[#2A2118]"><TextoConMenciones texto={hilo.titulo} onOpen={onOpen} /></p>
-        </div>
-      )}
-
-      {hilo.estado === "Cerrado" && hilo.notaCierre && (
-        <p className="text-xs text-[#6B6352] mt-2 italic bg-[#F7F5F0] rounded-sm p-2">"{hilo.notaCierre}"</p>
-      )}
-
-      {/* Bloque 3: actividad programada — la nota destacada queda siempre visible; el
-          contexto/resumen va acá para un hilo de cliente, o adentro de "Ver detalles" arriba. */}
-      {primary && (
-        <div className="flex items-start justify-between gap-2 mt-2">
-          {primary.notaPlanificada ? (
-            <p className="text-xs font-bold text-[#2A2118] pl-2.5 flex-1 min-w-0" style={{ borderLeft: `10px solid ${colorBorde}` }}><TextoConMenciones texto={primary.notaPlanificada} onOpen={onOpen} /></p>
-          ) : <span />}
-          <div className="flex items-center gap-0.5 shrink-0">
-            <IconBtn label="Editar acción" onClick={() => setEditingAccion(primary)}><Pencil size={16} /></IconBtn>
-            <IconBtn label="Eliminar acción" danger onClick={() => setDeletingAccionId(primary.id)}><Trash2 size={16} /></IconBtn>
-          </div>
-        </div>
-      )}
-
-      {!esTarea && bloqueContextoResumen}
-
-      {bucket.length > 1 && (
-        <p className="text-[10px] text-[var(--tema-peligro)] font-bold tracking-wide mt-1.5">⚠ Este hilo tiene {bucket.length} acciones pendientes a la vez — revisalo, no debería pasar.</p>
-      )}
-
-      <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-dashed border-[#E4DECF] flex-nowrap">
-        {!esTarea && (
-          <div className="shrink-0 flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setVerTareasVinculadas((v) => !v)}
-              className="inline-flex items-center gap-1 text-[11px] font-bold text-[#6B6352] bg-[#F7F5F0] border border-[#E4DECF] rounded-sm px-2 py-1"
-            >
-              <ListChecks size={11} /> {tareasVinculadas.length} tarea{tareasVinculadas.length === 1 ? "" : "s"}
-            </button>
-            <button type="button" onClick={() => setShowAgregarTarea(true)} aria-label="Agregar tarea" className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center">
-              <Plus size={13} />
-            </button>
-          </div>
-        )}
-        <div className="flex items-center gap-1.5 ml-auto min-w-0">
-          {personasDelHilo.length > 1 && (
-            <span className="shrink-0 flex items-center">
-              {personasDelHilo.map((p) => (
-                <span
-                  key={p.id}
-                  className="w-5 h-5 rounded-full bg-[#F1DFB9] text-[#5C3F18] text-[9px] font-extrabold flex items-center justify-center border-2 -ml-1.5 first:ml-0"
-                  style={{ borderColor: core.tema.tarjeta }}
-                >
-                  {getIniciales(p.nombre)}
-                </span>
-              ))}
-            </span>
-          )}
-          {primary && tipoPrimary && <span className="min-w-0 flex-1 truncate text-right text-xs font-mono font-bold text-black" title={tipoPrimary.nombre}>{tipoPrimary.nombre}</span>}
-          {primary && (
-            <span className="shrink-0 text-[11px] font-bold font-mono px-2 py-1 rounded-sm bg-[#F1DFB9] text-[#5C3F18]">
-              {fmtDate(masUrgente.fechaProgramada)}
-            </span>
-          )}
-          {primary && <span className="shrink-0"><IconBtn label="Reprogramar" onClick={() => setShowReprogramar(true)}><Pencil size={13} /></IconBtn></span>}
-          {primary?.recurrente && <Repeat size={12} className="shrink-0 text-[#8A8272]" />}
-          {primary && (
-            <button
-              type="button"
-              onClick={() => setShowAvanzar(true)}
-              className="shrink-0 inline-flex items-center gap-0.5 text-[11px] font-bold px-2 py-1 rounded-sm"
-              style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}
-            >
-              <ChevronRight size={12} /> Hilo
-            </button>
-          )}
-        </div>
-      </div>
-
-      {verTareasVinculadas && tareasVinculadas.length > 0 && (
-        <div className="mt-1.5 space-y-1">
-          {tareasVinculadas.map((tv) => (
-            <div key={tv.id} className="flex items-center justify-between gap-2 text-sm bg-[#F7F5F0] border border-[#E4DECF] rounded-sm px-2 py-1.5">
-              <button onClick={() => onOpen("hilo", tv.id)} className="text-left flex-1 min-w-0 flex items-center gap-1.5">
-                <span className={tv.estado === "Cerrado" ? "line-through text-[#A69C88]" : "text-[#2A2118] font-semibold"}>{tv.titulo}</span>
-                {tv.estado === "Cerrado" && <Chip tone="estadoCerradoInactivo">Cerrada</Chip>}
-              </button>
-              <IconBtn label="Desvincular" danger onClick={() => setConfirmar({ texto: "¿Desvincular esta tarea del hilo?", onConfirm: () => desvincularTarea(tv.id) })}><X size={14} /></IconBtn>
-            </div>
-          ))}
-          <button onClick={() => setShowAgregarTarea(true)} className="text-xs font-bold text-[var(--tema-vinculo)]">+ Agregar tarea</button>
-        </div>
-      )}
-
-      {!primary && (
-        <>
-          <p className="text-xs text-[#A69C88] mt-2">Sin próxima acción programada.</p>
-          <div className="flex items-center gap-2 mt-2 flex-wrap">
-            <PrimaryBtn core={core} onClick={() => setShowAvanzar(true)}>Avanzar este hilo</PrimaryBtn>
-            {esTarea && (
-              <button onClick={() => setShowFechaTarea(true)} className="text-xs font-bold tracking-wide px-2.5 py-2 rounded-sm bg-[#E7E2D8] text-[#6B6352]">Poner fecha y hora</button>
-            )}
-          </div>
-        </>
-      )}
-
+  // Todos los modales/confirmaciones de la tarjeta — iguales para hilo de cliente y tarea.
+  const modales = (
+    <>
       {showReprogramar && primary && (
         <ReprogramarModal
           fechaActual={primary.fechaProgramada}
@@ -3641,6 +3481,264 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       {confirmar && (
         <ConfirmDeleteModal title="¿Confirmás?" texto={confirmar.texto} confirmLabel="Sí" onCancel={() => setConfirmar(null)} onConfirm={() => { confirmar.onConfirm(); setConfirmar(null); }} />
       )}
+    </>
+  );
+
+  if (esTarea) {
+    return (
+      <div className="bg-white border border-[#E4DECF] rounded-sm p-3 relative" style={{ opacity: arrastrando ? 0.35 : 1 }}>
+        {/* Encabezado mínimo: solo el título y una fecha/hora chica quedan siempre visibles. */}
+        <div className="flex items-start gap-2.5 min-w-0">
+          <div className="min-w-0 flex-1">
+            <p className="text-base font-extrabold text-[#2A2118] truncate" title={textoPlanoDeMenciones(hilo.titulo)}><TextoConMenciones texto={hilo.titulo} onOpen={onOpen} /></p>
+            {primary && (primary.fechaProgramada || primary.horaProgramada) && (
+              <p className="text-[10px] text-[#8A8272] mt-0.5">
+                {primary.fechaProgramada ? fmtDateHora(primary.fechaProgramada, primary.horaProgramada) : `${primary.horaProgramada} hs`}
+              </p>
+            )}
+          </div>
+          {onIniciarDrag && (
+            <button
+              onPointerDown={(e) => { e.preventDefault(); onIniciarDrag(); }}
+              onTouchStart={(e) => { e.preventDefault(); onIniciarDrag(); }}
+              aria-label="Arrastrar a otra columna"
+              style={{ touchAction: "none" }}
+              className="shrink-0 text-[#8A8272] cursor-grab active:cursor-grabbing p-1 -mr-1"
+            >
+              <GripVertical size={16} />
+            </button>
+          )}
+        </div>
+
+        <div className="mt-1.5 flex items-center gap-3">
+          <button onClick={() => setVerSubtareas((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
+            {verSubtareas ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verSubtareas ? "Ocultar subtareas" : "Ver subtareas"}
+          </button>
+          <button onClick={() => setVerDetallesTarea((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
+            {verDetallesTarea ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verDetallesTarea ? "Ocultar detalles" : "Ver detalles"}
+          </button>
+        </div>
+
+        {/* Desplegar "detalles" también muestra las subtareas; desplegar solo "subtareas" no abre "detalles". */}
+        {(verSubtareas || verDetallesTarea) && (
+          <div className="mt-2.5">
+            {bloqueSubtareas}
+          </div>
+        )}
+
+        {verDetallesTarea && (
+          <div className="mt-3 pt-3 border-t border-dashed border-[#E4DECF] space-y-3">
+            <div className="flex items-center gap-2.5">
+              <CasillaFinalizar hilo={hilo} acciones={accionesDelHilo} setCore={setCore} size={18} />
+              <div
+                className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-extrabold"
+                style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}
+              >
+                <ListChecks size={15} />
+              </div>
+              <IconBtn label="Editar título" onClick={() => setShowEditarTitulo(true)}><Pencil size={13} /></IconBtn>
+              {hilo.estado === "Cerrado" && <Chip tone="estadoCerradoInactivo">{hilo.estado}</Chip>}
+            </div>
+
+            {bloqueVinculosRelaciones}
+
+            {primary && (
+              <div className="flex items-start justify-between gap-2">
+                {primary.notaPlanificada ? (
+                  <p className="text-xs font-bold text-[#2A2118] pl-2.5 flex-1 min-w-0" style={{ borderLeft: `10px solid ${colorBorde}` }}><TextoConMenciones texto={primary.notaPlanificada} onOpen={onOpen} /></p>
+                ) : <span />}
+                <div className="flex items-center gap-0.5 shrink-0">
+                  <IconBtn label="Editar acción" onClick={() => setEditingAccion(primary)}><Pencil size={16} /></IconBtn>
+                  <IconBtn label="Eliminar acción" danger onClick={() => setDeletingAccionId(primary.id)}><Trash2 size={16} /></IconBtn>
+                </div>
+              </div>
+            )}
+
+            {bloqueContextoResumen}
+
+            {bucket.length > 1 && (
+              <p className="text-[10px] text-[var(--tema-peligro)] font-bold tracking-wide">⚠ Este hilo tiene {bucket.length} acciones pendientes a la vez — revisalo, no debería pasar.</p>
+            )}
+
+            <div className="flex items-center gap-1.5 flex-nowrap">
+              <div className="flex items-center gap-1.5 ml-auto min-w-0">
+                {primary && tipoPrimary && <span className="min-w-0 flex-1 truncate text-right text-xs font-mono font-bold text-black" title={tipoPrimary.nombre}>{tipoPrimary.nombre}</span>}
+                {primary && (
+                  <span className="shrink-0 text-[11px] font-bold font-mono px-2 py-1 rounded-sm bg-[#F1DFB9] text-[#5C3F18]">
+                    {fmtDate(masUrgente.fechaProgramada)}
+                  </span>
+                )}
+                {primary && <span className="shrink-0"><IconBtn label="Reprogramar" onClick={() => setShowReprogramar(true)}><Pencil size={13} /></IconBtn></span>}
+                {primary?.recurrente && <Repeat size={12} className="shrink-0 text-[#8A8272]" />}
+                {primary && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAvanzar(true)}
+                    className="shrink-0 inline-flex items-center gap-0.5 text-[11px] font-bold px-2 py-1 rounded-sm"
+                    style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}
+                  >
+                    <ChevronRight size={12} /> Hilo
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {!primary && (
+              <>
+                <p className="text-xs text-[#A69C88]">Sin próxima acción programada.</p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <PrimaryBtn core={core} onClick={() => setShowAvanzar(true)}>Avanzar este hilo</PrimaryBtn>
+                  <button onClick={() => setShowFechaTarea(true)} className="text-xs font-bold tracking-wide px-2.5 py-2 rounded-sm bg-[#E7E2D8] text-[#6B6352]">Poner fecha y hora</button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {modales}
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white border border-[#E4DECF] rounded-sm p-3 relative" style={{ opacity: arrastrando ? 0.35 : 1 }}>
+      {/* Bloque 1: persona, empresa, obra */}
+      <div className="flex items-start gap-2.5 min-w-0 mt-1">
+        <CasillaFinalizar hilo={hilo} acciones={accionesDelHilo} setCore={setCore} size={18} />
+        <div
+          className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-extrabold"
+          style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}
+        >
+          {getIniciales(nombrePrincipal)}
+        </div>
+        <div className="min-w-0 flex-1 flex items-start gap-1">
+          <div className="min-w-0 flex-1">
+            {nombreLine}
+            {empresasObrasLine}
+          </div>
+        </div>
+        {persona && <WhatsAppLink persona={persona} size={15} />}
+        {hilo.estado === "Cerrado" && <Chip tone="estadoCerradoInactivo">{hilo.estado}</Chip>}
+        {onIniciarDrag && (
+          <button
+            onPointerDown={(e) => { e.preventDefault(); onIniciarDrag(); }}
+            onTouchStart={(e) => { e.preventDefault(); onIniciarDrag(); }}
+            aria-label="Arrastrar a otra columna"
+            style={{ touchAction: "none" }}
+            className="shrink-0 text-[#8A8272] cursor-grab active:cursor-grabbing p-1 -mr-1"
+          >
+            <GripVertical size={16} />
+          </button>
+        )}
+      </div>
+
+      {bloqueVinculosRelaciones}
+
+      {/* Bloque 2: tema del hilo */}
+      <div className="mt-2 pt-2 border-t border-dashed border-[#E4DECF]">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[10px] font-bold tracking-wide text-[#A69C88] mb-0.5">Tema del hilo</p>
+          <IconBtn label="Editar hilo" onClick={() => setShowEditarTitulo(true)}><Pencil size={12} /></IconBtn>
+        </div>
+        <p className="text-base font-extrabold text-[#2A2118]"><TextoConMenciones texto={hilo.titulo} onOpen={onOpen} /></p>
+      </div>
+
+      {hilo.estado === "Cerrado" && hilo.notaCierre && (
+        <p className="text-xs text-[#6B6352] mt-2 italic bg-[#F7F5F0] rounded-sm p-2">"{hilo.notaCierre}"</p>
+      )}
+
+      {/* Bloque 3: actividad programada */}
+      {primary && (
+        <div className="flex items-start justify-between gap-2 mt-2">
+          {primary.notaPlanificada ? (
+            <p className="text-xs font-bold text-[#2A2118] pl-2.5 flex-1 min-w-0" style={{ borderLeft: `10px solid ${colorBorde}` }}><TextoConMenciones texto={primary.notaPlanificada} onOpen={onOpen} /></p>
+          ) : <span />}
+          <div className="flex items-center gap-0.5 shrink-0">
+            <IconBtn label="Editar acción" onClick={() => setEditingAccion(primary)}><Pencil size={16} /></IconBtn>
+            <IconBtn label="Eliminar acción" danger onClick={() => setDeletingAccionId(primary.id)}><Trash2 size={16} /></IconBtn>
+          </div>
+        </div>
+      )}
+
+      {bloqueContextoResumen}
+
+      {bucket.length > 1 && (
+        <p className="text-[10px] text-[var(--tema-peligro)] font-bold tracking-wide mt-1.5">⚠ Este hilo tiene {bucket.length} acciones pendientes a la vez — revisalo, no debería pasar.</p>
+      )}
+
+      <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-dashed border-[#E4DECF] flex-nowrap">
+        <div className="shrink-0 flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setVerTareasVinculadas((v) => !v)}
+            className="inline-flex items-center gap-1 text-[11px] font-bold text-[#6B6352] bg-[#F7F5F0] border border-[#E4DECF] rounded-sm px-2 py-1"
+          >
+            <ListChecks size={11} /> {tareasVinculadas.length} tarea{tareasVinculadas.length === 1 ? "" : "s"}
+          </button>
+          <button type="button" onClick={() => setShowAgregarTarea(true)} aria-label="Agregar tarea" className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center">
+            <Plus size={13} />
+          </button>
+        </div>
+        <div className="flex items-center gap-1.5 ml-auto min-w-0">
+          {personasDelHilo.length > 1 && (
+            <span className="shrink-0 flex items-center">
+              {personasDelHilo.map((p) => (
+                <span
+                  key={p.id}
+                  className="w-5 h-5 rounded-full bg-[#F1DFB9] text-[#5C3F18] text-[9px] font-extrabold flex items-center justify-center border-2 -ml-1.5 first:ml-0"
+                  style={{ borderColor: core.tema.tarjeta }}
+                >
+                  {getIniciales(p.nombre)}
+                </span>
+              ))}
+            </span>
+          )}
+          {primary && tipoPrimary && <span className="min-w-0 flex-1 truncate text-right text-xs font-mono font-bold text-black" title={tipoPrimary.nombre}>{tipoPrimary.nombre}</span>}
+          {primary && (
+            <span className="shrink-0 text-[11px] font-bold font-mono px-2 py-1 rounded-sm bg-[#F1DFB9] text-[#5C3F18]">
+              {fmtDate(masUrgente.fechaProgramada)}
+            </span>
+          )}
+          {primary && <span className="shrink-0"><IconBtn label="Reprogramar" onClick={() => setShowReprogramar(true)}><Pencil size={13} /></IconBtn></span>}
+          {primary?.recurrente && <Repeat size={12} className="shrink-0 text-[#8A8272]" />}
+          {primary && (
+            <button
+              type="button"
+              onClick={() => setShowAvanzar(true)}
+              className="shrink-0 inline-flex items-center gap-0.5 text-[11px] font-bold px-2 py-1 rounded-sm"
+              style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}
+            >
+              <ChevronRight size={12} /> Hilo
+            </button>
+          )}
+        </div>
+      </div>
+
+      {verTareasVinculadas && tareasVinculadas.length > 0 && (
+        <div className="mt-1.5 space-y-1">
+          {tareasVinculadas.map((tv) => (
+            <div key={tv.id} className="flex items-center justify-between gap-2 text-sm bg-[#F7F5F0] border border-[#E4DECF] rounded-sm px-2 py-1.5">
+              <button onClick={() => onOpen("hilo", tv.id)} className="text-left flex-1 min-w-0 flex items-center gap-1.5">
+                <span className={tv.estado === "Cerrado" ? "line-through text-[#A69C88]" : "text-[#2A2118] font-semibold"}>{tv.titulo}</span>
+                {tv.estado === "Cerrado" && <Chip tone="estadoCerradoInactivo">Cerrada</Chip>}
+              </button>
+              <IconBtn label="Desvincular" danger onClick={() => setConfirmar({ texto: "¿Desvincular esta tarea del hilo?", onConfirm: () => desvincularTarea(tv.id) })}><X size={14} /></IconBtn>
+            </div>
+          ))}
+          <button onClick={() => setShowAgregarTarea(true)} className="text-xs font-bold text-[var(--tema-vinculo)]">+ Agregar tarea</button>
+        </div>
+      )}
+
+      {!primary && (
+        <>
+          <p className="text-xs text-[#A69C88] mt-2">Sin próxima acción programada.</p>
+          <div className="flex items-center gap-2 mt-2 flex-wrap">
+            <PrimaryBtn core={core} onClick={() => setShowAvanzar(true)}>Avanzar este hilo</PrimaryBtn>
+          </div>
+        </>
+      )}
+
+      {modales}
     </div>
   );
 }
