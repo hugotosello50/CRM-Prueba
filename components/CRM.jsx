@@ -14,7 +14,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.12.3";
+const APP_VERSION = "2.13.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -1331,7 +1331,8 @@ export default function CRM({ userId, onLogout }) {
     if (resumenMostrado.current) return;
     resumenMostrado.current = true;
     const t = todayISO();
-    const hayAlgo = acciones.some((a) => a.estado === "Pendiente" && a.fechaProgramada && a.fechaProgramada <= t);
+    const limiteProximos = addDaysISO(t, core.parametros.diasProximos ?? 7);
+    const hayAlgo = acciones.some((a) => a.estado === "Pendiente" && a.fechaProgramada && a.fechaProgramada <= limiteProximos);
     if (hayAlgo) setShowResumenHoy(true);
   }, [core, acciones]);
 
@@ -1509,9 +1510,12 @@ export default function CRM({ userId, onLogout }) {
 
 function ResumenHoyModal({ core, acciones, onOpen, onClose }) {
   const t = todayISO();
+  const diasProximos = core.parametros.diasProximos ?? 7;
+  const limiteProximos = addDaysISO(t, diasProximos);
   const pendientes = acciones.filter((a) => a.estado === "Pendiente" && a.fechaProgramada);
   const hoy = pendientes.filter((a) => a.fechaProgramada === t);
   const vencidas = pendientes.filter((a) => a.fechaProgramada < t).sort((a, b) => (a.fechaProgramada < b.fechaProgramada ? -1 : 1));
+  const proximos = pendientes.filter((a) => a.fechaProgramada > t && a.fechaProgramada <= limiteProximos).sort((a, b) => (a.fechaProgramada < b.fechaProgramada ? -1 : 1));
 
   const Fila = ({ a }) => {
     const hilo = core.hilos.find((h) => h.id === a.hiloId);
@@ -1541,9 +1545,15 @@ function ResumenHoyModal({ core, acciones, onOpen, onClose }) {
         )}
         <p className="text-[10px] font-bold tracking-wide text-[var(--tema-urgenciaVencida)] mb-1.5">Vencidas{vencidas.length > 0 ? ` (${vencidas.length})` : ""}</p>
         {vencidas.length === 0 ? (
-          <p className="text-xs text-[#A69C88]">No hay pendientes vencidas.</p>
+          <p className="text-xs text-[#A69C88] mb-3">No hay pendientes vencidas.</p>
         ) : (
-          <div>{vencidas.map((a) => <Fila key={a.id} a={a} />)}</div>
+          <div className="mb-3">{vencidas.map((a) => <Fila key={a.id} a={a} />)}</div>
+        )}
+        <p className="text-[10px] font-bold tracking-wide text-[#6B6352] mb-1.5">Próximos {diasProximos} días{proximos.length > 0 ? ` (${proximos.length})` : ""}</p>
+        {proximos.length === 0 ? (
+          <p className="text-xs text-[#A69C88]">Nada programado para los próximos {diasProximos} días.</p>
+        ) : (
+          <div>{proximos.map((a) => <Fila key={a.id} a={a} />)}</div>
         )}
       </div>
     </Modal>
