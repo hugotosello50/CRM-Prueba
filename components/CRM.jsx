@@ -14,7 +14,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.14.1";
+const APP_VERSION = "2.15.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -1517,6 +1517,8 @@ function ResumenHoyModal({ core, acciones, onOpen, onClose }) {
   const vencidas = pendientes.filter((a) => a.fechaProgramada < t).sort((a, b) => (a.fechaProgramada < b.fechaProgramada ? -1 : 1));
   const proximos = pendientes.filter((a) => a.fechaProgramada > t && a.fechaProgramada <= limiteProximos).sort((a, b) => (a.fechaProgramada < b.fechaProgramada ? -1 : 1));
 
+  const esTareaAccion = (a) => core.hilos.find((h) => h.id === a.hiloId)?.tipo === "tarea";
+
   const Fila = ({ a }) => {
     const hilo = core.hilos.find((h) => h.id === a.hiloId);
     if (!hilo) return null;
@@ -1534,6 +1536,29 @@ function ResumenHoyModal({ core, acciones, onOpen, onClose }) {
     );
   };
 
+  // Separa un grupo (Hoy/Vencidas/Próximos) en Tareas y Seguimientos — solo muestra la
+  // etiqueta de la sub-lista que tiene contenido, y la línea entre ambas si hay las dos.
+  const Grupo = ({ items }) => {
+    const tareas = items.filter(esTareaAccion);
+    const seguimientos = items.filter((a) => !esTareaAccion(a));
+    return (
+      <>
+        {tareas.length > 0 && (
+          <div className={seguimientos.length > 0 ? "mb-2" : ""}>
+            <p className="text-[10px] font-bold tracking-wide text-[#8A8272] mb-1">Tareas</p>
+            {tareas.map((a) => <Fila key={a.id} a={a} />)}
+          </div>
+        )}
+        {seguimientos.length > 0 && (
+          <div className={tareas.length > 0 ? "border-t border-[#EFEBE0] pt-2" : ""}>
+            <p className="text-[10px] font-bold tracking-wide text-[#8A8272] mb-1">Seguimientos</p>
+            {seguimientos.map((a) => <Fila key={a.id} a={a} />)}
+          </div>
+        )}
+      </>
+    );
+  };
+
   return (
     <Modal title="Resumen de hoy" onClose={onClose}>
       <div>
@@ -1541,19 +1566,19 @@ function ResumenHoyModal({ core, acciones, onOpen, onClose }) {
         {hoy.length === 0 ? (
           <p className="text-xs text-[#A69C88] mb-3">Nada programado para hoy.</p>
         ) : (
-          <div className="mb-3">{hoy.map((a) => <Fila key={a.id} a={a} />)}</div>
+          <div className="mb-3"><Grupo items={hoy} /></div>
         )}
         <p className="text-sm font-bold tracking-wide text-[var(--tema-urgenciaVencida)] mb-1.5">Vencidas{vencidas.length > 0 ? ` (${vencidas.length})` : ""}</p>
         {vencidas.length === 0 ? (
           <p className="text-xs text-[#A69C88] mb-3">No hay pendientes vencidas.</p>
         ) : (
-          <div className="mb-3">{vencidas.map((a) => <Fila key={a.id} a={a} />)}</div>
+          <div className="mb-3"><Grupo items={vencidas} /></div>
         )}
         <p className="text-sm font-bold tracking-wide text-[#6B6352] mb-1.5">Próximos {diasProximos} días{proximos.length > 0 ? ` (${proximos.length})` : ""}</p>
         {proximos.length === 0 ? (
           <p className="text-xs text-[#A69C88]">Nada programado para los próximos {diasProximos} días.</p>
         ) : (
-          <div>{proximos.map((a) => <Fila key={a.id} a={a} />)}</div>
+          <Grupo items={proximos} />
         )}
       </div>
     </Modal>
