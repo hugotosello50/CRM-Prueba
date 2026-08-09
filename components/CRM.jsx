@@ -14,7 +14,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.11.1";
+const APP_VERSION = "2.12.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -3119,6 +3119,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   const [editingAccion, setEditingAccion] = useState(null);
   const [deletingAccionId, setDeletingAccionId] = useState(null);
   const [verVinculos, setVerVinculos] = useState(false);
+  const [verRelaciones, setVerRelaciones] = useState(false);
   const [verTareasVinculadas, setVerTareasVinculadas] = useState(false);
   const [verContextoPrimary, setVerContextoPrimary] = useState(false);
   const [verResumen, setVerResumen] = useState(false);
@@ -3134,6 +3135,21 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   const personasDelHilo = personasActivasDeHilo(hilo, core);
   const empresas = empresasDeHilo(hilo, core);
   const obras = obrasDeHilo(hilo, core);
+  const entidadesDelHilo = [
+    ...personasDelHilo.map((p) => ({ tipo: "Persona", id: p.id })),
+    ...empresas.map((e) => ({ tipo: "Empresa", id: e.id })),
+    ...obras.map((o) => ({ tipo: "Obra", id: o.id })),
+  ];
+  // Todas las relaciones (no solo con otras entidades del hilo) de cada persona/empresa/obra
+  // vinculada a este hilo, sin duplicar cuando las dos puntas están en el hilo.
+  const relacionesDelHilo = Array.from(
+    new Map(
+      entidadesDelHilo
+        .flatMap((e) => vinculosDeEntidad(core, e.tipo, e.id, true))
+        .filter((v) => v.origenTipo !== "Hilo" && v.destinoTipo !== "Hilo")
+        .map((v) => [v.id, v])
+    ).values()
+  );
   const accionesDelHilo = acciones.filter((a) => a.hiloId === id);
   const bucket = accionesBucket || accionesDelHilo.filter((a) => a.estado === "Pendiente");
   const primary = bucket[0] || null;
@@ -3257,10 +3273,38 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       </div>
 
       {/* Vínculos: al pie del encabezado, antes de la línea */}
-      <div className="mt-1.5">
+      <div className="mt-1.5 flex items-center gap-3">
         <button onClick={() => setVerVinculos((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
           {verVinculos ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verVinculos ? "Ocultar vínculos" : "Ver vínculos"}
         </button>
+        <button onClick={() => setVerRelaciones((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
+          {verRelaciones ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verRelaciones ? "Ocultar relaciones" : "Ver relaciones"}
+        </button>
+      </div>
+      {verRelaciones && (
+        <div className="mt-2.5">
+          {relacionesDelHilo.length === 0 ? (
+            <p className="text-sm text-[#A69C88]">Sin relaciones cargadas.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {relacionesDelHilo.map((v) => {
+                const tr = (core.tiposRelacion || []).find((t) => t.id === v.tipoRelacionId);
+                const labelOrigen = entidadLabel(v.origenTipo, v.origenId, core);
+                const labelDestino = entidadLabel(v.destinoTipo, v.destinoId, core);
+                if (!labelOrigen || !labelDestino) return null;
+                return (
+                  <div key={v.id} className="flex items-center flex-wrap gap-x-1 gap-y-0.5 text-sm">
+                    <button onClick={() => onOpen(v.origenTipo.toLowerCase(), v.origenId)} className="font-semibold text-[#2A2118]">{labelOrigen}</button>
+                    <span className="text-[#8A8272]">{tr ? nombreRelacionLado(tr, true) : "vinculado a"}</span>
+                    <button onClick={() => onOpen(v.destinoTipo.toLowerCase(), v.destinoId)} className="font-semibold text-[#2A2118]">{labelDestino}</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+      <div className="mt-1.5">
         {verVinculos && (
           <div className="mt-2.5 space-y-3">
             {esTarea && (
