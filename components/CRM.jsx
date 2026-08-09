@@ -14,7 +14,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.14.0";
+const APP_VERSION = "2.14.1";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -1808,7 +1808,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
     <div>
       {permiteMultiple && (
         <label className="flex items-center gap-2 mb-3 text-sm font-bold text-[#2A2118]">
-          <input type="checkbox" checked={seleccionMultiple} onChange={(e) => setSeleccionMultiple(e.target.checked)} /> Selección múltiple
+          <input type="checkbox" checked={seleccionMultiple} onChange={(e) => setSeleccionMultiple(e.target.checked)} /> Creación múltiple de hilos
         </label>
       )}
 
