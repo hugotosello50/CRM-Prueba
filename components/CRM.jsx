@@ -14,7 +14,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.11.0";
+const APP_VERSION = "2.11.1";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -33,7 +33,7 @@ const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 // individualmente — el agrupamiento es solo porque hoy comparten un mismo color de origen.
 const TEMA_DEFAULT = {
   botonActivo: "#1B4D2E", botonInactivo: "#D9F0DE", tarjeta: "#FFFFFF", linea: "#E4DECF", fondo: "#F7F5F0", ink: "#2A2118", mutedBase: "#6B6352",
-  vinculo: "#B0452E", peligro: "#B0452E", exito: "#3F6B4A", acento: "#E8871E",
+  mencion: "#B0452E", vinculo: "#B0452E", peligro: "#B0452E", exito: "#3F6B4A", acento: "#E8871E",
   urgenciaVencida: "#B0452E", urgenciaProxima: "#E8871E", urgenciaLejana: "#3F6B4A", urgenciaSinFecha: "#C9C1AE",
   prioridadAlta: "#B0452E", prioridadMedia: "#F4A742", prioridadBaja: "#E7E2D8",
   estadoActivo: "#3F6B4A", estadoCerradoInactivo: "#E7E2D8", estadoPendiente: "#F4A742", estadoRealizada: "#3F6B4A",
@@ -48,7 +48,10 @@ const TEMA_GRUPOS = [
     ayuda: "Menciones @, \"Ver/Ocultar X\", abrir una ficha, eliminar, confirmar y los botones \"+\".",
     subgrupos: [
       [
-        { clave: "vinculo", label: "Vínculos (menciones @, \"Ver/Ocultar\", abrir ficha)" },
+        { clave: "mencion", label: "Menciones @ (a Persona/Empresa/Obra en un texto)" },
+      ],
+      [
+        { clave: "vinculo", label: "Otros vínculos (\"Ver/Ocultar\", abrir ficha)" },
         { clave: "peligro", label: "Peligro (eliminar, cancelar, error)" },
         { clave: "exito", label: "Éxito (confirmaciones)" },
         { clave: "acento", label: "Acento (botones \"+\" de agregar)" },
@@ -892,7 +895,7 @@ function TextoConMenciones({ texto, onOpen }) {
     if (match.index > ultimo) partes.push(<Fragment key={`t${key++}`}>{texto.slice(ultimo, match.index)}</Fragment>);
     const [, nombre, tipo, id] = match;
     partes.push(
-      <button key={`m${key++}`} type="button" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onOpen(tipo.toLowerCase(), id); }} className="font-bold text-[var(--tema-vinculo)] hover:underline underline-offset-2">
+      <button key={`m${key++}`} type="button" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onOpen(tipo.toLowerCase(), id); }} className="font-bold text-[var(--tema-mencion)] hover:underline underline-offset-2">
         @{nombre}
       </button>
     );
