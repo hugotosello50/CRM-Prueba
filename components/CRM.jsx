@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.10.0";
+const APP_VERSION = "2.10.1";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -4101,6 +4101,7 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
 function HiloRow({ hilo, core, acciones, onOpen }) {
   const empresas = empresasDeHilo(hilo, core);
   const obras = obrasDeHilo(hilo, core);
+  const persona = personaPrincipalDeHilo(hilo, core);
   const accionesDelHilo = acciones.filter((a) => a.hiloId === hilo.id);
   const pendiente = accionesDelHilo.find((a) => a.estado === "Pendiente");
   const tipoPendiente = pendiente ? core.tiposAccion.find((t) => t.id === pendiente.tipoAccionId) : null;
@@ -4109,7 +4110,8 @@ function HiloRow({ hilo, core, acciones, onOpen }) {
     <div role="button" tabIndex={0} onClick={() => onOpen("hilo", hilo.id)} onKeyDown={(e) => e.key === "Enter" && onOpen("hilo", hilo.id)} className="w-full text-left bg-white border border-[#E4DECF] rounded-sm p-3 cursor-pointer">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="text-[15px] font-semibold text-[#2A2118] truncate" title={textoPlanoDeMenciones(hilo.titulo)}><TextoConMenciones texto={hilo.titulo} onOpen={onOpen} /></p>
+          {persona && <p className="text-[15px] font-semibold text-[#2A2118] truncate">{persona.nombre}</p>}
+          <p className={`truncate ${persona ? "text-sm text-[#6B6352] mt-0.5" : "text-[15px] font-semibold text-[#2A2118]"}`} title={textoPlanoDeMenciones(hilo.titulo)}><TextoConMenciones texto={hilo.titulo} onOpen={onOpen} /></p>
           <p className="text-xs text-[#8A8272] mt-0.5">{[empresas.map((e) => e.denominacion).join(", "), obras.map((o) => o.nombre).join(", ")].filter(Boolean).join(" · ") || "Sin empresa/obra"}</p>
         </div>
         <Chip tone={hilo.estado === "Activo" ? "green" : "neutral"}>{hilo.estado}</Chip>
