@@ -14,7 +14,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.13.1";
+const APP_VERSION = "2.14.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -1664,6 +1664,12 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
   const [showVincularEmpresa, setShowVincularEmpresa] = useState(false);
   const [showVincularObra, setShowVincularObra] = useState(false);
   const [showPrimerContacto, setShowPrimerContacto] = useState(false);
+  // Selección múltiple: crea un hilo por cada persona elegida, todos con el mismo título
+  // y la misma acción — sin vincular empresas/obras (eso se suma después, editando cada uno).
+  const permiteMultiple = !personaFija && !empresaFijaId && !obraFijaId;
+  const [seleccionMultiple, setSeleccionMultiple] = useState(false);
+  const [personaIdsMultiple, setPersonaIdsMultiple] = useState([]);
+  const [personaParaAgregar, setPersonaParaAgregar] = useState("");
 
   const [tipoAccionId1, setTipoAccionId1] = useState(tipoDefaultId(core));
   const [notas1, setNotas1] = useState("");
@@ -1727,7 +1733,25 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
   }, [showPrimerContacto, programarProxima, modoFecha, cantidad, unidad]); // eslint-disable-line
 
   const especificaInhabil = showPrimerContacto && programarProxima && modoFecha === "especifica" && esFechaInhabil(fechaEspecifica, core.parametros);
-  const faltaVinculo = !personaFija && !empresaFijaId && !obraFijaId && !personaId && empresaIds.length === 0 && obraIds.length === 0;
+  const faltaVinculo = seleccionMultiple
+    ? personaIdsMultiple.length === 0
+    : !personaFija && !empresaFijaId && !obraFijaId && !personaId && empresaIds.length === 0 && obraIds.length === 0;
+
+  // Arma las 1-2 acciones (primer contacto + próxima, según lo cargado en el formulario)
+  // para un hilo recién creado — se reusa igual para la creación simple y la múltiple.
+  const accionesParaHilo = (hiloId, hoy, siguienteNumeroInicial) => {
+    let siguienteNumero = siguienteNumeroInicial;
+    const idPrimera = uid("A");
+    const nuevas = [{ id: idPrimera, hiloId, tipoAccionId: tipoAccionId1, estado: "Realizada", fechaRealizada: hoy, fechaProgramada: "", horaProgramada: "", prioridad: "", notaPlanificada: "", notaHecho: notas1, origenId: null, destinoId: null, numero: siguienteNumero++, recurrente: false, repiteCadaN: null, repiteUnidad: null, fechaCreacion: hoy, secuencia: Date.now() }];
+    if (programarProxima) {
+      const fecha = modoFecha === "periodo" ? (preview || hoy) : (fechaEspecifica || hoy);
+      const hora = modoFecha === "especifica" ? horaEspecifica : "";
+      const idNueva = uid("A");
+      nuevas.push({ id: idNueva, hiloId, tipoAccionId: tipoAccionId2, estado: "Pendiente", fechaRealizada: "", fechaProgramada: fecha, horaProgramada: hora, prioridad, notaPlanificada: notas2, notaHecho: "", origenId: idPrimera, destinoId: null, numero: siguienteNumero++, recurrente, repiteCadaN: recurrente ? Number(repiteCadaN) : null, repiteUnidad: recurrente ? repiteUnidad : null, fechaCreacion: hoy, secuencia: Date.now() });
+      nuevas[0] = { ...nuevas[0], destinoId: idNueva };
+    }
+    return { nuevas, siguienteNumero };
+  };
 
   const crear = () => {
     if (!titulo.trim() || faltaVinculo) return;
@@ -1743,46 +1767,92 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
 
     if (showPrimerContacto && setAcciones) {
       setAcciones((prev) => {
-        let siguienteNumero = Math.max(0, ...prev.map((a) => a.numero || 0)) + 1;
-        const idPrimera = uid("A");
-        let next = [{ id: idPrimera, hiloId: nuevoHilo.id, tipoAccionId: tipoAccionId1, estado: "Realizada", fechaRealizada: hoy, fechaProgramada: "", horaProgramada: "", prioridad: "", notaPlanificada: "", notaHecho: notas1, origenId: null, destinoId: null, numero: siguienteNumero++, recurrente: false, repiteCadaN: null, repiteUnidad: null, fechaCreacion: hoy, secuencia: Date.now() }, ...prev];
-
-        if (programarProxima) {
-          const fecha = modoFecha === "periodo" ? (preview || hoy) : (fechaEspecifica || hoy);
-          const hora = modoFecha === "especifica" ? horaEspecifica : "";
-          const idNueva = uid("A");
-          next = [{ id: idNueva, hiloId: nuevoHilo.id, tipoAccionId: tipoAccionId2, estado: "Pendiente", fechaRealizada: "", fechaProgramada: fecha, horaProgramada: hora, prioridad, notaPlanificada: notas2, notaHecho: "", origenId: idPrimera, destinoId: null, numero: siguienteNumero++, recurrente, repiteCadaN: recurrente ? Number(repiteCadaN) : null, repiteUnidad: recurrente ? repiteUnidad : null, fechaCreacion: hoy, secuencia: Date.now() + 1 }, ...next];
-          next = next.map((a) => (a.id === idPrimera ? { ...a, destinoId: idNueva } : a));
-        }
-        return next;
+        const siguienteNumeroInicial = Math.max(0, ...prev.map((a) => a.numero || 0)) + 1;
+        const { nuevas } = accionesParaHilo(nuevoHilo.id, hoy, siguienteNumeroInicial);
+        return [...nuevas, ...prev];
       });
     }
 
     onCreated(nuevoHilo.id);
   };
 
+  const crearMultiple = () => {
+    if (!titulo.trim() || personaIdsMultiple.length === 0) return;
+    const hoy = todayISO();
+    const nuevosHilos = personaIdsMultiple.map(() => ({ id: uid("H"), titulo: titulo.trim(), estado: "Activo", fechaCreacion: hoy, tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" }));
+    const nuevosVinculos = personaIdsMultiple.map((pid, i) => vinc("Persona", pid, "Hilo", nuevosHilos[i].id, null, true, hoy));
+    setCore((prev) => ({ ...prev, hilos: [...nuevosHilos, ...prev.hilos], vinculos: [...(prev.vinculos || []), ...nuevosVinculos] }));
+
+    if (showPrimerContacto && setAcciones) {
+      setAcciones((prev) => {
+        let siguienteNumero = Math.max(0, ...prev.map((a) => a.numero || 0)) + 1;
+        const todasLasNuevas = [];
+        nuevosHilos.forEach((h) => {
+          const { nuevas, siguienteNumero: sig } = accionesParaHilo(h.id, hoy, siguienteNumero);
+          siguienteNumero = sig;
+          todasLasNuevas.push(...nuevas);
+        });
+        return [...todasLasNuevas, ...prev];
+      });
+    }
+
+    onCreated(nuevosHilos[nuevosHilos.length - 1].id);
+  };
+
   const submit = () => {
     if (showPrimerContacto && programarProxima && especificaInhabil && !confirmarEspecifica) { setConfirmarEspecifica(true); return; }
-    crear();
+    if (seleccionMultiple) crearMultiple(); else crear();
   };
 
   return (
     <div>
-      <Field label="Título del tema *"><CampoConMenciones core={core} autoFocus value={titulo} onChange={setTitulo} placeholder="Ej: Presupuesto cables solares" /></Field>
-
-      {!personaFija && (
-        <Field label="Persona">
-          <BuscadorSelect
-            opciones={core.personas.map((p) => ({ id: p.id, label: p.nombre }))}
-            value={personaId}
-            onChange={elegirPersona}
-            vacioLabel="— ninguna —"
-            placeholder="Buscar persona..."
-          />
-        </Field>
+      {permiteMultiple && (
+        <label className="flex items-center gap-2 mb-3 text-sm font-bold text-[#2A2118]">
+          <input type="checkbox" checked={seleccionMultiple} onChange={(e) => setSeleccionMultiple(e.target.checked)} /> Selección múltiple
+        </label>
       )}
 
-      {!empresaFijaId && (
+      <Field label={seleccionMultiple ? "Título del tema * (se usa para todos los hilos)" : "Título del tema *"}>
+        <CampoConMenciones core={core} autoFocus value={titulo} onChange={setTitulo} placeholder="Ej: Presupuesto cables solares" />
+      </Field>
+
+      {seleccionMultiple ? (
+        <Field label="Personas">
+          <ChipsAgregados items={personaIdsMultiple} core={core} coleccion="personas" labelKey="nombre" onQuitar={(pid) => setPersonaIdsMultiple((ids) => ids.filter((x) => x !== pid))} />
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <BuscadorSelect
+                opciones={core.personas.filter((p) => !personaIdsMultiple.includes(p.id)).map((p) => ({ id: p.id, label: p.nombre }))}
+                value={personaParaAgregar}
+                onChange={setPersonaParaAgregar}
+                placeholder="Buscar persona..."
+              />
+            </div>
+            <button
+              type="button"
+              disabled={!personaParaAgregar}
+              onClick={() => { setPersonaIdsMultiple((ids) => [...ids, personaParaAgregar]); setPersonaParaAgregar(""); }}
+              className="shrink-0 border border-[#E4DECF] rounded-sm px-3 text-sm font-bold text-[#2A2118] disabled:text-[#C9C1AE] disabled:cursor-not-allowed"
+            >
+              + Agregar
+            </button>
+          </div>
+        </Field>
+      ) : (
+        !personaFija && (
+          <Field label="Persona">
+            <BuscadorSelect
+              opciones={core.personas.map((p) => ({ id: p.id, label: p.nombre }))}
+              value={personaId}
+              onChange={elegirPersona}
+              vacioLabel="— ninguna —"
+              placeholder="Buscar persona..."
+            />
+          </Field>
+        )
+      )}
+
+      {!seleccionMultiple && !empresaFijaId && (
         <Field label="Empresa(s)">
           {empresaIds.length > 0 && (
             <div className="space-y-1 mb-2">
@@ -1832,7 +1902,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
         </Field>
       )}
 
-      {!obraFijaId && (
+      {!seleccionMultiple && !obraFijaId && (
         <Field label="Obra(s)">
           {obraIds.length > 0 && (
             <div className="space-y-1 mb-2">
@@ -1890,7 +1960,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
       )}
 
       {faltaVinculo && (
-        <p className="text-xs text-[#A69C88] mb-3">Elegí al menos una — persona, empresa u obra.</p>
+        <p className="text-xs text-[#A69C88] mb-3">{seleccionMultiple ? "Elegí al menos una persona." : "Elegí al menos una — persona, empresa u obra."}</p>
       )}
 
       {!showPrimerContacto ? (
@@ -2018,7 +2088,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
       <div className="flex gap-2">
         <button onClick={onCancelar} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
         <button onClick={submit} disabled={!titulo.trim() || faltaVinculo} className={`flex-1 rounded-sm py-2.5 font-bold text-sm ${!titulo.trim() || faltaVinculo ? "bg-[#E7E2D8] text-[#A69C88] cursor-not-allowed" : "bg-[var(--tema-acento)] text-[#2A2118]"}`}>
-          {especificaInhabil && confirmarEspecifica ? "Sí, crear igual" : "Crear hilo"}
+          {especificaInhabil && confirmarEspecifica ? "Sí, crear igual" : seleccionMultiple ? `Crear ${personaIdsMultiple.length} hilo${personaIdsMultiple.length === 1 ? "" : "s"}` : "Crear hilo"}
         </button>
       </div>
 
