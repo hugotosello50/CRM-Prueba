@@ -14,7 +14,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.16.0";
+const APP_VERSION = "2.17.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -2316,7 +2316,7 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
             {tareasColumna.map((h, i) => (
               <Fragment key={h.id}>
                 {i > 0 && <div className="flex justify-center py-2"><span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: core.tema.botonActivo }} /></div>}
-                <TareaCard
+                <HiloAgendaCard
                   hilo={h}
                   core={core}
                   setCore={setCore}
@@ -2340,7 +2340,7 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
           {verCerradas && (
             <div className="mt-2 space-y-2">
               {tareasCerradas.map((h) => (
-                <TareaCard key={h.id} hilo={h} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onOpen={onOpen} />
+                <HiloAgendaCard key={h.id} hilo={h} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onOpen={onOpen} />
               ))}
             </div>
           )}
@@ -2378,125 +2378,6 @@ function EditarFechaTareaForm({ hilo, pendiente, setAcciones, onClose }) {
       <PrimaryBtn full onClick={guardar}>Guardar</PrimaryBtn>
       {pendiente && !pendiente.notaHecho && (
         <button onClick={quitarFecha} className="w-full text-center text-xs font-bold text-[var(--tema-peligro)] mt-2">Quitar fecha (la tarea queda sin programar)</button>
-      )}
-    </div>
-  );
-}
-
-function TareaCard({ hilo, core, setCore, acciones, setAcciones, onOpen, onIniciarDrag, arrastrando }) {
-  const [showFecha, setShowFecha] = useState(false);
-  const [showNuevaSubtarea, setShowNuevaSubtarea] = useState(false);
-  const [editingSubtarea, setEditingSubtarea] = useState(null);
-  const [deletingSubtareaId, setDeletingSubtareaId] = useState(null);
-  const accionesDelHilo = acciones.filter((a) => a.hiloId === hilo.id);
-  const pendiente = accionesDelHilo.find((a) => a.estado === "Pendiente");
-  const tipo = pendiente ? core.tiposAccion.find((t) => t.id === pendiente.tipoAccionId) : null;
-  const finalizada = hilo.estado === "Cerrado";
-  const hiloRelacionado = hilo.hiloRelacionadoId ? core.hilos.find((h) => h.id === hilo.hiloRelacionadoId) : null;
-  const subtareas = hilo.subtareas || [];
-
-  const toggleSubtarea = (subId) => setCore((prev) => ({
-    ...prev,
-    hilos: prev.hilos.map((h) => (h.id === hilo.id ? { ...h, subtareas: (h.subtareas || []).map((s) => (s.id === subId ? { ...s, hecha: !s.hecha } : s)) } : h)),
-  }));
-  const agregarSubtarea = (datos) => setCore((prev) => ({
-    ...prev,
-    hilos: prev.hilos.map((h) => (h.id === hilo.id ? { ...h, subtareas: [...(h.subtareas || []), { id: uid("ST"), hecha: false, ...datos }] } : h)),
-  }));
-  const editarSubtarea = (subId, datos) => setCore((prev) => ({
-    ...prev,
-    hilos: prev.hilos.map((h) => (h.id === hilo.id ? { ...h, subtareas: (h.subtareas || []).map((s) => (s.id === subId ? { ...s, ...datos } : s)) } : h)),
-  }));
-  const eliminarSubtarea = (subId) => setCore((prev) => ({
-    ...prev,
-    hilos: prev.hilos.map((h) => (h.id === hilo.id ? { ...h, subtareas: (h.subtareas || []).filter((s) => s.id !== subId) } : h)),
-  }));
-
-  return (
-    <div className="bg-white border border-[#E4DECF] rounded-sm p-3" style={{ opacity: arrastrando ? 0.35 : 1 }}>
-      <div className="flex items-start gap-2.5">
-        <CasillaFinalizar hilo={hilo} acciones={accionesDelHilo} setCore={setCore} size={18} />
-        <div className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: "#EFE6F7", color: "var(--tema-marcadorTareas)" }}>
-          <ListChecks size={14} />
-        </div>
-        <div role="button" tabIndex={0} onClick={() => onOpen("hilo", hilo.id)} onKeyDown={(e) => e.key === "Enter" && onOpen("hilo", hilo.id)} className="flex-1 min-w-0 text-left cursor-pointer">
-          <p className={`text-sm font-bold ${finalizada ? "line-through text-[#A69C88]" : "text-[#2A2118]"}`}><TextoConMenciones texto={hilo.titulo} onOpen={onOpen} /></p>
-          {pendiente && (
-            <p className="text-xs text-[#8A8272] mt-0.5 font-mono">{tipo?.nombre ? `${tipo.nombre} · ` : ""}{fmtDateHora(pendiente.fechaProgramada, pendiente.horaProgramada)}</p>
-          )}
-          {hiloRelacionado && (
-            <p className="text-[11px] text-[var(--tema-vinculo)] font-bold mt-0.5">Vinculada a: {hiloRelacionado.titulo}</p>
-          )}
-        </div>
-        {setAcciones && (
-          <button
-            onClick={(e) => { e.stopPropagation(); setShowFecha(true); }}
-            aria-label="Fecha y hora"
-            className="shrink-0 text-[#8A8272] p-1"
-          >
-            <CalendarClock size={16} />
-          </button>
-        )}
-        {onIniciarDrag && (
-          <button
-            onPointerDown={(e) => { e.preventDefault(); onIniciarDrag(); }}
-            onTouchStart={(e) => { e.preventDefault(); onIniciarDrag(); }}
-            aria-label="Arrastrar a otra columna"
-            style={{ touchAction: "none" }}
-            className="shrink-0 text-[#8A8272] cursor-grab active:cursor-grabbing p-1 -mr-1"
-          >
-            <GripVertical size={16} />
-          </button>
-        )}
-      </div>
-
-      <div className="mt-2 pt-2 border-t border-dashed border-[#E4DECF] pl-[42px]">
-        {subtareas.map((s) => (
-          <div key={s.id} className="flex items-start gap-1.5 py-1">
-            <button
-              type="button"
-              onClick={() => toggleSubtarea(s.id)}
-              aria-label={s.hecha ? "Marcar subtarea como pendiente" : "Marcar subtarea como completada"}
-              className="shrink-0 rounded-full flex items-center justify-center mt-0.5"
-              style={{ width: 14, height: 14, backgroundColor: s.hecha ? "var(--tema-estadoRealizada)" : "#FFFFFF", border: `2px solid ${s.hecha ? "var(--tema-estadoRealizada)" : "#C9C1AE"}` }}
-            >
-              {s.hecha && <Check size={9} color="#FFFFFF" strokeWidth={3} />}
-            </button>
-            <div className="flex-1 min-w-0">
-              <p className={`text-xs ${s.hecha ? "line-through text-[#A69C88]" : "text-[#2A2118]"}`}>{s.texto}</p>
-              {(s.fecha || s.nota) && (
-                <p className="text-[10px] text-[#8A8272] mt-0.5">
-                  {s.fecha && fmtDateHora(s.fecha, s.hora)}
-                  {s.fecha && s.nota && " · "}
-                  {s.nota}
-                </p>
-              )}
-            </div>
-            <IconBtn label="Editar subtarea" onClick={() => setEditingSubtarea(s)}><Pencil size={11} /></IconBtn>
-            <IconBtn label="Eliminar subtarea" danger onClick={() => setDeletingSubtareaId(s.id)}><Trash2 size={11} /></IconBtn>
-          </div>
-        ))}
-        <button type="button" onClick={() => setShowNuevaSubtarea(true)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] mt-1">+ Agregar subtarea</button>
-      </div>
-
-      {showFecha && (
-        <Modal title="Fecha y hora de la tarea" onClose={() => setShowFecha(false)}>
-          <EditarFechaTareaForm hilo={hilo} pendiente={pendiente} setAcciones={setAcciones} onClose={() => setShowFecha(false)} />
-        </Modal>
-      )}
-      {showNuevaSubtarea && (
-        <SubtareaForm onSave={(datos) => { agregarSubtarea(datos); setShowNuevaSubtarea(false); }} onClose={() => setShowNuevaSubtarea(false)} />
-      )}
-      {editingSubtarea && (
-        <SubtareaForm initial={editingSubtarea} onSave={(datos) => { editarSubtarea(editingSubtarea.id, datos); setEditingSubtarea(null); }} onClose={() => setEditingSubtarea(null)} />
-      )}
-      {deletingSubtareaId && (
-        <ConfirmDeleteModal
-          title="Eliminar subtarea"
-          texto="¿Eliminar esta subtarea? No se puede deshacer."
-          onCancel={() => setDeletingSubtareaId(null)}
-          onConfirm={() => { eliminarSubtarea(deletingSubtareaId); setDeletingSubtareaId(null); }}
-        />
       )}
     </div>
   );
@@ -3193,6 +3074,10 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   const [verContextoPrimary, setVerContextoPrimary] = useState(false);
   const [verResumen, setVerResumen] = useState(false);
   const [verDetalle, setVerDetalle] = useState(false);
+  const [verDetallesTarea, setVerDetallesTarea] = useState(false);
+  const [showNuevaSubtarea, setShowNuevaSubtarea] = useState(false);
+  const [editingSubtarea, setEditingSubtarea] = useState(null);
+  const [deletingSubtareaId, setDeletingSubtareaId] = useState(null);
   const [confirmar, setConfirmar] = useState(null); // { texto, onConfirm }
 
   const hilo = hiloProp || (accionesBucket ? core.hilos.find((h) => h.id === accionesBucket[0].hiloId) : null);
@@ -3235,6 +3120,24 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   const diasUrgente = core.parametros.diasUrgente ?? 3;
   const colorBorde = !masUrgente ? "var(--tema-urgenciaSinFecha)" : diasFaltantes < 0 ? "var(--tema-urgenciaVencida)" : diasFaltantes <= diasUrgente ? "var(--tema-urgenciaProxima)" : "var(--tema-urgenciaLejana)";
   const nombrePrincipal = esTarea ? hilo.titulo : (personasDelHilo.length > 0 ? personasDelHilo.map((p) => p.nombre).join(", ") : etiquetaVinculoHilo(hilo, core));
+  const subtareas = hilo.subtareas || [];
+
+  const toggleSubtarea = (subId) => setCore((prev) => ({
+    ...prev,
+    hilos: prev.hilos.map((h) => (h.id === id ? { ...h, subtareas: (h.subtareas || []).map((s) => (s.id === subId ? { ...s, hecha: !s.hecha } : s)) } : h)),
+  }));
+  const agregarSubtarea = (datos) => setCore((prev) => ({
+    ...prev,
+    hilos: prev.hilos.map((h) => (h.id === id ? { ...h, subtareas: [...(h.subtareas || []), { id: uid("ST"), hecha: false, ...datos }] } : h)),
+  }));
+  const editarSubtarea = (subId, datos) => setCore((prev) => ({
+    ...prev,
+    hilos: prev.hilos.map((h) => (h.id === id ? { ...h, subtareas: (h.subtareas || []).map((s) => (s.id === subId ? { ...s, ...datos } : s)) } : h)),
+  }));
+  const eliminarSubtarea = (subId) => setCore((prev) => ({
+    ...prev,
+    hilos: prev.hilos.map((h) => (h.id === id ? { ...h, subtareas: (h.subtareas || []).filter((s) => s.id !== subId) } : h)),
+  }));
 
   const desvincularTarea = (tareaId) => setCore((prev) => ({
     ...prev,
@@ -3308,40 +3211,10 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
     </p>
   );
 
-  return (
-    <div className="bg-white border border-[#E4DECF] rounded-sm p-3 relative" style={{ opacity: arrastrando ? 0.35 : 1 }}>
-      {/* Bloque 1: persona, empresa, obra */}
-      <div className="flex items-start gap-2.5 min-w-0 mt-1">
-        <CasillaFinalizar hilo={hilo} acciones={accionesDelHilo} setCore={setCore} size={18} />
-        <div
-          className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-extrabold"
-          style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}
-        >
-          {esTarea ? <ListChecks size={15} /> : getIniciales(nombrePrincipal)}
-        </div>
-        <div className="min-w-0 flex-1 flex items-start gap-1">
-          <div className="min-w-0 flex-1">
-            {nombreLine}
-            {empresasObrasLine}
-          </div>
-          {esTarea && <IconBtn label="Editar título" onClick={() => setShowEditarTitulo(true)}><Pencil size={13} /></IconBtn>}
-        </div>
-        {persona && <WhatsAppLink persona={persona} size={15} />}
-        {hilo.estado === "Cerrado" && <Chip tone="estadoCerradoInactivo">{hilo.estado}</Chip>}
-        {onIniciarDrag && (
-          <button
-            onPointerDown={(e) => { e.preventDefault(); onIniciarDrag(); }}
-            onTouchStart={(e) => { e.preventDefault(); onIniciarDrag(); }}
-            aria-label="Arrastrar a otra columna"
-            style={{ touchAction: "none" }}
-            className="shrink-0 text-[#8A8272] cursor-grab active:cursor-grabbing p-1 -mr-1"
-          >
-            <GripVertical size={16} />
-          </button>
-        )}
-      </div>
-
-      {/* Vínculos: al pie del encabezado, antes de la línea */}
+  // Vínculos/Relaciones y Contexto/Resumen se reusan tal cual en los dos casos: para un
+  // hilo de cliente van siempre visibles; para una tarea, adentro de "Ver/Ocultar detalles".
+  const bloqueVinculosRelaciones = (
+    <>
       <div className="mt-1.5 flex items-center gap-3">
         <button onClick={() => setVerVinculos((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
           {verVinculos ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verVinculos ? "Ocultar vínculos" : "Ver vínculos"}
@@ -3397,6 +3270,139 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
           </div>
         )}
       </div>
+    </>
+  );
+
+  const bloqueContextoResumen = primary && (
+    <div className="mt-1.5">
+      <div className="flex items-center gap-3 flex-wrap">
+        <button onClick={() => setVerContextoPrimary((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
+          {verContextoPrimary ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verContextoPrimary ? "Ocultar contexto" : "Ver contexto"}
+        </button>
+        <button onClick={() => { setVerResumen((v) => !v); setVerDetalle(false); }} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
+          {verResumen ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verResumen ? "Ocultar resumen" : "Ver resumen"}
+        </button>
+      </div>
+      {verContextoPrimary && (
+        <p className="text-xs text-[#6B6352] mt-1">
+          <span className="font-bold text-[#8A8272]">Se generó a partir de:</span>{" "}
+          {origenPrimary ? (origenPrimary.notaHecho ? <TextoConMenciones texto={origenPrimary.notaHecho} onOpen={onOpen} /> : "Sin registro.") : "Es la primera acción de este hilo."}
+        </p>
+      )}
+      {verResumen && (
+        <div className="mt-2">
+          {historial.length === 0 ? (
+            <p className="text-xs text-[#A69C88]">Todavía no hay acciones anteriores en este hilo.</p>
+          ) : (
+            <>
+              {verDetalle ? (
+                <div className="space-y-2">
+                  {historial.map((a) => <AccionCard key={a.id} accion={a} acciones={accionesDelHilo} core={core} onOpen={onOpen} onEdit={() => setEditingAccion(a)} onDelete={() => setDeletingAccionId(a.id)} />)}
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {historial.map((a) => (
+                    <div key={a.id} className="text-xs">
+                      <span className="font-mono text-[#8A8272]">{fmtDate(a.fechaRealizada)}</span>{" "}
+                      <span className="text-[#6B6352]">{a.notaHecho ? <TextoConMenciones texto={a.notaHecho} onOpen={onOpen} /> : core.tiposAccion.find((tt) => tt.id === a.tipoAccionId)?.nombre}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <button onClick={() => setVerDetalle((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 mt-2">
+                {verDetalle ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verDetalle ? "Ocultar resumen detallado" : "Ver resumen detallado"}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
+  // Checklist de subtareas (solo tareas) — se muestra adentro de "Ver/Ocultar detalles".
+  const bloqueSubtareas = esTarea && (
+    <div>
+      <p className="text-[10px] font-bold tracking-wide text-[#8A8272] mb-1.5">Subtareas</p>
+      {subtareas.map((s) => (
+        <div key={s.id} className="flex items-start gap-1.5 py-1">
+          <button
+            type="button"
+            onClick={() => toggleSubtarea(s.id)}
+            aria-label={s.hecha ? "Marcar subtarea como pendiente" : "Marcar subtarea como completada"}
+            className="shrink-0 rounded-full flex items-center justify-center mt-0.5"
+            style={{ width: 14, height: 14, backgroundColor: s.hecha ? "var(--tema-estadoRealizada)" : "#FFFFFF", border: `2px solid ${s.hecha ? "var(--tema-estadoRealizada)" : "#C9C1AE"}` }}
+          >
+            {s.hecha && <Check size={9} color="#FFFFFF" strokeWidth={3} />}
+          </button>
+          <div className="flex-1 min-w-0">
+            <p className={`text-xs ${s.hecha ? "line-through text-[#A69C88]" : "text-[#2A2118]"}`}>{s.texto}</p>
+            {(s.fecha || s.hora || s.nota) && (
+              <p className="text-[10px] text-[#8A8272] mt-0.5">
+                {s.fecha ? fmtDateHora(s.fecha, s.hora) : (s.hora ? `${s.hora} hs` : "")}
+                {(s.fecha || s.hora) && s.nota && " · "}
+                {s.nota}
+              </p>
+            )}
+          </div>
+          <IconBtn label="Editar subtarea" onClick={() => setEditingSubtarea(s)}><Pencil size={11} /></IconBtn>
+          <IconBtn label="Eliminar subtarea" danger onClick={() => setDeletingSubtareaId(s.id)}><Trash2 size={11} /></IconBtn>
+        </div>
+      ))}
+      <button type="button" onClick={() => setShowNuevaSubtarea(true)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] mt-1">+ Agregar subtarea</button>
+    </div>
+  );
+
+  return (
+    <div className="bg-white border border-[#E4DECF] rounded-sm p-3 relative" style={{ opacity: arrastrando ? 0.35 : 1 }}>
+      {/* Bloque 1: persona, empresa, obra */}
+      <div className="flex items-start gap-2.5 min-w-0 mt-1">
+        <CasillaFinalizar hilo={hilo} acciones={accionesDelHilo} setCore={setCore} size={18} />
+        <div
+          className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-extrabold"
+          style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}
+        >
+          {esTarea ? <ListChecks size={15} /> : getIniciales(nombrePrincipal)}
+        </div>
+        <div className="min-w-0 flex-1 flex items-start gap-1">
+          <div className="min-w-0 flex-1">
+            {nombreLine}
+            {empresasObrasLine}
+          </div>
+          {esTarea && <IconBtn label="Editar título" onClick={() => setShowEditarTitulo(true)}><Pencil size={13} /></IconBtn>}
+        </div>
+        {persona && <WhatsAppLink persona={persona} size={15} />}
+        {hilo.estado === "Cerrado" && <Chip tone="estadoCerradoInactivo">{hilo.estado}</Chip>}
+        {onIniciarDrag && (
+          <button
+            onPointerDown={(e) => { e.preventDefault(); onIniciarDrag(); }}
+            onTouchStart={(e) => { e.preventDefault(); onIniciarDrag(); }}
+            aria-label="Arrastrar a otra columna"
+            style={{ touchAction: "none" }}
+            className="shrink-0 text-[#8A8272] cursor-grab active:cursor-grabbing p-1 -mr-1"
+          >
+            <GripVertical size={16} />
+          </button>
+        )}
+      </div>
+
+      {/* Vínculos/Relaciones: siempre visibles en un hilo de cliente; en una tarea, adentro
+          de "Ver/Ocultar detalles" junto con las subtareas y el contexto/resumen. */}
+      {esTarea ? (
+        <div className="mt-1.5">
+          <button onClick={() => setVerDetallesTarea((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
+            {verDetallesTarea ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verDetallesTarea ? "Ocultar detalles" : "Ver detalles"}
+          </button>
+          {verDetallesTarea && (
+            <div className="mt-2.5 space-y-3">
+              {bloqueSubtareas}
+              {bloqueVinculosRelaciones}
+              {bloqueContextoResumen}
+            </div>
+          )}
+        </div>
+      ) : (
+        bloqueVinculosRelaciones
+      )}
 
       {/* Bloque 2: tema del hilo */}
       {!esTarea && (
@@ -3413,7 +3419,8 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
         <p className="text-xs text-[#6B6352] mt-2 italic bg-[#F7F5F0] rounded-sm p-2">"{hilo.notaCierre}"</p>
       )}
 
-      {/* Bloque 3: actividad programada */}
+      {/* Bloque 3: actividad programada — la nota destacada queda siempre visible; el
+          contexto/resumen va acá para un hilo de cliente, o adentro de "Ver detalles" arriba. */}
       {primary && (
         <div className="flex items-start justify-between gap-2 mt-2">
           {primary.notaPlanificada ? (
@@ -3426,51 +3433,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
         </div>
       )}
 
-      {primary && (
-        <div className="mt-1.5">
-          <div className="flex items-center gap-3 flex-wrap">
-            <button onClick={() => setVerContextoPrimary((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
-              {verContextoPrimary ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verContextoPrimary ? "Ocultar contexto" : "Ver contexto"}
-            </button>
-            <button onClick={() => { setVerResumen((v) => !v); setVerDetalle(false); }} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
-              {verResumen ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verResumen ? "Ocultar resumen" : "Ver resumen"}
-            </button>
-          </div>
-          {verContextoPrimary && (
-            <p className="text-xs text-[#6B6352] mt-1">
-              <span className="font-bold text-[#8A8272]">Se generó a partir de:</span>{" "}
-              {origenPrimary ? (origenPrimary.notaHecho ? <TextoConMenciones texto={origenPrimary.notaHecho} onOpen={onOpen} /> : "Sin registro.") : "Es la primera acción de este hilo."}
-            </p>
-          )}
-          {verResumen && (
-            <div className="mt-2">
-              {historial.length === 0 ? (
-                <p className="text-xs text-[#A69C88]">Todavía no hay acciones anteriores en este hilo.</p>
-              ) : (
-                <>
-                  {verDetalle ? (
-                    <div className="space-y-2">
-                      {historial.map((a) => <AccionCard key={a.id} accion={a} acciones={accionesDelHilo} core={core} onOpen={onOpen} onEdit={() => setEditingAccion(a)} onDelete={() => setDeletingAccionId(a.id)} />)}
-                    </div>
-                  ) : (
-                    <div className="space-y-1.5">
-                      {historial.map((a) => (
-                        <div key={a.id} className="text-xs">
-                          <span className="font-mono text-[#8A8272]">{fmtDate(a.fechaRealizada)}</span>{" "}
-                          <span className="text-[#6B6352]">{a.notaHecho ? <TextoConMenciones texto={a.notaHecho} onOpen={onOpen} /> : core.tiposAccion.find((tt) => tt.id === a.tipoAccionId)?.nombre}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <button onClick={() => setVerDetalle((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 mt-2">
-                    {verDetalle ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verDetalle ? "Ocultar resumen detallado" : "Ver resumen detallado"}
-                  </button>
-                </>
-              )}
-            </div>
-          )}
-        </div>
-      )}
+      {!esTarea && bloqueContextoResumen}
 
       {bucket.length > 1 && (
         <p className="text-[10px] text-[var(--tema-peligro)] font-bold tracking-wide mt-1.5">⚠ Este hilo tiene {bucket.length} acciones pendientes a la vez — revisalo, no debería pasar.</p>
@@ -3578,6 +3541,21 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
         <Modal title="Fecha y hora de la tarea" onClose={() => setShowFechaTarea(false)}>
           <EditarFechaTareaForm hilo={hilo} pendiente={primary} setAcciones={setAcciones} onClose={() => setShowFechaTarea(false)} />
         </Modal>
+      )}
+
+      {showNuevaSubtarea && (
+        <SubtareaForm onSave={(datos) => { agregarSubtarea(datos); setShowNuevaSubtarea(false); }} onClose={() => setShowNuevaSubtarea(false)} />
+      )}
+      {editingSubtarea && (
+        <SubtareaForm initial={editingSubtarea} onSave={(datos) => { editarSubtarea(editingSubtarea.id, datos); setEditingSubtarea(null); }} onClose={() => setEditingSubtarea(null)} />
+      )}
+      {deletingSubtareaId && (
+        <ConfirmDeleteModal
+          title="Eliminar subtarea"
+          texto="¿Eliminar esta subtarea? No se puede deshacer."
+          onCancel={() => setDeletingSubtareaId(null)}
+          onConfirm={() => { eliminarSubtarea(deletingSubtareaId); setDeletingSubtareaId(null); }}
+        />
       )}
 
       {showEditarTitulo && (
@@ -4265,7 +4243,7 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
                 <p className="text-sm text-[#A69C88]">Sin tareas todavía.</p>
               ) : (
                 <div className="space-y-2">
-                  {tareasDeLaPersona.map((t) => <TareaCard key={t.id} hilo={t} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onOpen={onOpen} />)}
+                  {tareasDeLaPersona.map((t) => <HiloAgendaCard key={t.id} hilo={t} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onOpen={onOpen} />)}
                 </div>
               )}
             </div>
@@ -5810,7 +5788,7 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
                 <p className="text-sm text-[#A69C88]">Sin tareas todavía.</p>
               ) : (
                 <div className="space-y-2">
-                  {tareasDeLaEmpresa.map((t) => <TareaCard key={t.id} hilo={t} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onOpen={onOpen} />)}
+                  {tareasDeLaEmpresa.map((t) => <HiloAgendaCard key={t.id} hilo={t} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onOpen={onOpen} />)}
                 </div>
               )}
             </div>
@@ -6130,7 +6108,7 @@ function ObraDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
                 <p className="text-sm text-[#A69C88]">Sin tareas todavía.</p>
               ) : (
                 <div className="space-y-2">
-                  {tareasDeLaObra.map((t) => <TareaCard key={t.id} hilo={t} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onOpen={onOpen} />)}
+                  {tareasDeLaObra.map((t) => <HiloAgendaCard key={t.id} hilo={t} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onOpen={onOpen} />)}
                 </div>
               )}
             </div>
