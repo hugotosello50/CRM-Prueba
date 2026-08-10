@@ -14,7 +14,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.20.1";
+const APP_VERSION = "2.21.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -3375,6 +3375,29 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
     </div>
   );
 
+  // "Ver todo / Ocultar todo": pliega o despliega en un solo clic todos los desplegables
+  // independientes de la tarjeta (vínculos, relaciones, contexto, resumen y resumen detallado).
+  // Solo entran acá los que están efectivamente disponibles (contexto/resumen requieren una
+  // acción pendiente; resumen detallado requiere además que haya historial).
+  const togglesDesplegables = [
+    [verVinculos, setVerVinculos],
+    [verRelaciones, setVerRelaciones],
+    ...(primary ? [[verContextoPrimary, setVerContextoPrimary], [verResumen, setVerResumen]] : []),
+    ...(primary && historial.length > 0 ? [[verDetalle, setVerDetalle]] : []),
+  ];
+  const todoDesplegado = togglesDesplegables.every(([v]) => v);
+  const toggleTodosDesplegables = () => {
+    const nuevoValor = !todoDesplegado;
+    togglesDesplegables.forEach(([, set]) => set(nuevoValor));
+  };
+  const botonVerTodo = (
+    <div className="mt-1.5 flex justify-end">
+      <button onClick={toggleTodosDesplegables} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
+        {todoDesplegado ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {todoDesplegado ? "Ocultar todo" : "Ver todo"}
+      </button>
+    </div>
+  );
+
   // Checklist de subtareas (solo tareas) — se muestra adentro de "Ver/Ocultar detalles".
   const bloqueSubtareas = esTarea && (
     <div>
@@ -3678,6 +3701,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
         )}
       </div>
 
+      {botonVerTodo}
       {bloqueVinculosRelaciones}
 
       {/* Bloque 2: tema del hilo */}
