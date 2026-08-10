@@ -14,7 +14,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.18.1";
+const APP_VERSION = "2.19.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -2350,18 +2350,24 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
   );
 }
 
-// Permite poner o cambiar la fecha/hora de una tarea aunque todavía no tenga ninguna acción cargada.
-function EditarFechaTareaForm({ hilo, pendiente, setAcciones, onClose }) {
-  const [fecha, setFecha] = useState(pendiente?.fechaProgramada || todayISO());
+// Edita una tarea: título y fecha/hora de su próxima acción, en un solo formulario — mismos
+// campos que al crearla (ver crearTareaRapida en TareasView), para mantener la lógica de
+// edición consistente con creación en toda la app (ver EditarHiloPrincipalForm).
+function EditarTareaForm({ hilo, core, pendiente, setCore, setAcciones, onClose }) {
+  const [titulo, setTitulo] = useState(hilo.titulo);
+  const [fecha, setFecha] = useState(pendiente?.fechaProgramada || "");
   const [hora, setHora] = useState(pendiente?.horaProgramada || "");
 
   const guardar = () => {
+    if (!titulo.trim()) return;
+    const tituloFinal = titulo.trim();
+    setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === hilo.id ? { ...h, titulo: tituloFinal } : h)) }));
     if (pendiente) {
-      setAcciones((prev) => prev.map((a) => (a.id === pendiente.id ? { ...a, fechaProgramada: fecha, horaProgramada: hora } : a)));
-    } else {
+      if (fecha) setAcciones((prev) => prev.map((a) => (a.id === pendiente.id ? { ...a, fechaProgramada: fecha, horaProgramada: hora } : a)));
+    } else if (fecha) {
       setAcciones((prev) => {
         const siguienteNumero = Math.max(0, ...prev.map((a) => a.numero || 0)) + 1;
-        return [{ id: uid("A"), hiloId: hilo.id, tipoAccionId: "", estado: "Pendiente", fechaRealizada: "", fechaProgramada: fecha, horaProgramada: hora, prioridad: "Media", notaPlanificada: hilo.titulo, notaHecho: "", origenId: null, destinoId: null, numero: siguienteNumero, recurrente: false, repiteCadaN: null, repiteUnidad: null, fechaCreacion: todayISO(), secuencia: Date.now() }, ...prev];
+        return [{ id: uid("A"), hiloId: hilo.id, tipoAccionId: "", estado: "Pendiente", fechaRealizada: "", fechaProgramada: fecha, horaProgramada: hora, prioridad: "Media", notaPlanificada: tituloFinal, notaHecho: "", origenId: null, destinoId: null, numero: siguienteNumero, recurrente: false, repiteCadaN: null, repiteUnidad: null, fechaCreacion: todayISO(), secuencia: Date.now() }, ...prev];
       });
     }
     onClose();
@@ -2369,13 +2375,15 @@ function EditarFechaTareaForm({ hilo, pendiente, setAcciones, onClose }) {
 
   const quitarFecha = () => {
     if (pendiente) setAcciones((prev) => prev.filter((a) => a.id !== pendiente.id));
-    onClose();
+    setFecha("");
+    setHora("");
   };
 
   return (
     <div>
-      <SelectorFechaHora fecha={fecha} hora={hora} onFecha={setFecha} onHora={setHora} />
-      <PrimaryBtn full onClick={guardar}>Guardar</PrimaryBtn>
+      <Field label="Título"><CampoConMenciones core={core} value={titulo} onChange={setTitulo} /></Field>
+      <SelectorFechaHora fecha={fecha} hora={hora} onFecha={setFecha} onHora={setHora} labelFecha="Fecha (opcional)" />
+      <PrimaryBtn full disabled={!titulo.trim()} onClick={guardar}>Guardar</PrimaryBtn>
       {pendiente && !pendiente.notaHecho && (
         <button onClick={quitarFecha} className="w-full text-center text-xs font-bold text-[var(--tema-peligro)] mt-2">Quitar fecha (la tarea queda sin programar)</button>
       )}
@@ -3065,7 +3073,6 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   const [showEditarTitulo, setShowEditarTitulo] = useState(false);
   const [showVincularCliente, setShowVincularCliente] = useState(false);
   const [showAgregarTarea, setShowAgregarTarea] = useState(false);
-  const [showFechaTarea, setShowFechaTarea] = useState(false);
   const [editingAccion, setEditingAccion] = useState(null);
   const [deletingAccionId, setDeletingAccionId] = useState(null);
   const [verVinculos, setVerVinculos] = useState(false);
@@ -3377,12 +3384,6 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
         />
       )}
 
-      {showFechaTarea && (
-        <Modal title="Fecha y hora de la tarea" onClose={() => setShowFechaTarea(false)}>
-          <EditarFechaTareaForm hilo={hilo} pendiente={primary} setAcciones={setAcciones} onClose={() => setShowFechaTarea(false)} />
-        </Modal>
-      )}
-
       {showNuevaSubtarea && (
         <SubtareaForm onSave={(datos) => { agregarSubtarea(datos); setShowNuevaSubtarea(false); }} onClose={() => setShowNuevaSubtarea(false)} />
       )}
@@ -3400,8 +3401,8 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
 
       {showEditarTitulo && (
         esTarea ? (
-          <Modal title="Editar título del hilo" onClose={() => setShowEditarTitulo(false)}>
-            <EditarTituloHiloForm hilo={hilo} core={core} onSave={(nuevoTitulo) => { setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === id ? { ...h, titulo: nuevoTitulo } : h)) })); setShowEditarTitulo(false); }} />
+          <Modal title="Editar tarea" onClose={() => setShowEditarTitulo(false)}>
+            <EditarTareaForm hilo={hilo} core={core} pendiente={primary} setCore={setCore} setAcciones={setAcciones} onClose={() => setShowEditarTitulo(false)} />
           </Modal>
         ) : (
           <Modal title="Editar hilo" onClose={() => setShowEditarTitulo(false)}>
@@ -3581,13 +3582,17 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
             </div>
 
             {!primary && (
-              <>
-                <p className="text-xs text-[#A69C88]">Sin próxima acción programada.</p>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <PrimaryBtn core={core} onClick={() => setShowAvanzar(true)}>Avanzar este hilo</PrimaryBtn>
-                  <button onClick={() => setShowFechaTarea(true)} className="text-xs font-bold tracking-wide px-2.5 py-2 rounded-sm bg-[#E7E2D8] text-[#6B6352]">Poner fecha y hora</button>
-                </div>
-              </>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs text-[#A69C88]">Sin acciones programadas.</p>
+                <button
+                  type="button"
+                  onClick={() => setShowAvanzar(true)}
+                  className="shrink-0 inline-flex items-center gap-0.5 text-[11px] font-bold px-2 py-1 rounded-sm"
+                  style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}
+                >
+                  <ChevronRight size={12} /> Avanzar
+                </button>
+              </div>
             )}
           </div>
         )}
@@ -4736,16 +4741,6 @@ function VinculosDeHilo({ hilo, hiloId, core, setCore, onOpen, agregarPersona, s
       {showVincular && (
         <VincularEntidadAHiloForm core={core} setCore={setCore} vinculadasKeys={vinculadasKeys} onVincular={vincularEntidad} onClose={() => setShowVincular(false)} />
       )}
-    </div>
-  );
-}
-
-function EditarTituloHiloForm({ hilo, core, onSave }) {
-  const [titulo, setTitulo] = useState(hilo.titulo);
-  return (
-    <div>
-      <Field label="Título"><CampoConMenciones core={core} value={titulo} onChange={setTitulo} /></Field>
-      <PrimaryBtn full onClick={() => titulo.trim() && onSave(titulo.trim())}>Guardar</PrimaryBtn>
     </div>
   );
 }
