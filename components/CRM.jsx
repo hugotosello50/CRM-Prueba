@@ -14,7 +14,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.19.0";
+const APP_VERSION = "2.20.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -1301,6 +1301,21 @@ export default function CRM({ userId, onLogout }) {
         ultimoUpdatedAtRef.current = ts;
         await saveCrmField(userId, "acciones", a, 0, ts);
       }
+      // Migración: las tareas pasan a tener fecha/hora/notas propias, en vez de vivir en su
+      // acción pendiente — a las que ya tenían una, se les copia esa fecha/hora una sola vez.
+      if (c.hilos.some((h) => h.tipo === "tarea" && typeof h.fecha === "undefined")) {
+        c = {
+          ...c,
+          hilos: c.hilos.map((h) => {
+            if (h.tipo !== "tarea" || typeof h.fecha !== "undefined") return h;
+            const pendiente = a.find((acc) => acc.hiloId === h.id && acc.estado === "Pendiente");
+            return { ...h, notas: h.notas || "", fecha: pendiente?.fechaProgramada || "", hora: pendiente?.horaProgramada || "" };
+          }),
+        };
+        const ts = new Date().toISOString();
+        ultimoUpdatedAtRef.current = ts;
+        await saveCrmField(userId, "core", c, 0, ts);
+      }
       setCore(c);
       setAcciones(a);
     })();
@@ -1332,8 +1347,9 @@ export default function CRM({ userId, onLogout }) {
     resumenMostrado.current = true;
     const t = todayISO();
     const limiteProximos = addDaysISO(t, core.parametros.diasProximos ?? 7);
-    const hayAlgo = acciones.some((a) => a.estado === "Pendiente" && a.fechaProgramada && a.fechaProgramada <= limiteProximos);
-    if (hayAlgo) setShowResumenHoy(true);
+    const hayAccionPendiente = acciones.some((a) => a.estado === "Pendiente" && a.fechaProgramada && a.fechaProgramada <= limiteProximos);
+    const hayTareaConFecha = core.hilos.some((h) => h.tipo === "tarea" && h.estado === "Activo" && h.fecha && h.fecha <= limiteProximos);
+    if (hayAccionPendiente || hayTareaConFecha) setShowResumenHoy(true);
   }, [core, acciones]);
 
   if (!core || !acciones) {
@@ -1512,14 +1528,40 @@ function ResumenHoyModal({ core, acciones, onOpen, onClose }) {
   const t = todayISO();
   const diasProximos = core.parametros.diasProximos ?? 7;
   const limiteProximos = addDaysISO(t, diasProximos);
-  const pendientes = acciones.filter((a) => a.estado === "Pendiente" && a.fechaProgramada);
-  const hoy = pendientes.filter((a) => a.fechaProgramada === t);
-  const vencidas = pendientes.filter((a) => a.fechaProgramada < t).sort((a, b) => (a.fechaProgramada < b.fechaProgramada ? -1 : 1));
-  const proximos = pendientes.filter((a) => a.fechaProgramada > t && a.fechaProgramada <= limiteProximos).sort((a, b) => (a.fechaProgramada < b.fechaProgramada ? -1 : 1));
 
   const esTareaAccion = (a) => core.hilos.find((h) => h.id === a.hiloId)?.tipo === "tarea";
 
-  const Fila = ({ a }) => {
+  // Un "evento" es, o bien una acción pendiente (de un seguimiento o del hilo interno de
+  // una tarea), o bien la fecha propia de una tarea simple (hilo.fecha) — se combinan en
+  // una sola lista para armar los tres grupos de abajo.
+  const eventosDeAccion = acciones
+    .filter((a) => a.estado === "Pendiente" && a.fechaProgramada)
+    .map((a) => ({ key: `a-${a.id}`, fecha: a.fechaProgramada, esTarea: esTareaAccion(a), accion: a }));
+  const eventosDeTarea = core.hilos
+    .filter((h) => h.tipo === "tarea" && h.estado === "Activo" && h.fecha)
+    .map((h) => ({ key: `h-${h.id}`, fecha: h.fecha, esTarea: true, hilo: h }));
+  const eventos = [...eventosDeAccion, ...eventosDeTarea];
+
+  const hoy = eventos.filter((e) => e.fecha === t);
+  const vencidas = eventos.filter((e) => e.fecha < t).sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
+  const proximos = eventos.filter((e) => e.fecha > t && e.fecha <= limiteProximos).sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
+
+  const Fila = ({ e }) => {
+    if (e.hilo) {
+      const hilo = e.hilo;
+      return (
+        <button
+          onClick={() => { onClose(); onOpen("hilo", hilo.id); }}
+          className="w-full text-left bg-white border border-[#E4DECF] rounded-sm p-2.5 mb-1.5"
+        >
+          <p className="text-sm font-semibold text-[#2A2118] truncate">{textoPlanoDeMenciones(hilo.titulo)}</p>
+          {(hilo.hora || hilo.notas) && (
+            <p className="text-xs text-[#6B6352] truncate">{textoPlanoDeMenciones([hilo.hora, hilo.notas].filter(Boolean).join(" · "))}</p>
+          )}
+        </button>
+      );
+    }
+    const a = e.accion;
     const hilo = core.hilos.find((h) => h.id === a.hiloId);
     if (!hilo) return null;
     const tipoAccion = core.tiposAccion.find((ta) => ta.id === a.tipoAccionId);
@@ -1539,20 +1581,20 @@ function ResumenHoyModal({ core, acciones, onOpen, onClose }) {
   // Separa un grupo (Hoy/Vencidas/Próximos) en Tareas y Seguimientos — solo muestra la
   // etiqueta de la sub-lista que tiene contenido, y la línea entre ambas si hay las dos.
   const Grupo = ({ items }) => {
-    const tareas = items.filter(esTareaAccion);
-    const seguimientos = items.filter((a) => !esTareaAccion(a));
+    const tareas = items.filter((e) => e.esTarea);
+    const seguimientos = items.filter((e) => !e.esTarea);
     return (
       <>
         {tareas.length > 0 && (
           <div className={seguimientos.length > 0 ? "mb-2" : ""}>
             <p className="text-[10px] font-bold tracking-wide text-[#8A8272] mb-1">Tareas</p>
-            {tareas.map((a) => <Fila key={a.id} a={a} />)}
+            {tareas.map((e) => <Fila key={e.key} e={e} />)}
           </div>
         )}
         {seguimientos.length > 0 && (
           <div className={tareas.length > 0 ? "border-t border-[#EFEBE0] pt-2" : ""}>
             <p className="text-[10px] font-bold tracking-wide text-[#8A8272] mb-1">Seguimientos</p>
-            {seguimientos.map((a) => <Fila key={a.id} a={a} />)}
+            {seguimientos.map((e) => <Fila key={e.key} e={e} />)}
           </div>
         )}
       </>
@@ -2161,24 +2203,19 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
   const tareas = core.hilos.filter((h) => h.tipo === "tarea" && h.estado === "Activo");
   const tareasCerradas = core.hilos.filter((h) => h.tipo === "tarea" && h.estado === "Cerrado");
 
-  const fechaDe = (hiloId) => {
-    const p = acciones.find((a) => a.hiloId === hiloId && a.estado === "Pendiente");
-    return p ? p.fechaProgramada : "";
-  };
-
   const contarColumna = (colId) => tareas.filter((h) => (h.columnaTareaId || null) === colId).length;
 
   const tareasColumna = useMemo(() => {
     return tareas
       .filter((h) => (h.columnaTareaId || null) === columnaActiva)
       .sort((a, b) => {
-        const fa = fechaDe(a.id), fb = fechaDe(b.id);
+        const fa = a.fecha || "", fb = b.fecha || "";
         if (fa && fb) return fa < fb ? -1 : fa > fb ? 1 : 0;
         if (fa && !fb) return -1;
         if (!fa && fb) return 1;
         return (b.fechaCreacion || "").localeCompare(a.fechaCreacion || "");
       });
-  }, [tareas, columnaActiva, acciones]);
+  }, [tareas, columnaActiva]);
 
   useEffect(() => { hoverRef.current = hoverColumnaId; }, [hoverColumnaId]);
 
@@ -2226,14 +2263,8 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
   const crearTareaRapida = () => {
     if (!tituloNuevo.trim()) return;
     const hoy = todayISO();
-    const nuevoHilo = { id: uid("H"), personaId: null, titulo: tituloNuevo.trim(), estado: "Activo", fechaCreacion: hoy, tipo: "tarea", columnaTareaId: columnaActiva, hiloRelacionadoId: null, notaCierre: "" };
+    const nuevoHilo = { id: uid("H"), titulo: tituloNuevo.trim(), notas: "", fecha: fechaNueva, hora: horaNueva, estado: "Activo", fechaCreacion: hoy, tipo: "tarea", columnaTareaId: columnaActiva, hiloRelacionadoId: null, notaCierre: "" };
     setCore((prev) => ({ ...prev, hilos: [nuevoHilo, ...prev.hilos] }));
-    if (fechaNueva) {
-      setAcciones((prev) => {
-        const siguienteNumero = Math.max(0, ...prev.map((a) => a.numero || 0)) + 1;
-        return [{ id: uid("A"), hiloId: nuevoHilo.id, tipoAccionId: "", estado: "Pendiente", fechaRealizada: "", fechaProgramada: fechaNueva, horaProgramada: horaNueva, prioridad: "Media", notaPlanificada: tituloNuevo.trim(), notaHecho: "", origenId: null, destinoId: null, numero: siguienteNumero, recurrente: false, repiteCadaN: null, repiteUnidad: null, fechaCreacion: hoy, secuencia: Date.now() }, ...prev];
-      });
-    }
     setTituloNuevo("");
     setFechaNueva("");
     setHoraNueva("");
@@ -2353,38 +2384,31 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
 // Edita una tarea: título y fecha/hora de su próxima acción, en un solo formulario — mismos
 // campos que al crearla (ver crearTareaRapida en TareasView), para mantener la lógica de
 // edición consistente con creación en toda la app (ver EditarHiloPrincipalForm).
-function EditarTareaForm({ hilo, core, pendiente, setCore, setAcciones, onClose }) {
+function EditarTareaForm({ hilo, core, setCore, onClose }) {
   const [titulo, setTitulo] = useState(hilo.titulo);
-  const [fecha, setFecha] = useState(pendiente?.fechaProgramada || "");
-  const [hora, setHora] = useState(pendiente?.horaProgramada || "");
+  const [notas, setNotas] = useState(hilo.notas || "");
+  const [fecha, setFecha] = useState(hilo.fecha || "");
+  const [hora, setHora] = useState(hilo.hora || "");
 
   const guardar = () => {
     if (!titulo.trim()) return;
     const tituloFinal = titulo.trim();
-    setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === hilo.id ? { ...h, titulo: tituloFinal } : h)) }));
-    if (pendiente) {
-      if (fecha) setAcciones((prev) => prev.map((a) => (a.id === pendiente.id ? { ...a, fechaProgramada: fecha, horaProgramada: hora } : a)));
-    } else if (fecha) {
-      setAcciones((prev) => {
-        const siguienteNumero = Math.max(0, ...prev.map((a) => a.numero || 0)) + 1;
-        return [{ id: uid("A"), hiloId: hilo.id, tipoAccionId: "", estado: "Pendiente", fechaRealizada: "", fechaProgramada: fecha, horaProgramada: hora, prioridad: "Media", notaPlanificada: tituloFinal, notaHecho: "", origenId: null, destinoId: null, numero: siguienteNumero, recurrente: false, repiteCadaN: null, repiteUnidad: null, fechaCreacion: todayISO(), secuencia: Date.now() }, ...prev];
-      });
-    }
+    setCore((prev) => ({
+      ...prev,
+      hilos: prev.hilos.map((h) => (h.id === hilo.id ? { ...h, titulo: tituloFinal, notas: notas.trim(), fecha, hora } : h)),
+    }));
     onClose();
   };
 
-  const quitarFecha = () => {
-    if (pendiente) setAcciones((prev) => prev.filter((a) => a.id !== pendiente.id));
-    setFecha("");
-    setHora("");
-  };
+  const quitarFecha = () => { setFecha(""); setHora(""); };
 
   return (
     <div>
       <Field label="Título"><CampoConMenciones core={core} value={titulo} onChange={setTitulo} /></Field>
+      <Field label="Notas (opcional)"><CampoConMenciones core={core} multiline rows={2} value={notas} onChange={setNotas} /></Field>
       <SelectorFechaHora fecha={fecha} hora={hora} onFecha={setFecha} onHora={setHora} labelFecha="Fecha (opcional)" />
       <PrimaryBtn full disabled={!titulo.trim()} onClick={guardar}>Guardar</PrimaryBtn>
-      {pendiente && !pendiente.notaHecho && (
+      {(fecha || hora) && (
         <button onClick={quitarFecha} className="w-full text-center text-xs font-bold text-[var(--tema-peligro)] mt-2">Quitar fecha (la tarea queda sin programar)</button>
       )}
     </div>
@@ -3402,7 +3426,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       {showEditarTitulo && (
         esTarea ? (
           <Modal title="Editar tarea" onClose={() => setShowEditarTitulo(false)}>
-            <EditarTareaForm hilo={hilo} core={core} pendiente={primary} setCore={setCore} setAcciones={setAcciones} onClose={() => setShowEditarTitulo(false)} />
+            <EditarTareaForm hilo={hilo} core={core} setCore={setCore} onClose={() => setShowEditarTitulo(false)} />
           </Modal>
         ) : (
           <Modal title="Editar hilo" onClose={() => setShowEditarTitulo(false)}>
@@ -3444,15 +3468,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
             onVincular={(tareaId) => {
               setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === tareaId ? { ...h, hiloRelacionadoId: id } : h)) }));
             }}
-            onCrear={(nuevoHilo, fecha, hora) => {
-              setCore((prev) => ({ ...prev, hilos: [nuevoHilo, ...prev.hilos] }));
-              if (fecha) {
-                setAcciones((prev) => {
-                  const siguienteNumero = Math.max(0, ...prev.map((a) => a.numero || 0)) + 1;
-                  return [{ id: uid("A"), hiloId: nuevoHilo.id, tipoAccionId: "", estado: "Pendiente", fechaRealizada: "", fechaProgramada: fecha, horaProgramada: hora, prioridad: "Media", notaPlanificada: nuevoHilo.titulo, notaHecho: "", origenId: null, destinoId: null, numero: siguienteNumero, recurrente: false, repiteCadaN: null, repiteUnidad: null, fechaCreacion: todayISO(), secuencia: Date.now() }, ...prev];
-                });
-              }
-            }}
+            onCrear={(nuevoHilo) => setCore((prev) => ({ ...prev, hilos: [nuevoHilo, ...prev.hilos] }))}
             onClose={() => setShowAgregarTarea(false)}
           />
         </Modal>
@@ -3499,9 +3515,9 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-base font-extrabold text-[#2A2118] truncate" title={textoPlanoDeMenciones(hilo.titulo)}><TextoConMenciones texto={hilo.titulo} onOpen={onOpen} /></p>
-            {primary && (primary.fechaProgramada || primary.horaProgramada) && (
+            {(hilo.fecha || hilo.hora) && (
               <p className="text-[10px] text-[#8A8272] mt-0.5">
-                {primary.fechaProgramada ? fmtDateHora(primary.fechaProgramada, primary.horaProgramada) : `${primary.horaProgramada} hs`}
+                {hilo.fecha ? fmtDateHora(hilo.fecha, hilo.hora) : `${hilo.hora} hs`}
               </p>
             )}
           </div>
@@ -3538,6 +3554,10 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
 
         {verDetallesTarea && (
           <div className="mt-3 pt-3 border-t border-dashed border-[#E4DECF] space-y-3">
+            {hilo.notas && (
+              <p className="text-xs text-[#2A2118]"><TextoConMenciones texto={hilo.notas} onOpen={onOpen} /></p>
+            )}
+
             {bloqueVinculosRelaciones}
 
             {primary && (
@@ -4374,18 +4394,12 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
               setCore((prev) => ({ ...prev, vinculos: [...(prev.vinculos || []), vinc("Persona", id, "Hilo", tareaId, null, false, todayISO())] }));
               setShowAgregarTareaEntidad(false);
             }}
-            onCrear={(nuevoHilo, fecha, hora) => {
+            onCrear={(nuevoHilo) => {
               setCore((prev) => ({
                 ...prev,
                 hilos: [nuevoHilo, ...prev.hilos],
                 vinculos: [...(prev.vinculos || []), vinc("Persona", id, "Hilo", nuevoHilo.id, null, false, todayISO())],
               }));
-              if (fecha) {
-                setAcciones((prev) => {
-                  const siguienteNumero = Math.max(0, ...prev.map((a) => a.numero || 0)) + 1;
-                  return [{ id: uid("A"), hiloId: nuevoHilo.id, tipoAccionId: "", estado: "Pendiente", fechaRealizada: "", fechaProgramada: fecha, horaProgramada: hora, prioridad: "Media", notaPlanificada: nuevoHilo.titulo, notaHecho: "", origenId: null, destinoId: null, numero: siguienteNumero, recurrente: false, repiteCadaN: null, repiteUnidad: null, fechaCreacion: todayISO(), secuencia: Date.now() }, ...prev];
-                });
-              }
               setShowAgregarTareaEntidad(false);
             }}
             onClose={() => setShowAgregarTareaEntidad(false)}
@@ -4907,6 +4921,7 @@ function AgregarTareaAlHiloForm({ core, hiloClienteId, personasDelHilo, onVincul
   const [modo, setModo] = useState("existente"); // 'existente' | 'nueva'
   const [q, setQ] = useState("");
   const [titulo, setTitulo] = useState("");
+  const [notas, setNotas] = useState("");
   const [columnaId, setColumnaId] = useState("");
   const [fecha, setFecha] = useState("");
   const [hora, setHora] = useState("");
@@ -4929,12 +4944,12 @@ function AgregarTareaAlHiloForm({ core, hiloClienteId, personasDelHilo, onVincul
   const crear = () => {
     if (!titulo.trim()) return;
     const nuevoHilo = {
-      id: uid("H"), titulo: titulo.trim(),
+      id: uid("H"), titulo: titulo.trim(), notas: notas.trim(), fecha, hora,
       estado: "Activo", fechaCreacion: todayISO(), tipo: "tarea",
       columnaTareaId: columnaId || null, hiloRelacionadoId: hiloClienteId, notaCierre: "",
     };
-    onCrear(nuevoHilo, fecha, hora);
-    setTitulo(""); setColumnaId(""); setFecha(""); setHora("");
+    onCrear(nuevoHilo);
+    setTitulo(""); setNotas(""); setColumnaId(""); setFecha(""); setHora("");
     setModo("existente");
   };
 
@@ -4978,6 +4993,7 @@ function AgregarTareaAlHiloForm({ core, hiloClienteId, personasDelHilo, onVincul
       ) : (
         <>
           <Field label="Título de la tarea *"><CampoConMenciones core={core} autoFocus value={titulo} onChange={setTitulo} /></Field>
+          <Field label="Notas (opcional)"><CampoConMenciones core={core} multiline rows={2} value={notas} onChange={setNotas} /></Field>
           <Field label="Columna del Kanban de Tareas (opcional)">
             <select className={inputCls} value={columnaId} onChange={(e) => setColumnaId(e.target.value)}>
               <option value="">— Sin columna —</option>
@@ -4985,7 +5001,6 @@ function AgregarTareaAlHiloForm({ core, hiloClienteId, personasDelHilo, onVincul
             </select>
           </Field>
           <SelectorFechaHora fecha={fecha} hora={hora} onFecha={setFecha} onHora={setHora} labelFecha="Fecha (opcional)" />
-          <p className="text-xs text-[#A69C88] mb-3">Si cargás fecha, se crea con esa acción pendiente. Si no, la tarea queda sin fecha hasta que la avances.</p>
           <PrimaryBtn full onClick={crear}>Crear tarea</PrimaryBtn>
         </>
       )}
@@ -5000,6 +5015,7 @@ function AgregarTareaAEntidadForm({ core, tareasExcluidas, onVincular, onCrear, 
   const [modo, setModo] = useState("existente"); // 'existente' | 'nueva'
   const [q, setQ] = useState("");
   const [titulo, setTitulo] = useState("");
+  const [notas, setNotas] = useState("");
   const [columnaId, setColumnaId] = useState("");
   const [fecha, setFecha] = useState("");
   const [hora, setHora] = useState("");
@@ -5015,12 +5031,12 @@ function AgregarTareaAEntidadForm({ core, tareasExcluidas, onVincular, onCrear, 
   const crear = () => {
     if (!titulo.trim()) return;
     const nuevoHilo = {
-      id: uid("H"), titulo: titulo.trim(),
+      id: uid("H"), titulo: titulo.trim(), notas: notas.trim(), fecha, hora,
       estado: "Activo", fechaCreacion: todayISO(), tipo: "tarea",
       columnaTareaId: columnaId || null, hiloRelacionadoId: null, notaCierre: "",
     };
-    onCrear(nuevoHilo, fecha, hora);
-    setTitulo(""); setColumnaId(""); setFecha(""); setHora("");
+    onCrear(nuevoHilo);
+    setTitulo(""); setNotas(""); setColumnaId(""); setFecha(""); setHora("");
     setModo("existente");
   };
 
@@ -5924,18 +5940,12 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
               setCore((prev) => ({ ...prev, vinculos: [...(prev.vinculos || []), vinc("Empresa", id, "Hilo", tareaId, null, false, todayISO())] }));
               setShowAgregarTareaEntidad(false);
             }}
-            onCrear={(nuevoHilo, fecha, hora) => {
+            onCrear={(nuevoHilo) => {
               setCore((prev) => ({
                 ...prev,
                 hilos: [nuevoHilo, ...prev.hilos],
                 vinculos: [...(prev.vinculos || []), vinc("Empresa", id, "Hilo", nuevoHilo.id, null, false, todayISO())],
               }));
-              if (fecha) {
-                setAcciones((prev) => {
-                  const siguienteNumero = Math.max(0, ...prev.map((a) => a.numero || 0)) + 1;
-                  return [{ id: uid("A"), hiloId: nuevoHilo.id, tipoAccionId: "", estado: "Pendiente", fechaRealizada: "", fechaProgramada: fecha, horaProgramada: hora, prioridad: "Media", notaPlanificada: nuevoHilo.titulo, notaHecho: "", origenId: null, destinoId: null, numero: siguienteNumero, recurrente: false, repiteCadaN: null, repiteUnidad: null, fechaCreacion: todayISO(), secuencia: Date.now() }, ...prev];
-                });
-              }
               setShowAgregarTareaEntidad(false);
             }}
             onClose={() => setShowAgregarTareaEntidad(false)}
@@ -6228,18 +6238,12 @@ function ObraDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
               setCore((prev) => ({ ...prev, vinculos: [...(prev.vinculos || []), vinc("Obra", id, "Hilo", tareaId, null, false, todayISO())] }));
               setShowAgregarTareaEntidad(false);
             }}
-            onCrear={(nuevoHilo, fecha, hora) => {
+            onCrear={(nuevoHilo) => {
               setCore((prev) => ({
                 ...prev,
                 hilos: [nuevoHilo, ...prev.hilos],
                 vinculos: [...(prev.vinculos || []), vinc("Obra", id, "Hilo", nuevoHilo.id, null, false, todayISO())],
               }));
-              if (fecha) {
-                setAcciones((prev) => {
-                  const siguienteNumero = Math.max(0, ...prev.map((a) => a.numero || 0)) + 1;
-                  return [{ id: uid("A"), hiloId: nuevoHilo.id, tipoAccionId: "", estado: "Pendiente", fechaRealizada: "", fechaProgramada: fecha, horaProgramada: hora, prioridad: "Media", notaPlanificada: nuevoHilo.titulo, notaHecho: "", origenId: null, destinoId: null, numero: siguienteNumero, recurrente: false, repiteCadaN: null, repiteUnidad: null, fechaCreacion: todayISO(), secuencia: Date.now() }, ...prev];
-                });
-              }
               setShowAgregarTareaEntidad(false);
             }}
             onClose={() => setShowAgregarTareaEntidad(false)}
