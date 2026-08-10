@@ -14,7 +14,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.21.1";
+const APP_VERSION = "2.21.2";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -656,18 +656,18 @@ function ChipsAgregados({ items, core, coleccion, labelKey, onQuitar }) {
 
 // Botón "pill" para filas con varios desplegables que no entran con el patrón "Ver X/Ocultar
 // X" + flecha (ocupa mucho ancho). Etiqueta fija; el estado se lee por el color: apagado =
-// texto de color sobre fondo transparente (se funde con la tarjeta), encendido = fondo de ese
+// texto de color sin relleno ni contorno (se funde con la tarjeta), encendido = fondo de ese
 // color con texto blanco.
 function PillToggle({ activo, onClick, children }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="shrink-0 text-[10px] font-bold tracking-wide px-2.5 py-1 rounded-full border transition-colors"
+      className="shrink-0 text-[10px] font-bold tracking-wide px-2 py-0.5 rounded-full border transition-colors"
       style={{
         backgroundColor: activo ? "var(--tema-vinculo)" : "transparent",
         color: activo ? "#FFFFFF" : "var(--tema-vinculo)",
-        borderColor: "var(--tema-vinculo)",
+        borderColor: activo ? "var(--tema-vinculo)" : "transparent",
       }}
     >
       {children}
