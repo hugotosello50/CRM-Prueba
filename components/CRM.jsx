@@ -14,7 +14,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.21.0";
+const APP_VERSION = "2.21.1";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -651,6 +651,27 @@ function ChipsAgregados({ items, core, coleccion, labelKey, onQuitar }) {
         );
       })}
     </div>
+  );
+}
+
+// Botón "pill" para filas con varios desplegables que no entran con el patrón "Ver X/Ocultar
+// X" + flecha (ocupa mucho ancho). Etiqueta fija; el estado se lee por el color: apagado =
+// texto de color sobre fondo transparente (se funde con la tarjeta), encendido = fondo de ese
+// color con texto blanco.
+function PillToggle({ activo, onClick, children }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="shrink-0 text-[10px] font-bold tracking-wide px-2.5 py-1 rounded-full border transition-colors"
+      style={{
+        backgroundColor: activo ? "var(--tema-vinculo)" : "transparent",
+        color: activo ? "#FFFFFF" : "var(--tema-vinculo)",
+        borderColor: "var(--tema-vinculo)",
+      }}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -3269,6 +3290,97 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
 
   // Vínculos/Relaciones y Contexto/Resumen se reusan tal cual en los dos casos: para un
   // hilo de cliente van siempre visibles; para una tarea, adentro de "Ver/Ocultar detalles".
+  // Piezas de contenido reutilizadas por la tarjeta de tarea (con su propio botón "Ver X" +
+  // flecha arriba de cada una) y por la tarjeta de hilo de cliente (con la fila de pills
+  // "filaPillsCliente" más abajo controlando estos mismos estados).
+  const contenidoRelaciones = verRelaciones && (
+    <div className="mt-2.5">
+      {relacionesDelHilo.length === 0 ? (
+        <p className="text-sm text-[#A69C88]">Sin relaciones cargadas.</p>
+      ) : (
+        <div className="space-y-1.5">
+          {relacionesDelHilo.map((v) => {
+            const tr = (core.tiposRelacion || []).find((t) => t.id === v.tipoRelacionId);
+            const labelOrigen = entidadLabel(v.origenTipo, v.origenId, core);
+            const labelDestino = entidadLabel(v.destinoTipo, v.destinoId, core);
+            if (!labelOrigen || !labelDestino) return null;
+            return (
+              <div key={v.id} className="flex items-center flex-wrap gap-x-1 gap-y-0.5 text-sm">
+                <button onClick={() => onOpen(v.origenTipo.toLowerCase(), v.origenId)} className="font-semibold text-[#2A2118]">{labelOrigen}</button>
+                <span className="text-[#8A8272]">{tr ? nombreRelacionLado(tr, true) : "vinculado a"}</span>
+                <button onClick={() => onOpen(v.destinoTipo.toLowerCase(), v.destinoId)} className="font-semibold text-[#2A2118]">{labelDestino}</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+
+  const contenidoVinculos = verVinculos && (
+    <div className="mt-2.5 space-y-3">
+      {esTarea && (
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <p className="text-[10px] font-bold tracking-wide text-[#8A8272]">Hilo</p>
+            {!hiloRelacionado && <button onClick={() => setShowVincularCliente(true)} className="text-xs font-bold text-[var(--tema-vinculo)]">+ Vincular</button>}
+          </div>
+          {hiloRelacionado ? (
+            <div className="flex items-center justify-between gap-2 text-sm">
+              <button onClick={() => onOpen("hilo", hiloRelacionado.id)} className="text-left flex-1 min-w-0 font-semibold text-[#2A2118]">{hiloRelacionado.titulo}</button>
+              <IconBtn label="Desvincular" danger onClick={() => setConfirmar({ texto: "¿Desvincular esta tarea del hilo de cliente?", onConfirm: () => setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === id ? { ...h, hiloRelacionadoId: null } : h)) })) })}><X size={14} /></IconBtn>
+            </div>
+          ) : (
+            <p className="text-sm text-[#A69C88]">Sin hilo vinculado.</p>
+          )}
+        </div>
+      )}
+
+      <VinculosDeHilo hilo={hilo} hiloId={id} core={core} setCore={setCore} onOpen={onOpen} agregarPersona={agregarPersona} setConfirmar={setConfirmar} />
+    </div>
+  );
+
+  const contenidoContexto = verContextoPrimary && (
+    <p className="text-xs text-[#6B6352] mt-1">
+      <span className="font-bold text-[#8A8272]">Se generó a partir de:</span>{" "}
+      {origenPrimary ? (origenPrimary.notaHecho ? <TextoConMenciones texto={origenPrimary.notaHecho} onOpen={onOpen} /> : "Sin registro.") : "Es la primera acción de este hilo."}
+    </p>
+  );
+
+  // mostrarBotonDetalle: la tarjeta de tarea sigue con el botón "Ver resumen detallado" pegado
+  // al final de la lista; la de cliente lo controla desde la fila de pills, así que no lo repite acá.
+  const contenidoResumenLista = (mostrarBotonDetalle) => verResumen && (
+    <div className="mt-2">
+      {historial.length === 0 ? (
+        <p className="text-xs text-[#A69C88]">Todavía no hay acciones anteriores en este hilo.</p>
+      ) : (
+        <>
+          {verDetalle ? (
+            <div className="space-y-2">
+              {historial.map((a) => <AccionCard key={a.id} accion={a} acciones={accionesDelHilo} core={core} onOpen={onOpen} onEdit={() => setEditingAccion(a)} onDelete={() => setDeletingAccionId(a.id)} />)}
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {historial.map((a) => (
+                <div key={a.id} className="text-xs">
+                  <span className="font-mono text-[#8A8272]">{fmtDate(a.fechaRealizada)}</span>{" "}
+                  <span className="text-[#6B6352]">{a.notaHecho ? <TextoConMenciones texto={a.notaHecho} onOpen={onOpen} /> : core.tiposAccion.find((tt) => tt.id === a.tipoAccionId)?.nombre}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {mostrarBotonDetalle && (
+            <button onClick={() => setVerDetalle((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 mt-2">
+              {verDetalle ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verDetalle ? "Ocultar resumen detallado" : "Ver resumen detallado"}
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  );
+
+  // Versión de la tarjeta de tarea: cada bloque con su propio botón "Ver X"/"Ocultar X" arriba,
+  // igual que antes de separar contenido y botones.
   const bloqueVinculosRelaciones = (
     <>
       <div className="mt-1.5 flex items-center gap-3">
@@ -3279,53 +3391,8 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
           {verRelaciones ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verRelaciones ? "Ocultar relaciones" : "Ver relaciones"}
         </button>
       </div>
-      {verRelaciones && (
-        <div className="mt-2.5">
-          {relacionesDelHilo.length === 0 ? (
-            <p className="text-sm text-[#A69C88]">Sin relaciones cargadas.</p>
-          ) : (
-            <div className="space-y-1.5">
-              {relacionesDelHilo.map((v) => {
-                const tr = (core.tiposRelacion || []).find((t) => t.id === v.tipoRelacionId);
-                const labelOrigen = entidadLabel(v.origenTipo, v.origenId, core);
-                const labelDestino = entidadLabel(v.destinoTipo, v.destinoId, core);
-                if (!labelOrigen || !labelDestino) return null;
-                return (
-                  <div key={v.id} className="flex items-center flex-wrap gap-x-1 gap-y-0.5 text-sm">
-                    <button onClick={() => onOpen(v.origenTipo.toLowerCase(), v.origenId)} className="font-semibold text-[#2A2118]">{labelOrigen}</button>
-                    <span className="text-[#8A8272]">{tr ? nombreRelacionLado(tr, true) : "vinculado a"}</span>
-                    <button onClick={() => onOpen(v.destinoTipo.toLowerCase(), v.destinoId)} className="font-semibold text-[#2A2118]">{labelDestino}</button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-      <div className="mt-1.5">
-        {verVinculos && (
-          <div className="mt-2.5 space-y-3">
-            {esTarea && (
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <p className="text-[10px] font-bold tracking-wide text-[#8A8272]">Hilo</p>
-                  {!hiloRelacionado && <button onClick={() => setShowVincularCliente(true)} className="text-xs font-bold text-[var(--tema-vinculo)]">+ Vincular</button>}
-                </div>
-                {hiloRelacionado ? (
-                  <div className="flex items-center justify-between gap-2 text-sm">
-                    <button onClick={() => onOpen("hilo", hiloRelacionado.id)} className="text-left flex-1 min-w-0 font-semibold text-[#2A2118]">{hiloRelacionado.titulo}</button>
-                    <IconBtn label="Desvincular" danger onClick={() => setConfirmar({ texto: "¿Desvincular esta tarea del hilo de cliente?", onConfirm: () => setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === id ? { ...h, hiloRelacionadoId: null } : h)) })) })}><X size={14} /></IconBtn>
-                  </div>
-                ) : (
-                  <p className="text-sm text-[#A69C88]">Sin hilo vinculado.</p>
-                )}
-              </div>
-            )}
-
-            <VinculosDeHilo hilo={hilo} hiloId={id} core={core} setCore={setCore} onOpen={onOpen} agregarPersona={agregarPersona} setConfirmar={setConfirmar} />
-          </div>
-        )}
-      </div>
+      {contenidoRelaciones}
+      <div className="mt-1.5">{contenidoVinculos}</div>
     </>
   );
 
@@ -3339,46 +3406,17 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
           {verResumen ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verResumen ? "Ocultar resumen" : "Ver resumen"}
         </button>
       </div>
-      {verContextoPrimary && (
-        <p className="text-xs text-[#6B6352] mt-1">
-          <span className="font-bold text-[#8A8272]">Se generó a partir de:</span>{" "}
-          {origenPrimary ? (origenPrimary.notaHecho ? <TextoConMenciones texto={origenPrimary.notaHecho} onOpen={onOpen} /> : "Sin registro.") : "Es la primera acción de este hilo."}
-        </p>
-      )}
-      {verResumen && (
-        <div className="mt-2">
-          {historial.length === 0 ? (
-            <p className="text-xs text-[#A69C88]">Todavía no hay acciones anteriores en este hilo.</p>
-          ) : (
-            <>
-              {verDetalle ? (
-                <div className="space-y-2">
-                  {historial.map((a) => <AccionCard key={a.id} accion={a} acciones={accionesDelHilo} core={core} onOpen={onOpen} onEdit={() => setEditingAccion(a)} onDelete={() => setDeletingAccionId(a.id)} />)}
-                </div>
-              ) : (
-                <div className="space-y-1.5">
-                  {historial.map((a) => (
-                    <div key={a.id} className="text-xs">
-                      <span className="font-mono text-[#8A8272]">{fmtDate(a.fechaRealizada)}</span>{" "}
-                      <span className="text-[#6B6352]">{a.notaHecho ? <TextoConMenciones texto={a.notaHecho} onOpen={onOpen} /> : core.tiposAccion.find((tt) => tt.id === a.tipoAccionId)?.nombre}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <button onClick={() => setVerDetalle((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 mt-2">
-                {verDetalle ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verDetalle ? "Ocultar resumen detallado" : "Ver resumen detallado"}
-              </button>
-            </>
-          )}
-        </div>
-      )}
+      {contenidoContexto}
+      {contenidoResumenLista(true)}
     </div>
   );
 
-  // "Ver todo / Ocultar todo": pliega o despliega en un solo clic todos los desplegables
-  // independientes de la tarjeta (vínculos, relaciones, contexto, resumen y resumen detallado).
-  // Solo entran acá los que están efectivamente disponibles (contexto/resumen requieren una
-  // acción pendiente; resumen detallado requiere además que haya historial).
+  // Fila única de pills de la tarjeta de hilo de cliente: reemplaza los botones "Ver X/Ocultar
+  // X" con flecha (ocupaban varios renglones) por chips angostos de color fijo — el estado se
+  // ve por el relleno, no por el texto — todos en un mismo renglón con scroll horizontal si no
+  // entran. Incluye "Todo" para desplegar/plegar los demás de una. Solo entran acá los pills
+  // efectivamente disponibles (contexto/resumen requieren una acción pendiente; resumen
+  // detallado requiere además que haya historial).
   const togglesDesplegables = [
     [verVinculos, setVerVinculos],
     [verRelaciones, setVerRelaciones],
@@ -3390,11 +3428,14 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
     const nuevoValor = !todoDesplegado;
     togglesDesplegables.forEach(([, set]) => set(nuevoValor));
   };
-  const botonVerTodo = (
-    <div className="mt-1.5 flex justify-end">
-      <button onClick={toggleTodosDesplegables} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
-        {todoDesplegado ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {todoDesplegado ? "Ocultar todo" : "Ver todo"}
-      </button>
+  const filaPillsCliente = (
+    <div className="mt-1.5 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+      <PillToggle activo={todoDesplegado} onClick={toggleTodosDesplegables}>Todo</PillToggle>
+      <PillToggle activo={verVinculos} onClick={() => setVerVinculos((v) => !v)}>Vínculos</PillToggle>
+      <PillToggle activo={verRelaciones} onClick={() => setVerRelaciones((v) => !v)}>Relaciones</PillToggle>
+      {primary && <PillToggle activo={verContextoPrimary} onClick={() => setVerContextoPrimary((v) => !v)}>Contexto</PillToggle>}
+      {primary && <PillToggle activo={verResumen} onClick={() => { setVerResumen((v) => !v); setVerDetalle(false); }}>Resumen</PillToggle>}
+      {primary && verResumen && historial.length > 0 && <PillToggle activo={verDetalle} onClick={() => setVerDetalle((v) => !v)}>Detallado</PillToggle>}
     </div>
   );
 
@@ -3701,8 +3742,9 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
         )}
       </div>
 
-      {botonVerTodo}
-      {bloqueVinculosRelaciones}
+      {filaPillsCliente}
+      {contenidoRelaciones}
+      <div className="mt-1.5">{contenidoVinculos}</div>
 
       {/* Bloque 2: tema del hilo */}
       <div className="mt-2 pt-2 border-t border-dashed border-[#E4DECF]">
@@ -3730,7 +3772,10 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
         </div>
       )}
 
-      {bloqueContextoResumen}
+      <div className="mt-1.5">
+        {contenidoContexto}
+        {contenidoResumenLista(false)}
+      </div>
 
       {bucket.length > 1 && (
         <p className="text-[10px] text-[var(--tema-peligro)] font-bold tracking-wide mt-1.5">⚠ Este hilo tiene {bucket.length} acciones pendientes a la vez — revisalo, no debería pasar.</p>
