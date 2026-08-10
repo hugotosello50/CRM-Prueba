@@ -14,7 +14,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.20.0";
+const APP_VERSION = "2.20.1";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -2738,6 +2738,8 @@ function ExcelTabsBar({ core, tabs, activeId, incluirSinTab, sinColumnaNombre, o
   const [creando, setCreando] = useState(false);
   const [nombreNuevo, setNombreNuevo] = useState("");
   const [editandoId, setEditandoId] = useState(undefined); // undefined = nadie editando, null = "Sin columna", id = esa pestaña
+  const [eliminandoId, setEliminandoId] = useState(null); // pestaña con confirmación de borrado abierta
+  const [avisoNoVaciaId, setAvisoNoVaciaId] = useState(null); // pestaña con aviso de "vaciala primero" abierto
 
   const confirmarCrear = () => {
     if (!nombreNuevo.trim()) return;
@@ -2754,8 +2756,7 @@ function ExcelTabsBar({ core, tabs, activeId, incluirSinTab, sinColumnaNombre, o
   };
 
   const nombreSinColumna = sinColumnaNombre || "Sin columna";
-  const activa = incluirSinTab ? activeId : activeId;
-  const tabActivaNombre = activeId === null ? nombreSinColumna : tabs.find((t) => t.id === activeId)?.nombre || "";
+  const nombreTab = (id) => (id === null ? nombreSinColumna : tabs.find((t) => t.id === id)?.nombre || "");
 
   const renderTab = (id, nombre) => {
     const key = id === null ? "null" : id;
@@ -2776,32 +2777,49 @@ function ExcelTabsBar({ core, tabs, activeId, incluirSinTab, sinColumnaNombre, o
         />
       );
     }
+    const colorTexto = esHover || esActiva ? "#FFFFFF" : "#2A2118";
     return (
-      <button
+      <div
         key={key}
         data-tab-id={key}
-        onClick={() => onSelect(id)}
         onDoubleClick={() => setEditandoId(id)}
         style={{
           backgroundColor: esHover || esActiva ? core.tema.botonActivo : core.tema.botonInactivo,
-          color: esHover || esActiva ? "#FFFFFF" : "#2A2118",
+          color: colorTexto,
           borderColor: core.tema.linea,
           marginBottom: esActiva && !esHover ? "-2px" : "0px",
           zIndex: esActiva ? 2 : 1,
           transform: esHover ? "scale(1.05)" : "none",
         }}
-        className="relative shrink-0 h-8 flex items-center gap-1.5 px-3 text-[10px] font-bold tracking-wide border border-b-0 rounded-t-sm transition-transform"
+        className="relative shrink-0 h-8 flex items-center gap-1.5 pl-3 pr-1.5 text-[10px] font-bold tracking-wide border border-b-0 rounded-t-sm transition-transform"
       >
-        {nombre}
-        {contarTab(id) > 0 && (
-          <span
-            className="inline-flex items-center justify-center min-w-[1.15rem] h-[1.15rem] px-1 rounded-full border text-[9px] font-bold leading-none"
-            style={{ borderColor: esHover || esActiva ? "#FFFFFF" : "#2A2118", color: esHover || esActiva ? "#FFFFFF" : "#2A2118" }}
+        <button type="button" onClick={() => onSelect(id)} className="flex items-center gap-1.5">
+          {nombre}
+          {contarTab(id) > 0 && (
+            <span
+              className="inline-flex items-center justify-center min-w-[1.15rem] h-[1.15rem] px-1 rounded-full border text-[9px] font-bold leading-none"
+              style={{ borderColor: colorTexto, color: colorTexto }}
+            >
+              {contarTab(id)}
+            </span>
+          )}
+        </button>
+        {id !== null && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (contarTab(id) > 0) setAvisoNoVaciaId(id);
+              else setEliminandoId(id);
+            }}
+            aria-label={`Eliminar "${nombre}"`}
+            style={{ color: colorTexto }}
+            className="shrink-0 opacity-70 hover:opacity-100"
           >
-            {contarTab(id)}
-          </span>
+            <X size={11} />
+          </button>
         )}
-      </button>
+      </div>
     );
   };
 
@@ -2832,16 +2850,22 @@ function ExcelTabsBar({ core, tabs, activeId, incluirSinTab, sinColumnaNombre, o
         )}
       </div>
 
-      {activeId !== null && (
-        <div className="flex justify-end gap-3 mt-1.5 mb-1">
-          <button
-            onClick={() => onDelete(activeId)}
-            disabled={contarTab(activeId) > 0}
-            className={`text-[10px] font-bold tracking-wide flex items-center gap-1 ${contarTab(activeId) > 0 ? "text-[#C9C1AE] cursor-not-allowed" : "text-[var(--tema-vinculo)]"}`}
-          >
-            <Trash2 size={11} /> Eliminar "{tabActivaNombre}"{contarTab(activeId) > 0 ? " (vaciala primero)" : ""}
-          </button>
-        </div>
+      {avisoNoVaciaId !== null && (
+        <Modal title="No se puede eliminar" onClose={() => setAvisoNoVaciaId(null)}>
+          <p className="text-sm text-[#2A2118] mb-4">
+            La pestaña "{nombreTab(avisoNoVaciaId)}" tiene {contarTab(avisoNoVaciaId)} tarjeta{contarTab(avisoNoVaciaId) === 1 ? "" : "s"}. Vaciala primero para poder eliminarla.
+          </p>
+          <button onClick={() => setAvisoNoVaciaId(null)} style={{ backgroundColor: "var(--tema-acento)", color: "#2A2118" }} className="w-full rounded-sm py-2.5 font-bold text-sm">Entendido</button>
+        </Modal>
+      )}
+
+      {eliminandoId !== null && (
+        <ConfirmDeleteModal
+          title="Eliminar pestaña"
+          texto={`¿Eliminar la pestaña "${nombreTab(eliminandoId)}"? No se puede deshacer.`}
+          onCancel={() => setEliminandoId(null)}
+          onConfirm={() => { onDelete(eliminandoId); setEliminandoId(null); }}
+        />
       )}
     </div>
   );
