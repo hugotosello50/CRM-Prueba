@@ -8,13 +8,14 @@ import {
   HardHat, CalendarClock, Trash2, Pencil, Check, AlertTriangle,
   Tag, Star, Clock3, ListChecks, Repeat, ArrowLeft, ArrowDownAZ, ArrowUpAZ, GitBranch,
   BarChart3, FileSpreadsheet, Download, Trello, GripVertical, LogOut, Menu, Tags, FolderKanban, Layers,
+  FileText, Image as ImageIcon,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.21.2";
+const APP_VERSION = "2.22.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -22,6 +23,36 @@ const TR_DUENA = "TR_DUENA";
 const TR_CABECERA = "TR_CABECERA";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
+
+// Adjuntos de hilos (Seguimientos y Tareas): mismos límites configurados en el bucket
+// "adjuntos" de Supabase Storage (ver supabase/schema.sql) — si se cambia acá, hay que
+// cambiarlo también ahí para que coincidan.
+const ADJUNTO_TIPOS = {
+  "application/pdf": "pdf",
+  "image/png": "imagen",
+  "image/jpeg": "imagen",
+  "image/webp": "imagen",
+  "image/gif": "imagen",
+  "application/vnd.ms-excel": "excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "excel",
+  "application/msword": "word",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "word",
+};
+const ADJUNTO_ACCEPT = ".pdf,.png,.jpg,.jpeg,.webp,.gif,.xls,.xlsx,.doc,.docx";
+const ADJUNTO_TAMANO_MAX = 25 * 1024 * 1024; // 25 MB
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function IconoAdjunto({ tipo, size = 14, className }) {
+  const cat = ADJUNTO_TIPOS[tipo];
+  if (cat === "imagen") return <ImageIcon size={size} className={className} />;
+  if (cat === "excel") return <FileSpreadsheet size={size} className={className} />;
+  return <FileText size={size} className={className} />;
+}
 
 // ---------------------------------------------------------------------------
 // Esquema de colores de la app (Configuración > Apariencia)
@@ -3152,6 +3183,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   const [verDetalle, setVerDetalle] = useState(false);
   const [verDetallesTarea, setVerDetallesTarea] = useState(false);
   const [verSubtareas, setVerSubtareas] = useState(false);
+  const [verAdjuntos, setVerAdjuntos] = useState(false);
   const [showNuevaSubtarea, setShowNuevaSubtarea] = useState(false);
   const [editingSubtarea, setEditingSubtarea] = useState(null);
   const [deletingSubtareaId, setDeletingSubtareaId] = useState(null);
@@ -3420,6 +3452,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   const togglesDesplegables = [
     [verVinculos, setVerVinculos],
     [verRelaciones, setVerRelaciones],
+    [verAdjuntos, setVerAdjuntos],
     ...(primary ? [[verContextoPrimary, setVerContextoPrimary], [verResumen, setVerResumen]] : []),
     ...(primary && historial.length > 0 ? [[verDetalle, setVerDetalle]] : []),
   ];
@@ -3433,6 +3466,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       <PillToggle activo={todoDesplegado} onClick={toggleTodosDesplegables}>Todo</PillToggle>
       <PillToggle activo={verVinculos} onClick={() => setVerVinculos((v) => !v)}>Vínculos</PillToggle>
       <PillToggle activo={verRelaciones} onClick={() => setVerRelaciones((v) => !v)}>Relaciones</PillToggle>
+      <PillToggle activo={verAdjuntos} onClick={() => setVerAdjuntos((v) => !v)}>Adjuntos</PillToggle>
       {primary && <PillToggle activo={verContextoPrimary} onClick={() => setVerContextoPrimary((v) => !v)}>Contexto</PillToggle>}
       {primary && <PillToggle activo={verResumen} onClick={() => { setVerResumen((v) => !v); setVerDetalle(false); }}>Resumen</PillToggle>}
       {primary && verResumen && historial.length > 0 && <PillToggle activo={verDetalle} onClick={() => setVerDetalle((v) => !v)}>Detallado</PillToggle>}
@@ -3624,19 +3658,29 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
           )}
         </div>
 
-        <div className="mt-1.5 flex items-center gap-3">
+        <div className="mt-1.5 flex items-center gap-3 flex-wrap">
           <button onClick={() => setVerSubtareas((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
             {verSubtareas ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verSubtareas ? "Ocultar subtareas" : "Ver subtareas"}
+          </button>
+          <button onClick={() => setVerAdjuntos((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
+            {verAdjuntos ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verAdjuntos ? "Ocultar adjuntos" : "Ver adjuntos"}
           </button>
           <button onClick={() => setVerDetallesTarea((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
             {verDetallesTarea ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verDetallesTarea ? "Ocultar detalles" : "Ver detalles"}
           </button>
         </div>
 
-        {/* Desplegar "detalles" también muestra las subtareas; desplegar solo "subtareas" no abre "detalles". */}
+        {/* Desplegar "detalles" también muestra las subtareas y los adjuntos; desplegar solo
+            "subtareas" o solo "adjuntos" no abre "detalles". */}
         {(verSubtareas || verDetallesTarea) && (
           <div className="mt-2.5">
             {bloqueSubtareas}
+          </div>
+        )}
+
+        {(verAdjuntos || verDetallesTarea) && (
+          <div className="mt-2.5">
+            <AdjuntosDeHilo hilo={hilo} hiloId={id} setCore={setCore} setConfirmar={setConfirmar} />
           </div>
         )}
 
@@ -3745,6 +3789,11 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       {filaPillsCliente}
       {contenidoRelaciones}
       <div className="mt-1.5">{contenidoVinculos}</div>
+      {verAdjuntos && (
+        <div className="mt-2.5">
+          <AdjuntosDeHilo hilo={hilo} hiloId={id} setCore={setCore} setConfirmar={setConfirmar} />
+        </div>
+      )}
 
       {/* Bloque 2: tema del hilo */}
       <div className="mt-2 pt-2 border-t border-dashed border-[#E4DECF]">
@@ -4847,6 +4896,88 @@ function VinculosDeHilo({ hilo, hiloId, core, setCore, onOpen, agregarPersona, s
       )}
       {showVincular && (
         <VincularEntidadAHiloForm core={core} setCore={setCore} vinculadasKeys={vinculadasKeys} onVincular={vincularEntidad} onClose={() => setShowVincular(false)} />
+      )}
+    </div>
+  );
+}
+
+// Adjuntos de un hilo (Seguimientos y Tareas): PDF, imágenes, Excel y Word, guardados en el
+// bucket privado "adjuntos" de Supabase Storage (ver supabase/schema.sql). Solo se guarda el
+// archivo en sí en Storage; la metadata (nombre, tipo, tamaño, ruta, fecha) viaja dentro del
+// hilo, junto con el resto de sus datos.
+function AdjuntosDeHilo({ hilo, hiloId, setCore, setConfirmar }) {
+  const [subiendo, setSubiendo] = useState(false);
+  const [error, setError] = useState("");
+  const inputRef = useRef(null);
+  const adjuntos = hilo.adjuntos || [];
+
+  const guardarAdjuntos = (nuevaLista) => setCore((prev) => ({
+    ...prev,
+    hilos: prev.hilos.map((h) => (h.id === hiloId ? { ...h, adjuntos: nuevaLista } : h)),
+  }));
+
+  const subirArchivo = async (file) => {
+    setError("");
+    if (!ADJUNTO_TIPOS[file.type]) { setError("Tipo de archivo no admitido. Solo PDF, imágenes, Excel o Word."); return; }
+    if (file.size > ADJUNTO_TAMANO_MAX) { setError(`El archivo pesa más de ${formatBytes(ADJUNTO_TAMANO_MAX)}.`); return; }
+    setSubiendo(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { setError("No se encontró la sesión — volvé a iniciar sesión."); return; }
+      const adjuntoId = uid("ADJ");
+      const nombreSanitizado = file.name.replace(/[^a-zA-Z0-9.\-_ ]/g, "_");
+      const path = `${session.user.id}/${hiloId}/${adjuntoId}-${nombreSanitizado}`;
+      const { error: uploadError } = await supabase.storage.from("adjuntos").upload(path, file, { contentType: file.type });
+      if (uploadError) { setError("No se pudo subir el archivo. Probá de nuevo."); return; }
+      guardarAdjuntos([{ id: adjuntoId, nombre: file.name, tipo: file.type, tamano: file.size, path, subidoEn: todayISO() }, ...adjuntos]);
+    } finally {
+      setSubiendo(false);
+    }
+  };
+
+  const descargarArchivo = async (adjunto) => {
+    setError("");
+    const { data, error: urlError } = await supabase.storage.from("adjuntos").createSignedUrl(adjunto.path, 60);
+    if (urlError || !data) { setError("No se pudo generar el enlace de descarga."); return; }
+    window.open(data.signedUrl, "_blank");
+  };
+
+  const eliminarArchivo = async (adjunto) => {
+    await supabase.storage.from("adjuntos").remove([adjunto.path]);
+    guardarAdjuntos(adjuntos.filter((a) => a.id !== adjunto.id));
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5">
+        <p className="text-[10px] font-bold tracking-wide text-[#A69C88]">{adjuntos.length} archivo{adjuntos.length === 1 ? "" : "s"}</p>
+        <button type="button" onClick={() => inputRef.current?.click()} disabled={subiendo} className="text-xs font-bold text-[var(--tema-vinculo)] disabled:opacity-50">
+          {subiendo ? "Subiendo…" : "+ Agregar archivo"}
+        </button>
+        <input
+          ref={inputRef}
+          type="file"
+          accept={ADJUNTO_ACCEPT}
+          className="hidden"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) subirArchivo(f); e.target.value = ""; }}
+        />
+      </div>
+      {error && <p className="text-xs text-[var(--tema-peligro)] mb-1.5">{error}</p>}
+      {adjuntos.length === 0 ? (
+        <p className="text-sm text-[#A69C88]">Sin archivos adjuntos.</p>
+      ) : (
+        <div className="space-y-1">
+          {adjuntos.map((a) => (
+            <div key={a.id} className="flex items-center justify-between gap-2 text-sm">
+              <button onClick={() => descargarArchivo(a)} className="text-left flex-1 min-w-0 flex items-center gap-1.5">
+                <IconoAdjunto tipo={a.tipo} className="shrink-0 text-[#8A8272]" />
+                <span className="truncate font-semibold text-[#2A2118]">{a.nombre}</span>
+                <span className="shrink-0 text-xs text-[#A69C88]">{formatBytes(a.tamano)}</span>
+              </button>
+              <IconBtn label="Eliminar archivo" danger onClick={() => setConfirmar({ texto: `¿Eliminar "${a.nombre}"? No se puede deshacer.`, onConfirm: () => eliminarArchivo(a) })}><Trash2 size={14} /></IconBtn>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
