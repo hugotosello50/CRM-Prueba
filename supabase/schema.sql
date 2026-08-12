@@ -43,17 +43,20 @@ create table if not exists public.google_contacts_tokens (
 alter table public.google_contacts_tokens enable row level security;
 
 -- ---------------------------------------------------------------------------
--- Adjuntos de hilos (Seguimientos y Tareas): PDF, imágenes, Excel, Word.
+-- Adjuntos de hilos (Seguimientos y Tareas): cualquier tipo de archivo.
 --
 -- INSTRUCCIONES: pegá todo este bloque (desde "insert into storage.buckets"
 -- hasta el final del archivo) en el SQL Editor de tu proyecto Supabase
 -- (Database > SQL Editor) y ejecutalo una sola vez. No hace falta crear el
 -- bucket a mano desde la sección "Storage" del dashboard, este SQL ya lo crea.
+-- Si ya lo habías corrido antes con la versión vieja (que restringía a PDF/
+-- imágenes/Excel/Word), volver a correr este bloque actualiza el bucket para
+-- sacar esa restricción — no rompe nada, es seguro repetirlo.
 --
 -- Qué hace:
 -- 1) Crea el bucket "adjuntos", privado (nadie puede acceder sin estar
---    autenticado), con un límite de 25 MB por archivo y restringido a los
---    tipos de archivo que la app permite subir (PDF, imágenes, Excel, Word).
+--    autenticado), con un límite de 25 MB por archivo, sin restricción de
+--    tipo de archivo.
 -- 2) Crea 3 políticas de seguridad (RLS) sobre ese bucket: cada usuario solo
 --    puede ver, subir y borrar los archivos que están dentro de SU PROPIA
 --    carpeta. La app guarda cada archivo bajo la ruta
@@ -69,14 +72,7 @@ values (
   'adjuntos',
   false,
   26214400, -- 25 MB
-  array[
-    'application/pdf',
-    'image/png', 'image/jpeg', 'image/webp', 'image/gif',
-    'application/vnd.ms-excel',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    'application/msword',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-  ]
+  null -- sin restricción de tipo de archivo
 )
 on conflict (id) do update set
   public = excluded.public,

@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.22.0";
+const APP_VERSION = "2.22.1";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -24,21 +24,18 @@ const TR_CABECERA = "TR_CABECERA";
 
 const uid = (p) => p + "-" + Math.random().toString(36).slice(2, 9);
 
-// Adjuntos de hilos (Seguimientos y Tareas): mismos límites configurados en el bucket
-// "adjuntos" de Supabase Storage (ver supabase/schema.sql) — si se cambia acá, hay que
-// cambiarlo también ahí para que coincidan.
-const ADJUNTO_TIPOS = {
-  "application/pdf": "pdf",
+// Adjuntos de hilos (Seguimientos y Tareas): se admite cualquier tipo de archivo, solo con
+// límite de tamaño (mismo límite configurado en el bucket "adjuntos" de Supabase Storage, ver
+// supabase/schema.sql — si se cambia acá, hay que cambiarlo también ahí para que coincidan).
+// Este mapa solo decide qué ícono mostrar para los tipos más comunes; el resto usa uno genérico.
+const ADJUNTO_ICONOS = {
   "image/png": "imagen",
   "image/jpeg": "imagen",
   "image/webp": "imagen",
   "image/gif": "imagen",
   "application/vnd.ms-excel": "excel",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "excel",
-  "application/msword": "word",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "word",
 };
-const ADJUNTO_ACCEPT = ".pdf,.png,.jpg,.jpeg,.webp,.gif,.xls,.xlsx,.doc,.docx";
 const ADJUNTO_TAMANO_MAX = 25 * 1024 * 1024; // 25 MB
 
 function formatBytes(bytes) {
@@ -48,7 +45,7 @@ function formatBytes(bytes) {
 }
 
 function IconoAdjunto({ tipo, size = 14, className }) {
-  const cat = ADJUNTO_TIPOS[tipo];
+  const cat = ADJUNTO_ICONOS[tipo];
   if (cat === "imagen") return <ImageIcon size={size} className={className} />;
   if (cat === "excel") return <FileSpreadsheet size={size} className={className} />;
   return <FileText size={size} className={className} />;
@@ -4918,7 +4915,6 @@ function AdjuntosDeHilo({ hilo, hiloId, setCore, setConfirmar }) {
 
   const subirArchivo = async (file) => {
     setError("");
-    if (!ADJUNTO_TIPOS[file.type]) { setError("Tipo de archivo no admitido. Solo PDF, imágenes, Excel o Word."); return; }
     if (file.size > ADJUNTO_TAMANO_MAX) { setError(`El archivo pesa más de ${formatBytes(ADJUNTO_TAMANO_MAX)}.`); return; }
     setSubiendo(true);
     try {
@@ -4927,7 +4923,7 @@ function AdjuntosDeHilo({ hilo, hiloId, setCore, setConfirmar }) {
       const adjuntoId = uid("ADJ");
       const nombreSanitizado = file.name.replace(/[^a-zA-Z0-9.\-_ ]/g, "_");
       const path = `${session.user.id}/${hiloId}/${adjuntoId}-${nombreSanitizado}`;
-      const { error: uploadError } = await supabase.storage.from("adjuntos").upload(path, file, { contentType: file.type });
+      const { error: uploadError } = await supabase.storage.from("adjuntos").upload(path, file, { contentType: file.type || "application/octet-stream" });
       if (uploadError) { setError("No se pudo subir el archivo. Probá de nuevo."); return; }
       guardarAdjuntos([{ id: adjuntoId, nombre: file.name, tipo: file.type, tamano: file.size, path, subidoEn: todayISO() }, ...adjuntos]);
     } finally {
@@ -4957,7 +4953,6 @@ function AdjuntosDeHilo({ hilo, hiloId, setCore, setConfirmar }) {
         <input
           ref={inputRef}
           type="file"
-          accept={ADJUNTO_ACCEPT}
           className="hidden"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) subirArchivo(f); e.target.value = ""; }}
         />
