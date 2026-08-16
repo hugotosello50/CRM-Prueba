@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.23.0";
+const APP_VERSION = "2.23.1";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -2251,7 +2251,9 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
 
   const columnas = core.kanbanColumnasTareas || [];
   const tareas = core.hilos.filter((h) => h.tipo === "tarea" && h.estado === "Activo");
-  const tareasCerradas = core.hilos.filter((h) => h.tipo === "tarea" && h.estado === "Cerrado");
+  // Filtradas por la pestaña activa, igual que "tareas" — si no, la misma lista completa de
+  // cerradas aparecía repetida debajo de cada columna (incluida "Sin columna").
+  const tareasCerradas = core.hilos.filter((h) => h.tipo === "tarea" && h.estado === "Cerrado" && (h.columnaTareaId || null) === columnaActiva);
 
   const contarColumna = (colId) => tareas.filter((h) => (h.columnaTareaId || null) === colId).length;
 
