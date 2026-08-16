@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.22.3";
+const APP_VERSION = "2.23.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -2465,27 +2465,49 @@ function EditarTareaForm({ hilo, core, setCore, onClose }) {
   );
 }
 
-function SubtareaForm({ initial, onSave, onClose }) {
+function SubtareaForm({ initial, onSave, onSaveYNueva, onClose }) {
   const [texto, setTexto] = useState(initial?.texto || "");
   const [fecha, setFecha] = useState(initial?.fecha || "");
   const [hora, setHora] = useState(initial?.hora || "");
   const [nota, setNota] = useState(initial?.nota || "");
+  const textoRef = useRef(null);
+
+  const datosActuales = () => ({ texto: texto.trim(), fecha: fecha || null, hora: hora || null, nota: nota.trim() || null });
 
   const guardar = () => {
     if (!texto.trim()) return;
-    onSave({ texto: texto.trim(), fecha: fecha || null, hora: hora || null, nota: nota.trim() || null });
+    onSave(datosActuales());
+  };
+
+  // Solo se ofrece al crear (no al editar): guarda esta subtarea sin cerrar el formulario,
+  // lo limpia y devuelve el foco al texto para cargar la siguiente sin reabrir el modal.
+  const guardarYNueva = () => {
+    if (!texto.trim()) return;
+    onSaveYNueva(datosActuales());
+    setTexto(""); setFecha(""); setHora(""); setNota("");
+    textoRef.current?.focus();
   };
 
   return (
     <Modal title={initial ? "Editar subtarea" : "Nueva subtarea"} onClose={onClose}>
       <Field label="Texto">
-        <input autoFocus className={inputCls} value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="Ej: Llamar para confirmar horario" />
+        <input ref={textoRef} autoFocus className={inputCls} value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="Ej: Llamar para confirmar horario" />
       </Field>
       <SelectorFechaHora fecha={fecha} hora={hora} onFecha={setFecha} onHora={setHora} labelFecha="Fecha (opcional)" />
       <Field label="Nota (opcional)">
         <textarea className={inputCls} rows={2} value={nota} onChange={(e) => setNota(e.target.value)} />
       </Field>
       <PrimaryBtn full disabled={!texto.trim()} onClick={guardar}>Guardar</PrimaryBtn>
+      {onSaveYNueva && (
+        <button
+          type="button"
+          disabled={!texto.trim()}
+          onClick={guardarYNueva}
+          className="w-full mt-2 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#2A2118] disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Guardar y nueva...
+        </button>
+      )}
     </Modal>
   );
 }
@@ -3529,7 +3551,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       )}
 
       {showNuevaSubtarea && (
-        <SubtareaForm onSave={(datos) => { agregarSubtarea(datos); setShowNuevaSubtarea(false); }} onClose={() => setShowNuevaSubtarea(false)} />
+        <SubtareaForm onSave={(datos) => { agregarSubtarea(datos); setShowNuevaSubtarea(false); }} onSaveYNueva={agregarSubtarea} onClose={() => setShowNuevaSubtarea(false)} />
       )}
       {editingSubtarea && (
         <SubtareaForm initial={editingSubtarea} onSave={(datos) => { editarSubtarea(editingSubtarea.id, datos); setEditingSubtarea(null); }} onClose={() => setEditingSubtarea(null)} />
