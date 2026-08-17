@@ -90,3 +90,72 @@ create policy "Users can upload own adjuntos"
 create policy "Users can delete own adjuntos"
   on storage.objects for delete
   using (bucket_id = 'adjuntos' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- ---------------------------------------------------------------------------
+-- Avisos (notificaciones push) de Seguimientos y Tareas.
+--
+-- INSTRUCCIONES — hay 3 pasos, en orden:
+--
+-- PASO 1) Variables de entorno. Generá y agregá estas 3 en tu hosting (donde
+-- ya tenés NEXT_PUBLIC_SUPABASE_URL, GOOGLE_CLIENT_SECRET, etc.) y en tu
+-- .env.local si probás en tu máquina:
+--   NEXT_PUBLIC_VAPID_PUBLIC_KEY = BGEBlLvvShveL6910kwVed5mHBt8OagSF3rVixkgECnq_Y3Hz0HHWC4fmQJ_VTRNMiEUhkpYl4z6LHlpnDYySz8
+--   VAPID_PRIVATE_KEY            = 1MbfFZCX5cenK5k6A0OagpEi-lVPW8_8RrAjexUZ6Fg
+--   AVISOS_CRON_SECRET           = T5M6Ed3DIUdCeShADTcQiYwzyPJVAEe1
+-- (Ya generadas y listas para usar — son solo para esta app, no hace falta
+-- generarlas de nuevo. VAPID_PRIVATE_KEY y AVISOS_CRON_SECRET son secretos,
+-- nunca deben ir con el prefijo NEXT_PUBLIC_.)
+--
+-- PASO 2) Correr este bloque SQL (desde "create table push_subscriptions"
+-- hasta el final del archivo) una sola vez en el SQL Editor de Supabase.
+-- Crea la tabla donde se guarda qué dispositivos pueden recibir avisos, y
+-- programa una tarea que corre sola cada 5 minutos revisando si hay algo
+-- para avisar.
+--
+-- PASO 3) Antes de correr el bloque, reemplazá TU-DOMINIO más abajo (dentro
+-- de la función cron.schedule) por el dominio real donde está publicada la
+-- app (ej: "mi-crm.vercel.app"), sin "https://" en el resto de la URL ya
+-- puesto. Y reemplazá también el secreto en el header Authorization por el
+-- mismo valor que pusiste en AVISOS_CRON_SECRET en el paso 1.
+
+create table if not exists public.push_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  endpoint text not null unique,
+  p256dh text not null,
+  auth text not null,
+  created_at timestamptz not null default now()
+);
+
+alter table public.push_subscriptions enable row level security;
+
+create policy "Users can view own push subscriptions"
+  on public.push_subscriptions for select
+  using (auth.uid() = user_id);
+
+create policy "Users can insert own push subscriptions"
+  on public.push_subscriptions for insert
+  with check (auth.uid() = user_id);
+
+create policy "Users can delete own push subscriptions"
+  on public.push_subscriptions for delete
+  using (auth.uid() = user_id);
+
+-- Habilita las extensiones necesarias para poder llamar a una URL (nuestra API route)
+-- desde una tarea programada de Postgres.
+create extension if not exists pg_cron with schema extensions;
+create extension if not exists pg_net with schema extensions;
+
+select cron.schedule(
+  'avisos-cada-5-min',
+  '*/5 * * * *',
+  $$
+  select net.http_post(
+    url := 'https://TU-DOMINIO/api/avisos/check',
+    headers := '{"Authorization": "Bearer T5M6Ed3DIUdCeShADTcQiYwzyPJVAEe1", "Content-Type": "application/json"}'::jsonb
+  );
+  $$
+);
+
+-- Para desactivar los avisos más adelante (si hiciera falta), correr en el SQL Editor:
+-- select cron.unschedule('avisos-cada-5-min');

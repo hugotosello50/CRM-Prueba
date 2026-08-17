@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.24.0";
+const APP_VERSION = "2.25.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -49,6 +49,17 @@ function IconoAdjunto({ tipo, size = 14, className }) {
   if (cat === "imagen") return <ImageIcon size={size} className={className} />;
   if (cat === "excel") return <FileSpreadsheet size={size} className={className} />;
   return <FileText size={size} className={className} />;
+}
+
+// Conversión estándar requerida por PushManager.subscribe: la clave pública VAPID viene en
+// base64url (texto) y la Push API la necesita como Uint8Array.
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; i++) outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
 }
 
 // ---------------------------------------------------------------------------
@@ -7215,6 +7226,67 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
   const [confirmVaciar, setConfirmVaciar] = useState(false);
   const [confirmBorrarDatosPrueba, setConfirmBorrarDatosPrueba] = useState(false);
   const [avisoDatosPrueba, setAvisoDatosPrueba] = useState(false);
+  // Estado de las notificaciones push en ESTE dispositivo (no es una preferencia de cuenta:
+  // cada dispositivo se activa por separado, igual que "instalar la app").
+  const [pushEstado, setPushEstado] = useState("verificando"); // verificando|noSoportado|noActivado|activando|activado|error
+  const [pushError, setPushError] = useState("");
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+      setPushEstado("noSoportado");
+      return;
+    }
+    (async () => {
+      try {
+        const reg = await navigator.serviceWorker.register("/sw.js");
+        const sub = await reg.pushManager.getSubscription();
+        setPushEstado(sub ? "activado" : "noActivado");
+      } catch {
+        setPushEstado("error");
+      }
+    })();
+  }, []);
+
+  const activarAvisos = async () => {
+    setPushError("");
+    setPushEstado("activando");
+    try {
+      const permiso = await Notification.requestPermission();
+      if (permiso !== "granted") { setPushEstado("noActivado"); setPushError("No se dio permiso de notificaciones en el navegador."); return; }
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY),
+      });
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { setPushEstado("error"); setPushError("No se encontró la sesión — volvé a iniciar sesión."); return; }
+      const json = sub.toJSON();
+      const { error } = await supabase.from("push_subscriptions").upsert(
+        { user_id: session.user.id, endpoint: json.endpoint, p256dh: json.keys.p256dh, auth: json.keys.auth },
+        { onConflict: "endpoint" }
+      );
+      if (error) { setPushEstado("error"); setPushError("No se pudo guardar la suscripción."); return; }
+      setPushEstado("activado");
+    } catch {
+      setPushEstado("error");
+      setPushError("No se pudo activar. Probá de nuevo.");
+    }
+  };
+
+  const desactivarAvisos = async () => {
+    setPushError("");
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        await supabase.from("push_subscriptions").delete().eq("endpoint", sub.endpoint);
+        await sub.unsubscribe();
+      }
+      setPushEstado("noActivado");
+    } catch {
+      setPushError("No se pudo desactivar. Probá de nuevo.");
+    }
+  };
 
   // Crea (si no existen ya, por nombre) 3 personas/empresas/obras de prueba vinculadas
   // entre sí de a pares (Persona Prueba N - Empresa Prueba N - Obra Prueba N).
@@ -7534,6 +7606,30 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
           <p className="text-xs text-[#A69C88]">Esto cambia todos los colores de la app — fondo, texto, botones, tarjetas, líneas divisorias, vínculos, y los colores de urgencia, prioridad y estado de Seguimientos.</p>
         </div>
       )}
+
+      <div className="mt-6 pt-4 border-t border-[#E4DECF]">
+        <p className="text-[11px] font-bold tracking-wide text-[#6B6352] mb-2">Avisos</p>
+        {pushEstado === "noSoportado" && (
+          <p className="text-xs text-[#A69C88]">Este navegador no admite avisos. En iPhone, agregá la app a la pantalla de inicio primero (compartir → "Agregar a inicio") y abrila desde ahí.</p>
+        )}
+        {pushEstado === "verificando" && <p className="text-xs text-[#A69C88]">Verificando...</p>}
+        {pushEstado === "activado" && (
+          <>
+            <p className="text-xs font-bold text-[var(--tema-exito)] mb-1.5">✓ Avisos activados en este dispositivo</p>
+            <button onClick={desactivarAvisos} className="text-xs font-bold tracking-wide text-[var(--tema-peligro)]">Desactivar avisos en este dispositivo</button>
+          </>
+        )}
+        {(pushEstado === "noActivado" || pushEstado === "activando") && (
+          <button onClick={activarAvisos} disabled={pushEstado === "activando"} className="text-xs font-bold tracking-wide text-[var(--tema-exito)] flex items-center gap-1.5 disabled:opacity-50">
+            <Plus size={13} /> {pushEstado === "activando" ? "Activando..." : "Activar avisos en este dispositivo"}
+          </button>
+        )}
+        {pushEstado === "error" && (
+          <button onClick={activarAvisos} className="text-xs font-bold tracking-wide text-[var(--tema-peligro)]">Reintentar activar avisos</button>
+        )}
+        {pushError && <p className="text-xs text-[var(--tema-peligro)] mt-1">{pushError}</p>}
+        <p className="text-xs text-[#A69C88] mt-1">Se activa por separado en cada dispositivo donde quieras recibirlos. Marcá "Avisar" al cargar una fecha y hora para que dispare un aviso acá.</p>
+      </div>
 
       <div className="mt-6 pt-4 border-t border-[#E4DECF]">
         <p className="text-[11px] font-bold tracking-wide text-[#6B6352] mb-2">Datos de prueba</p>
