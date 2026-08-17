@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.23.1";
+const APP_VERSION = "2.24.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -741,15 +741,18 @@ const inputCls = "w-full bg-white border border-[#D8D2C4] rounded-sm px-3 py-2 t
 // que abre el selector nativo (reloj) con un paso explícito de "Aceptar" antes de cerrarlo.
 // Ese paso evita el problema de algunos navegadores donde, al cerrar el selector nativo, el
 // primer toque siguiente no llega al botón de guardar del formulario.
-function SelectorFechaHora({ fecha, hora, onFecha, onHora, labelFecha = "Fecha" }) {
+const AVISO_DEFAULT = { activo: false, cantidad: 30, unidad: "minutos" };
+
+function SelectorFechaHora({ fecha, hora, onFecha, onHora, aviso, onAviso, labelFecha = "Fecha" }) {
   const [editandoHora, setEditandoHora] = useState(false);
   const [horaTemp, setHoraTemp] = useState(hora || "");
   const timeRef = useRef(null);
+  const avisoActual = aviso || AVISO_DEFAULT;
 
   const abrirHora = () => { setHoraTemp(hora || ""); setEditandoHora(true); };
   const aceptarHora = () => { onHora(horaTemp); timeRef.current?.blur(); setEditandoHora(false); };
   const cancelarHora = () => setEditandoHora(false);
-  const quitarHora = () => { onHora(""); setEditandoHora(false); };
+  const quitarHora = () => { onHora(""); setEditandoHora(false); onAviso?.({ ...avisoActual, activo: false }); };
 
   return (
     <div className="mb-3">
@@ -763,12 +766,31 @@ function SelectorFechaHora({ fecha, hora, onFecha, onHora, labelFecha = "Fecha" 
           </div>
         </div>
       ) : hora ? (
-        <div className="flex items-center justify-between mt-1.5">
-          <button type="button" onClick={abrirHora} className="flex items-center gap-1 text-sm font-semibold text-[#2A2118]">
-            <Clock3 size={13} className="text-[#8A8272]" /> {hora} hs
-          </button>
-          <IconBtn label="Quitar hora" danger onClick={quitarHora}><X size={14} /></IconBtn>
-        </div>
+        <>
+          <div className="flex items-center justify-between mt-1.5">
+            <button type="button" onClick={abrirHora} className="flex items-center gap-1 text-sm font-semibold text-[#2A2118]">
+              <Clock3 size={13} className="text-[#8A8272]" /> {hora} hs
+            </button>
+            <IconBtn label="Quitar hora" danger onClick={quitarHora}><X size={14} /></IconBtn>
+          </div>
+          {onAviso && (
+            <div className="mt-2">
+              <label className="flex items-center gap-2 text-sm font-bold text-[#2A2118]">
+                <input type="checkbox" checked={avisoActual.activo} onChange={(e) => onAviso({ ...avisoActual, activo: e.target.checked })} /> Avisar
+              </label>
+              {avisoActual.activo && (
+                <div className="flex gap-2 mt-1.5">
+                  <input type="number" min={1} className={inputCls} value={avisoActual.cantidad} onChange={(e) => onAviso({ ...avisoActual, cantidad: e.target.value })} />
+                  <select className={inputCls} value={avisoActual.unidad} onChange={(e) => onAviso({ ...avisoActual, unidad: e.target.value })}>
+                    <option value="minutos">minutos antes</option>
+                    <option value="horas">horas antes</option>
+                    <option value="dias">días antes</option>
+                  </select>
+                </div>
+              )}
+            </div>
+          )}
+        </>
       ) : (
         <button type="button" onClick={abrirHora} className="text-xs font-bold text-[var(--tema-vinculo)]">+ Establecer hora</button>
       )}
@@ -1391,16 +1413,29 @@ export default function CRM({ userId, onLogout }) {
     saveCrmField(userId, "acciones", acciones, 0, ts).then((ok) => setGuardado(ok ? "ok" : "error"));
   }, [acciones, userId]);
 
+  const hayResumenParaMostrar = (c, a) => {
+    if (!c || !a) return false;
+    const t = todayISO();
+    const limiteProximos = addDaysISO(t, c.parametros.diasProximos ?? 7);
+    const hayAccionPendiente = a.some((acc) => acc.estado === "Pendiente" && acc.fechaProgramada && acc.fechaProgramada <= limiteProximos);
+    const hayTareaConFecha = c.hilos.some((h) => h.tipo === "tarea" && h.estado === "Activo" && h.fecha && h.fecha <= limiteProximos);
+    return hayAccionPendiente || hayTareaConFecha;
+  };
+
   useEffect(() => {
     if (!core || !acciones) return;
     if (resumenMostrado.current) return;
     resumenMostrado.current = true;
-    const t = todayISO();
-    const limiteProximos = addDaysISO(t, core.parametros.diasProximos ?? 7);
-    const hayAccionPendiente = acciones.some((a) => a.estado === "Pendiente" && a.fechaProgramada && a.fechaProgramada <= limiteProximos);
-    const hayTareaConFecha = core.hilos.some((h) => h.tipo === "tarea" && h.estado === "Activo" && h.fecha && h.fecha <= limiteProximos);
-    if (hayAccionPendiente || hayTareaConFecha) setShowResumenHoy(true);
+    if (hayResumenParaMostrar(core, acciones)) setShowResumenHoy(true);
   }, [core, acciones]);
+
+  // Además del disparador de arriba (una vez al abrir la app), el resumen se vuelve a mostrar
+  // cada vez que se entra a la pestaña Calendario. Cerrarlo no cambia de pestaña, así que se
+  // queda en Calendario como antes.
+  useEffect(() => {
+    if (tab !== "calendario") return;
+    if (hayResumenParaMostrar(core, acciones)) setShowResumenHoy(true);
+  }, [tab]); // eslint-disable-line
 
   if (!core || !acciones) {
     return <div className="min-h-screen bg-[#F7F5F0] flex items-center justify-center text-[#A69C88] text-sm">Cargando...</div>;
@@ -1798,6 +1833,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
   const [unidad, setUnidad] = useState("semanas");
   const [fechaEspecifica, setFechaEspecifica] = useState(todayISO());
   const [horaEspecifica, setHoraEspecifica] = useState("");
+  const [avisoEspecifica, setAvisoEspecifica] = useState(AVISO_DEFAULT);
   const [confirmarEspecifica, setConfirmarEspecifica] = useState(false);
   const [prioridad, setPrioridad] = useState("Media");
   const [recurrente, setRecurrente] = useState(false);
@@ -1863,8 +1899,9 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
     if (programarProxima) {
       const fecha = modoFecha === "periodo" ? (preview || hoy) : (fechaEspecifica || hoy);
       const hora = modoFecha === "especifica" ? horaEspecifica : "";
+      const aviso = modoFecha === "especifica" && hora && avisoEspecifica.activo ? avisoEspecifica : null;
       const idNueva = uid("A");
-      nuevas.push({ id: idNueva, hiloId, tipoAccionId: tipoAccionId2, estado: "Pendiente", fechaRealizada: "", fechaProgramada: fecha, horaProgramada: hora, prioridad, notaPlanificada: notas2, notaHecho: "", origenId: idPrimera, destinoId: null, numero: siguienteNumero++, recurrente, repiteCadaN: recurrente ? Number(repiteCadaN) : null, repiteUnidad: recurrente ? repiteUnidad : null, fechaCreacion: hoy, secuencia: Date.now() });
+      nuevas.push({ id: idNueva, hiloId, tipoAccionId: tipoAccionId2, estado: "Pendiente", fechaRealizada: "", fechaProgramada: fecha, horaProgramada: hora, prioridad, notaPlanificada: notas2, notaHecho: "", origenId: idPrimera, destinoId: null, numero: siguienteNumero++, recurrente, repiteCadaN: recurrente ? Number(repiteCadaN) : null, repiteUnidad: recurrente ? repiteUnidad : null, fechaCreacion: hoy, secuencia: Date.now(), aviso, avisoEnviado: false });
       nuevas[0] = { ...nuevas[0], destinoId: idNueva };
     }
     return { nuevas, siguienteNumero };
@@ -2166,6 +2203,8 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
                   <SelectorFechaHora
                     fecha={fechaEspecifica}
                     hora={horaEspecifica}
+                    aviso={avisoEspecifica}
+                    onAviso={setAvisoEspecifica}
                     onFecha={(v) => { setFechaEspecifica(v); setConfirmarEspecifica(false); }}
                     onHora={setHoraEspecifica}
                   />
@@ -2245,6 +2284,7 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
   const [mostrarFecha, setMostrarFecha] = useState(false);
   const [fechaNueva, setFechaNueva] = useState("");
   const [horaNueva, setHoraNueva] = useState("");
+  const [avisoNuevo, setAvisoNuevo] = useState(AVISO_DEFAULT);
   const [verCerradas, setVerCerradas] = useState(false);
   const tabsRef = useRef(null);
   const hoverRef = useRef(undefined);
@@ -2315,11 +2355,13 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
   const crearTareaRapida = () => {
     if (!tituloNuevo.trim()) return;
     const hoy = todayISO();
-    const nuevoHilo = { id: uid("H"), titulo: tituloNuevo.trim(), notas: "", fecha: fechaNueva, hora: horaNueva, estado: "Activo", fechaCreacion: hoy, tipo: "tarea", columnaTareaId: columnaActiva, hiloRelacionadoId: null, notaCierre: "" };
+    const aviso = horaNueva && avisoNuevo.activo ? avisoNuevo : null;
+    const nuevoHilo = { id: uid("H"), titulo: tituloNuevo.trim(), notas: "", fecha: fechaNueva, hora: horaNueva, aviso, avisoEnviado: false, estado: "Activo", fechaCreacion: hoy, tipo: "tarea", columnaTareaId: columnaActiva, hiloRelacionadoId: null, notaCierre: "" };
     setCore((prev) => ({ ...prev, hilos: [nuevoHilo, ...prev.hilos] }));
     setTituloNuevo("");
     setFechaNueva("");
     setHoraNueva("");
+    setAvisoNuevo(AVISO_DEFAULT);
     setMostrarFecha(false);
   };
 
@@ -2357,7 +2399,7 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
         </div>
         {mostrarFecha && (
           <div className="mt-2">
-            <SelectorFechaHora fecha={fechaNueva} hora={horaNueva} onFecha={setFechaNueva} onHora={setHoraNueva} />
+            <SelectorFechaHora fecha={fechaNueva} hora={horaNueva} aviso={avisoNuevo} onAviso={setAvisoNuevo} onFecha={setFechaNueva} onHora={setHoraNueva} />
           </div>
         )}
         <p className="text-xs text-[#A69C88] mt-2">La fecha y hora son opcionales — si no las cargás, la tarea se guarda igual.</p>
@@ -2441,24 +2483,27 @@ function EditarTareaForm({ hilo, core, setCore, onClose }) {
   const [notas, setNotas] = useState(hilo.notas || "");
   const [fecha, setFecha] = useState(hilo.fecha || "");
   const [hora, setHora] = useState(hilo.hora || "");
+  const [aviso, setAviso] = useState(hilo.aviso || AVISO_DEFAULT);
 
   const guardar = () => {
     if (!titulo.trim()) return;
     const tituloFinal = titulo.trim();
+    const avisoFinal = hora && aviso.activo ? aviso : null;
+    const avisoCambio = fecha !== (hilo.fecha || "") || hora !== (hilo.hora || "") || JSON.stringify(avisoFinal) !== JSON.stringify(hilo.aviso || null);
     setCore((prev) => ({
       ...prev,
-      hilos: prev.hilos.map((h) => (h.id === hilo.id ? { ...h, titulo: tituloFinal, notas: notas.trim(), fecha, hora } : h)),
+      hilos: prev.hilos.map((h) => (h.id === hilo.id ? { ...h, titulo: tituloFinal, notas: notas.trim(), fecha, hora, aviso: avisoFinal, avisoEnviado: avisoCambio ? false : !!h.avisoEnviado } : h)),
     }));
     onClose();
   };
 
-  const quitarFecha = () => { setFecha(""); setHora(""); };
+  const quitarFecha = () => { setFecha(""); setHora(""); setAviso(AVISO_DEFAULT); };
 
   return (
     <div>
       <Field label="Título"><CampoConMenciones core={core} value={titulo} onChange={setTitulo} /></Field>
       <Field label="Notas (opcional)"><CampoConMenciones core={core} multiline rows={2} value={notas} onChange={setNotas} /></Field>
-      <SelectorFechaHora fecha={fecha} hora={hora} onFecha={setFecha} onHora={setHora} labelFecha="Fecha (opcional)" />
+      <SelectorFechaHora fecha={fecha} hora={hora} aviso={aviso} onAviso={setAviso} onFecha={setFecha} onHora={setHora} labelFecha="Fecha (opcional)" />
       <PrimaryBtn full disabled={!titulo.trim()} onClick={guardar}>Guardar</PrimaryBtn>
       {(fecha || hora) && (
         <button onClick={quitarFecha} className="w-full text-center text-xs font-bold text-[var(--tema-peligro)] mt-2">Quitar fecha (la tarea queda sin programar)</button>
@@ -2471,10 +2516,15 @@ function SubtareaForm({ initial, onSave, onSaveYNueva, onClose }) {
   const [texto, setTexto] = useState(initial?.texto || "");
   const [fecha, setFecha] = useState(initial?.fecha || "");
   const [hora, setHora] = useState(initial?.hora || "");
+  const [aviso, setAviso] = useState(initial?.aviso || AVISO_DEFAULT);
   const [nota, setNota] = useState(initial?.nota || "");
   const textoRef = useRef(null);
 
-  const datosActuales = () => ({ texto: texto.trim(), fecha: fecha || null, hora: hora || null, nota: nota.trim() || null });
+  const datosActuales = () => {
+    const avisoFinal = hora && aviso.activo ? aviso : null;
+    const avisoCambio = fecha !== (initial?.fecha || "") || hora !== (initial?.hora || "") || JSON.stringify(avisoFinal) !== JSON.stringify(initial?.aviso || null);
+    return { texto: texto.trim(), fecha: fecha || null, hora: hora || null, aviso: avisoFinal, avisoEnviado: avisoCambio ? false : !!initial?.avisoEnviado, nota: nota.trim() || null };
+  };
 
   const guardar = () => {
     if (!texto.trim()) return;
@@ -2486,7 +2536,7 @@ function SubtareaForm({ initial, onSave, onSaveYNueva, onClose }) {
   const guardarYNueva = () => {
     if (!texto.trim()) return;
     onSaveYNueva(datosActuales());
-    setTexto(""); setFecha(""); setHora(""); setNota("");
+    setTexto(""); setFecha(""); setHora(""); setAviso(AVISO_DEFAULT); setNota("");
     textoRef.current?.focus();
   };
 
@@ -2495,7 +2545,7 @@ function SubtareaForm({ initial, onSave, onSaveYNueva, onClose }) {
       <Field label="Texto">
         <input ref={textoRef} autoFocus className={inputCls} value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="Ej: Llamar para confirmar horario" />
       </Field>
-      <SelectorFechaHora fecha={fecha} hora={hora} onFecha={setFecha} onHora={setHora} labelFecha="Fecha (opcional)" />
+      <SelectorFechaHora fecha={fecha} hora={hora} aviso={aviso} onAviso={setAviso} onFecha={setFecha} onHora={setHora} labelFecha="Fecha (opcional)" />
       <Field label="Nota (opcional)">
         <textarea className={inputCls} rows={2} value={nota} onChange={(e) => setNota(e.target.value)} />
       </Field>
@@ -5169,6 +5219,7 @@ function AgregarTareaAlHiloForm({ core, hiloClienteId, personasDelHilo, onVincul
   const [columnaId, setColumnaId] = useState("");
   const [fecha, setFecha] = useState("");
   const [hora, setHora] = useState("");
+  const [aviso, setAviso] = useState(AVISO_DEFAULT);
   const columnas = core.kanbanColumnasTareas || [];
 
   const disponibles = useMemo(() => {
@@ -5189,11 +5240,12 @@ function AgregarTareaAlHiloForm({ core, hiloClienteId, personasDelHilo, onVincul
     if (!titulo.trim()) return;
     const nuevoHilo = {
       id: uid("H"), titulo: titulo.trim(), notas: notas.trim(), fecha, hora,
+      aviso: hora && aviso.activo ? aviso : null, avisoEnviado: false,
       estado: "Activo", fechaCreacion: todayISO(), tipo: "tarea",
       columnaTareaId: columnaId || null, hiloRelacionadoId: hiloClienteId, notaCierre: "",
     };
     onCrear(nuevoHilo);
-    setTitulo(""); setNotas(""); setColumnaId(""); setFecha(""); setHora("");
+    setTitulo(""); setNotas(""); setColumnaId(""); setFecha(""); setHora(""); setAviso(AVISO_DEFAULT);
     setModo("existente");
   };
 
@@ -5244,7 +5296,7 @@ function AgregarTareaAlHiloForm({ core, hiloClienteId, personasDelHilo, onVincul
               {columnas.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
             </select>
           </Field>
-          <SelectorFechaHora fecha={fecha} hora={hora} onFecha={setFecha} onHora={setHora} labelFecha="Fecha (opcional)" />
+          <SelectorFechaHora fecha={fecha} hora={hora} aviso={aviso} onAviso={setAviso} onFecha={setFecha} onHora={setHora} labelFecha="Fecha (opcional)" />
           <PrimaryBtn full onClick={crear}>Crear tarea</PrimaryBtn>
         </>
       )}
@@ -5263,6 +5315,7 @@ function AgregarTareaAEntidadForm({ core, tareasExcluidas, onVincular, onCrear, 
   const [columnaId, setColumnaId] = useState("");
   const [fecha, setFecha] = useState("");
   const [hora, setHora] = useState("");
+  const [aviso, setAviso] = useState(AVISO_DEFAULT);
   const columnas = core.kanbanColumnasTareas || [];
 
   const disponibles = useMemo(() => {
@@ -5276,11 +5329,12 @@ function AgregarTareaAEntidadForm({ core, tareasExcluidas, onVincular, onCrear, 
     if (!titulo.trim()) return;
     const nuevoHilo = {
       id: uid("H"), titulo: titulo.trim(), notas: notas.trim(), fecha, hora,
+      aviso: hora && aviso.activo ? aviso : null, avisoEnviado: false,
       estado: "Activo", fechaCreacion: todayISO(), tipo: "tarea",
       columnaTareaId: columnaId || null, hiloRelacionadoId: null, notaCierre: "",
     };
     onCrear(nuevoHilo);
-    setTitulo(""); setNotas(""); setColumnaId(""); setFecha(""); setHora("");
+    setTitulo(""); setNotas(""); setColumnaId(""); setFecha(""); setHora(""); setAviso(AVISO_DEFAULT);
     setModo("existente");
   };
 
@@ -5330,7 +5384,7 @@ function AgregarTareaAEntidadForm({ core, tareasExcluidas, onVincular, onCrear, 
               {columnas.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
             </select>
           </Field>
-          <SelectorFechaHora fecha={fecha} hora={hora} onFecha={setFecha} onHora={setHora} labelFecha="Fecha (opcional)" />
+          <SelectorFechaHora fecha={fecha} hora={hora} aviso={aviso} onAviso={setAviso} onFecha={setFecha} onHora={setHora} labelFecha="Fecha (opcional)" />
           <p className="text-xs text-[#A69C88] mb-3">Si cargás fecha, se crea con esa acción pendiente. Si no, la tarea queda sin fecha hasta que la avances.</p>
           <PrimaryBtn full onClick={crear}>Crear tarea</PrimaryBtn>
         </>
@@ -5354,6 +5408,7 @@ function AvanzarHiloForm({ hilo, pendienteActual, core, setCore, acciones, setAc
   const [unidad, setUnidad] = useState("semanas");
   const [fechaEspecifica, setFechaEspecifica] = useState(todayISO());
   const [horaEspecifica, setHoraEspecifica] = useState("");
+  const [avisoEspecifica, setAvisoEspecifica] = useState(AVISO_DEFAULT);
   const [confirmarEspecifica, setConfirmarEspecifica] = useState(false);
   const [prioridad, setPrioridad] = useState("Media");
   const [recurrente, setRecurrente] = useState(false);
@@ -5374,6 +5429,7 @@ function AvanzarHiloForm({ hilo, pendienteActual, core, setCore, acciones, setAc
     const hoy = todayISO();
     const fecha = modoFecha === "periodo" ? (preview || hoy) : (fechaEspecifica || hoy);
     const hora = modoFecha === "especifica" ? horaEspecifica : "";
+    const aviso = modoFecha === "especifica" && hora && avisoEspecifica.activo ? avisoEspecifica : null;
     setAcciones((prev) => {
       let siguienteNumero = Math.max(0, ...prev.map((a) => a.numero || 0)) + 1;
       let next = prev;
@@ -5392,7 +5448,7 @@ function AvanzarHiloForm({ hilo, pendienteActual, core, setCore, acciones, setAc
         const idNueva = uid("A");
         // Hereda la columna del Kanban de la acción que se acaba de completar, para que el
         // hilo no se vaya a "Sin columna" al continuarlo (ver AvanzarHiloForm).
-        next = [{ id: idNueva, hiloId: hilo.id, tipoAccionId: tipoAccionId2, estado: "Pendiente", fechaRealizada: "", fechaProgramada: fecha, horaProgramada: hora, prioridad, notaPlanificada: notas2, notaHecho: "", origenId: idCompletada, destinoId: null, numero: siguienteNumero++, recurrente, repiteCadaN: recurrente ? Number(repiteCadaN) : null, repiteUnidad: recurrente ? repiteUnidad : null, fechaCreacion: hoy, secuencia: Date.now() + 1, columnaId: pendienteActual?.columnaId ?? null }, ...next];
+        next = [{ id: idNueva, hiloId: hilo.id, tipoAccionId: tipoAccionId2, estado: "Pendiente", fechaRealizada: "", fechaProgramada: fecha, horaProgramada: hora, prioridad, notaPlanificada: notas2, notaHecho: "", origenId: idCompletada, destinoId: null, numero: siguienteNumero++, recurrente, repiteCadaN: recurrente ? Number(repiteCadaN) : null, repiteUnidad: recurrente ? repiteUnidad : null, fechaCreacion: hoy, secuencia: Date.now() + 1, columnaId: pendienteActual?.columnaId ?? null, aviso, avisoEnviado: false }, ...next];
         next = next.map((a) => (a.id === idCompletada ? { ...a, destinoId: idNueva } : a));
       }
       return next;
@@ -5492,6 +5548,8 @@ function AvanzarHiloForm({ hilo, pendienteActual, core, setCore, acciones, setAc
                 <SelectorFechaHora
                   fecha={fechaEspecifica}
                   hora={horaEspecifica}
+                  aviso={avisoEspecifica}
+                  onAviso={setAvisoEspecifica}
                   onFecha={(v) => { setFechaEspecifica(v); setConfirmarEspecifica(false); }}
                   onHora={setHoraEspecifica}
                 />
@@ -5539,6 +5597,7 @@ function EditAccionForm({ accion, core, setCore, otrasAccionesDelHilo = [], onCl
   const [fechaRealizada, setFechaRealizada] = useState(accion.fechaRealizada || todayISO());
   const [fechaProgramada, setFechaProgramada] = useState(accion.fechaProgramada || todayISO());
   const [horaProgramada, setHoraProgramada] = useState(accion.horaProgramada || "");
+  const [aviso, setAviso] = useState(accion.aviso || AVISO_DEFAULT);
   const [prioridad, setPrioridad] = useState(accion.prioridad || "Media");
   const [notaPlanificada, setNotaPlanificada] = useState(accion.notaPlanificada || "");
   const [notaHecho, setNotaHecho] = useState(accion.notaHecho || "");
@@ -5554,9 +5613,13 @@ function EditAccionForm({ accion, core, setCore, otrasAccionesDelHilo = [], onCl
     if (yaHayPendiente) return;
     if (estado === "Pendiente" && inhabil && !confirmar) { setConfirmar(true); return; }
     if (estado === "Realizada") {
-      onSave({ tipoAccionId, estado, fechaRealizada, fechaProgramada: "", horaProgramada: "", prioridad: "", notaPlanificada, notaHecho, recurrente: false, repiteCadaN: null, repiteUnidad: null, secuencia: accion.secuencia || Date.now() });
+      onSave({ tipoAccionId, estado, fechaRealizada, fechaProgramada: "", horaProgramada: "", prioridad: "", notaPlanificada, notaHecho, recurrente: false, repiteCadaN: null, repiteUnidad: null, secuencia: accion.secuencia || Date.now(), aviso: null, avisoEnviado: false });
     } else {
-      onSave({ tipoAccionId, estado, fechaRealizada: "", fechaProgramada, horaProgramada, prioridad, notaPlanificada, notaHecho, recurrente, repiteCadaN: recurrente ? Number(repiteCadaN) : null, repiteUnidad: recurrente ? repiteUnidad : null });
+      const avisoFinal = horaProgramada && aviso.activo ? aviso : null;
+      // Si fecha/hora/aviso no cambiaron, se conserva si ya se había enviado (para no
+      // duplicar el aviso); si cambió algo de eso, se resetea para que pueda volver a avisar.
+      const avisoCambio = fechaProgramada !== (accion.fechaProgramada || "") || horaProgramada !== (accion.horaProgramada || "") || JSON.stringify(avisoFinal) !== JSON.stringify(accion.aviso || null);
+      onSave({ tipoAccionId, estado, fechaRealizada: "", fechaProgramada, horaProgramada, prioridad, notaPlanificada, notaHecho, recurrente, repiteCadaN: recurrente ? Number(repiteCadaN) : null, repiteUnidad: recurrente ? repiteUnidad : null, aviso: avisoFinal, avisoEnviado: avisoCambio ? false : !!accion.avisoEnviado });
     }
   };
 
@@ -5602,6 +5665,8 @@ function EditAccionForm({ accion, core, setCore, otrasAccionesDelHilo = [], onCl
           <SelectorFechaHora
             fecha={fechaProgramada}
             hora={horaProgramada}
+            aviso={aviso}
+            onAviso={setAviso}
             onFecha={(v) => { setFechaProgramada(v); setConfirmar(false); }}
             onHora={setHoraProgramada}
             labelFecha="Fecha programada"
@@ -7625,6 +7690,11 @@ function TipoRelacionForm({ data, onSave }) {
 // que queda fija del lado del origen y no se puede quitar.
 function RelacionForm({ core, setCore, entidadFija, onCreado }) {
   const clave = (e) => `${e.tipo}:${e.id}`;
+  // Cuando hay una entidad fija (viene del botón "+ Vincular" de una ficha), por defecto va
+  // del lado "Desde". "ladoFijo" permite invertirla al lado "Hacia" — necesario para
+  // relaciones asimétricas donde el nombre que corresponde a la entidad fija es el inverso
+  // (ej: una obra necesita expresar "es obra de" en vez de "construye").
+  const [ladoFijo, setLadoFijo] = useState("origen"); // "origen" | "destino"
   const [origenes, setOrigenes] = useState(entidadFija ? [entidadFija] : []);
   const [origenSel, setOrigenSel] = useState("");
   const [tipoRelacionId, setTipoRelacionId] = useState("");
@@ -7643,6 +7713,19 @@ function RelacionForm({ core, setCore, entidadFija, onCreado }) {
 
   const esFija = (e) => entidadFija && e.tipo === entidadFija.tipo && e.id === entidadFija.id;
 
+  const invertirLadoFijo = () => {
+    if (!entidadFija) return;
+    if (ladoFijo === "origen") {
+      setOrigenes((a) => a.filter((x) => !esFija(x)));
+      setDestinos((a) => (a.some(esFija) ? a : [...a, entidadFija]));
+      setLadoFijo("destino");
+    } else {
+      setDestinos((a) => a.filter((x) => !esFija(x)));
+      setOrigenes((a) => (a.some(esFija) ? a : [...a, entidadFija]));
+      setLadoFijo("origen");
+    }
+  };
+
   const agregarOrigen = () => {
     if (!origenSel) return;
     const [tipo, id] = origenSel.split(":");
@@ -7656,7 +7739,7 @@ function RelacionForm({ core, setCore, entidadFija, onCreado }) {
     setDestinos((a) => [...a, { tipo, id }]);
     setDestinoSel("");
   };
-  const quitarDestino = (e) => setDestinos((a) => a.filter((x) => clave(x) !== clave(e)));
+  const quitarDestino = (e) => { if (!esFija(e)) setDestinos((a) => a.filter((x) => clave(x) !== clave(e))); };
 
   // Producto cartesiano orígenes × destinos, sin auto-relaciones (una entidad consigo misma).
   const pares = origenes.flatMap((o) => destinos.filter((d) => clave(d) !== clave(o)).map((d) => [o, d]));
@@ -7674,6 +7757,15 @@ function RelacionForm({ core, setCore, entidadFija, onCreado }) {
 
   return (
     <div>
+      {entidadFija && (
+        <button
+          type="button"
+          onClick={invertirLadoFijo}
+          className="w-full mb-3 flex items-center justify-center gap-1.5 text-xs font-bold text-[var(--tema-vinculo)] border border-[#E4DECF] rounded-sm py-2"
+        >
+          <Repeat size={13} /> "{entidadLabel(entidadFija.tipo, entidadFija.id, core)}" va del lado {ladoFijo === "origen" ? '"Desde"' : '"Hacia"'} — invertir
+        </button>
+      )}
       <Field label="Desde">
         {origenes.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mb-2">
@@ -7708,7 +7800,7 @@ function RelacionForm({ core, setCore, entidadFija, onCreado }) {
             {destinos.map((e) => (
               <span key={clave(e)} className="flex items-center gap-1 bg-[#D9F0DE] text-[#1B4D2E] text-xs font-bold px-2 py-1 rounded-sm">
                 {entidadLabel(e.tipo, e.id, core)} <span className="opacity-60 font-normal">({e.tipo})</span>
-                <button type="button" onClick={() => quitarDestino(e)} aria-label="Quitar"><X size={12} /></button>
+                {!esFija(e) && <button type="button" onClick={() => quitarDestino(e)} aria-label="Quitar"><X size={12} /></button>}
               </span>
             ))}
           </div>
