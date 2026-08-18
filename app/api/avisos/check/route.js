@@ -61,7 +61,7 @@ export async function POST(request) {
 
     for (const a of acciones) {
       if (a.estado === 'Pendiente' && debeAvisarAhora(a.fechaProgramada, a.horaProgramada, a.aviso, a.avisoEnviado, ahoraMs)) {
-        pendientes.push({ tipo: 'accion', id: a.id, texto: a.notaPlanificada || 'Acción programada' });
+        pendientes.push({ tipo: 'accion', id: a.id, hiloId: a.hiloId, texto: a.notaPlanificada || 'Acción programada' });
       }
     }
     for (const h of core.hilos || []) {
@@ -86,7 +86,7 @@ export async function POST(request) {
         try {
           await webpush.sendNotification(
             { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-            JSON.stringify({ title: 'Recordatorio', body: item.texto, url: '/' })
+            JSON.stringify({ title: 'Recordatorio', body: item.texto, url: `/?abrir=${item.hiloId}`, hiloId: item.hiloId })
           );
           envioOk = true;
         } catch (err) {

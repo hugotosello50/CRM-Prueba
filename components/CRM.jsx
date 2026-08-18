@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.25.1";
+const APP_VERSION = "2.26.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -1311,9 +1311,11 @@ export default function CRM({ userId, onLogout }) {
   const [showMenu, setShowMenu] = useState(false);
   const [guardado, setGuardado] = useState("ok"); // 'ok' | 'guardando' | 'error'
   const [showResumenHoy, setShowResumenHoy] = useState(false);
+  const [avisoEnPantalla, setAvisoEnPantalla] = useState(null); // { texto, hiloId } — aviso llegado por push mientras la app está abierta
   const primerRenderCore = useRef(true);
   const primerRenderAcciones = useRef(true);
   const resumenMostrado = useRef(false);
+  const deepLinkAplicado = useRef(false);
   const coreRef = useRef(null);
   const accionesRef = useRef(null);
   const aplicandoRemotoCore = useRef(false);
@@ -1447,6 +1449,31 @@ export default function CRM({ userId, onLogout }) {
     if (tab !== "calendario") return;
     if (hayResumenParaMostrar(core, acciones)) setShowResumenHoy(true);
   }, [tab]); // eslint-disable-line
+
+  // Si la app ya está abierta cuando llega un aviso (push), el service worker lo reenvía
+  // acá con postMessage — así se puede mostrar un cartel adentro de la app, no solo la
+  // notificación del sistema operativo.
+  useEffect(() => {
+    if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
+    const onMessage = (event) => {
+      if (event.data?.tipo === "aviso") setAvisoEnPantalla({ texto: event.data.texto, hiloId: event.data.hiloId });
+    };
+    navigator.serviceWorker.addEventListener("message", onMessage);
+    return () => navigator.serviceWorker.removeEventListener("message", onMessage);
+  }, []);
+
+  // Al tocar una notificación (o abrir la app desde ella), llega con "?abrir=<hiloId>" en la
+  // URL — esto la lee una sola vez, abre esa ficha, y limpia el parámetro de la URL.
+  useEffect(() => {
+    if (!core || deepLinkAplicado.current) return;
+    const params = new URLSearchParams(window.location.search);
+    const abrir = params.get("abrir");
+    if (abrir) {
+      deepLinkAplicado.current = true;
+      setDetail({ type: "hilo", id: abrir });
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, [core]);
 
   if (!core || !acciones) {
     return <div className="min-h-screen bg-[#F7F5F0] flex items-center justify-center text-[#A69C88] text-sm">Cargando...</div>;
@@ -1614,6 +1641,21 @@ export default function CRM({ userId, onLogout }) {
 
       {showResumenHoy && (
         <ResumenHoyModal core={core} acciones={acciones} onOpen={openDetail} onClose={() => setShowResumenHoy(false)} />
+      )}
+
+      {avisoEnPantalla && (
+        <div className="fixed top-0 inset-x-0 z-[60] p-3">
+          <div className="max-w-md mx-auto bg-white border border-[#E4DECF] rounded-sm shadow-lg p-3 flex items-start gap-2.5">
+            <Bell size={18} className="shrink-0 text-[var(--tema-vinculo)] mt-0.5" />
+            <button
+              onClick={() => { if (avisoEnPantalla.hiloId) openDetail("hilo", avisoEnPantalla.hiloId); setAvisoEnPantalla(null); }}
+              className="flex-1 min-w-0 text-left text-sm font-semibold text-[#2A2118] hover:underline"
+            >
+              {avisoEnPantalla.texto}
+            </button>
+            <button onClick={() => setAvisoEnPantalla(null)} aria-label="Cerrar" className="shrink-0 text-[#8A8272]"><X size={16} /></button>
+          </div>
+        </div>
       )}
     </div>
     </ErrorBoundary>
