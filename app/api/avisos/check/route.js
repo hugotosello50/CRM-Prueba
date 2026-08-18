@@ -86,14 +86,10 @@ export async function POST(request) {
         try {
           await webpush.sendNotification(
             { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-            JSON.stringify({
-              title: 'Recordatorio',
-              body: item.texto,
-              url: `/?abrir=${item.hiloId}&texto=${encodeURIComponent(item.texto)}&fecha=${item.fecha || ''}&hora=${item.hora || ''}`,
-              hiloId: item.hiloId,
-              fecha: item.fecha || null,
-              hora: item.hora || null,
-            })
+            // El cartel dentro de la app se arma solo a partir del dato (avisoEnviado +
+            // avisoVistoEnApp, ver buscarAvisoSinVer en CRM.jsx) — acá solo hace falta armar
+            // bien la notificación del sistema operativo y adónde navegar al tocarla.
+            JSON.stringify({ title: 'Recordatorio', body: item.texto, url: `/?abrir=${item.hiloId}` })
           );
           envioOk = true;
         } catch (err) {

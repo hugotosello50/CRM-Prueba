@@ -1,5 +1,10 @@
 // Service worker mínimo: solo existe para poder recibir notificaciones push cuando la app
 // está cerrada o en segundo plano. No cachea nada (no es para funcionar offline).
+//
+// El cartel de aviso DENTRO de la app no depende de este archivo — se arma solo, a partir de
+// los datos (ver "buscarAvisoSinVer" en components/CRM.jsx), así aparece sin importar cómo se
+// haya vuelto a la app. Acá solo hace falta armar bien la notificación del sistema operativo
+// y, al tocarla, llevar a la app a la ficha correspondiente.
 
 self.addEventListener('install', () => {
   self.skipWaiting();
@@ -17,26 +22,13 @@ self.addEventListener('push', (event) => {
     data = { title: 'Recordatorio', body: event.data ? event.data.text() : '' };
   }
   const title = data.title || 'Recordatorio';
-  const url = data.url || '/';
   const options = {
     body: data.body || '',
     icon: '/icon-192.png',
     badge: '/icon-192.png',
-    data: { url, hiloId: data.hiloId || null },
+    data: { url: data.url || '/' },
   };
-  event.waitUntil(
-    Promise.all([
-      self.registration.showNotification(title, options),
-      // Si la app ya está abierta en algún dispositivo/pestaña, le avisa además con un
-      // mensaje directo — así se puede mostrar un aviso adentro de la app, no solo la
-      // notificación del sistema operativo.
-      self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-        for (const client of clientList) {
-          client.postMessage({ tipo: 'aviso', texto: data.body || title, hiloId: data.hiloId || null, fecha: data.fecha || null, hora: data.hora || null });
-        }
-      }),
-    ])
-  );
+  event.waitUntil(self.registration.showNotification(title, options));
 });
 
 self.addEventListener('notificationclick', (event) => {

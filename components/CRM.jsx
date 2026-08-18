@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.27.1";
+const APP_VERSION = "2.28.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -1378,6 +1378,32 @@ export default function CRM({ userId, onLogout }) {
     return () => { supabase.removeChannel(canal); };
   }, [userId]);
 
+  // El socket de tiempo real de arriba puede desconectarse mientras el celular tiene la app
+  // en segundo plano un buen rato, y al reconectar no reproduce lo que se perdió. Por eso,
+  // cada vez que la app vuelve a primer plano, se pide el dato fresco por las dudas — con las
+  // mismas protecciones de orden que el mensaje de tiempo real (usa el mismo ultimoUpdatedAtRef).
+  useEffect(() => {
+    if (!userId) return;
+    const onVisible = async () => {
+      if (document.visibilityState !== "visible") return;
+      let row = null;
+      try { row = await loadCrmRow(userId); } catch { row = null; }
+      if (!row) return;
+      if (row.updated_at && ultimoUpdatedAtRef.current && row.updated_at <= ultimoUpdatedAtRef.current) return;
+      if (row.updated_at) ultimoUpdatedAtRef.current = row.updated_at;
+      if (row.core && JSON.stringify(row.core) !== JSON.stringify(coreRef.current)) {
+        aplicandoRemotoCore.current = true;
+        setCore(row.core);
+      }
+      if (row.acciones && JSON.stringify(row.acciones) !== JSON.stringify(accionesRef.current)) {
+        aplicandoRemotoAcciones.current = true;
+        setAcciones(row.acciones);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [userId]);
+
   useEffect(() => {
     (async () => {
       let row = null;
@@ -1456,9 +1482,48 @@ export default function CRM({ userId, onLogout }) {
     return hayAccionPendiente || hayTareaConFecha;
   };
 
+  // Busca, en los datos mismos (no en cómo se volvió a la app), el primer aviso que el
+  // servidor ya disparó (avisoEnviado) pero que todavía no se vio dentro de la app
+  // (avisoVistoEnApp) — así el cartel aparece sin importar si volviste tocando la
+  // notificación, desde el selector de apps, o simplemente reabriendo el ícono.
+  const buscarAvisoSinVer = (c, a) => {
+    if (!c || !a) return null;
+    for (const acc of a) {
+      if (acc.estado === "Pendiente" && acc.aviso?.activo && acc.avisoEnviado && !acc.avisoVistoEnApp) {
+        return { origen: "accion", id: acc.id, hiloId: acc.hiloId, texto: acc.notaPlanificada || "Acción programada", fecha: acc.fechaProgramada, hora: acc.horaProgramada };
+      }
+    }
+    for (const h of c.hilos) {
+      if (h.tipo === "tarea" && h.estado === "Activo" && h.aviso?.activo && h.avisoEnviado && !h.avisoVistoEnApp) {
+        return { origen: "tarea", hiloId: h.id, texto: h.titulo, fecha: h.fecha, hora: h.hora };
+      }
+      for (const s of h.subtareas || []) {
+        if (!s.hecha && s.aviso?.activo && s.avisoEnviado && !s.avisoVistoEnApp) {
+          return { origen: "subtarea", hiloId: h.id, subId: s.id, texto: s.texto, fecha: s.fecha, hora: s.hora };
+        }
+      }
+    }
+    return null;
+  };
+
+  const marcarAvisoVisto = (match) => {
+    if (!match) return;
+    if (match.origen === "accion") {
+      setAcciones((prev) => prev.map((a) => (a.id === match.id ? { ...a, avisoVistoEnApp: true } : a)));
+    } else if (match.origen === "tarea") {
+      setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === match.hiloId ? { ...h, avisoVistoEnApp: true } : h)) }));
+    } else if (match.origen === "subtarea") {
+      setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === match.hiloId ? { ...h, subtareas: (h.subtareas || []).map((s) => (s.id === match.subId ? { ...s, avisoVistoEnApp: true } : s)) } : h)) }));
+    }
+  };
+
+  // El aviso tiene prioridad sobre el resumen: mientras haya uno sin ver, este efecto no
+  // marca resumenMostrado y sigue reintentando en cada cambio de core/acciones (incluido el
+  // que dispara marcarAvisoVisto al cerrarlo) hasta que ya no quede ninguno pendiente.
   useEffect(() => {
     if (!core || !acciones) return;
     if (resumenMostrado.current) return;
+    if (buscarAvisoSinVer(core, acciones)) return;
     resumenMostrado.current = true;
     if (hayResumenParaMostrar(core, acciones)) setShowResumenHoy(true);
   }, [core, acciones]);
@@ -1468,24 +1533,22 @@ export default function CRM({ userId, onLogout }) {
   // queda en Calendario como antes.
   useEffect(() => {
     if (tab !== "calendario") return;
+    if (buscarAvisoSinVer(core, acciones)) return;
     if (hayResumenParaMostrar(core, acciones)) setShowResumenHoy(true);
   }, [tab]); // eslint-disable-line
 
-  // Si la app ya está abierta cuando llega un aviso (push), el service worker lo reenvía
-  // acá con postMessage — así se puede mostrar un cartel adentro de la app, no solo la
-  // notificación del sistema operativo.
+  // Cartel de aviso: se recalcula en cada cambio de core/acciones (carga inicial, tiempo
+  // real, o el refresco de "visibilitychange" de arriba), así que aparece sin importar cómo
+  // se volvió a la app. Si ya hay uno mostrándose, no lo pisa hasta que se cierre.
   useEffect(() => {
-    if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
-    const onMessage = (event) => {
-      if (event.data?.tipo === "aviso") setAvisoEnPantalla({ texto: event.data.texto, hiloId: event.data.hiloId, fecha: event.data.fecha, hora: event.data.hora });
-    };
-    navigator.serviceWorker.addEventListener("message", onMessage);
-    return () => navigator.serviceWorker.removeEventListener("message", onMessage);
-  }, []);
+    if (!core || !acciones || avisoEnPantalla) return;
+    const match = buscarAvisoSinVer(core, acciones);
+    if (match) setAvisoEnPantalla({ texto: match.texto, hiloId: match.hiloId, fecha: match.fecha, hora: match.hora, _match: match });
+  }, [core, acciones]); // eslint-disable-line
 
-  // Al tocar una notificación (o abrir la app desde ella), llega con "?abrir=<hiloId>" (y
-  // "texto=" con el mensaje del aviso) en la URL — esto lo lee una sola vez, abre esa ficha,
-  // muestra el mismo cartel que cuando la app ya estaba abierta, y limpia la URL.
+  // Al tocar una notificación (o abrir la app desde ella) llega con "?abrir=<hiloId>" en la
+  // URL — esto lo lee una sola vez, abre esa ficha, y limpia el parámetro. El cartel del
+  // aviso lo pone el efecto de arriba (a partir del dato, no de la URL).
   useEffect(() => {
     if (!core || deepLinkAplicado.current) return;
     const params = new URLSearchParams(window.location.search);
@@ -1493,8 +1556,6 @@ export default function CRM({ userId, onLogout }) {
     if (abrir) {
       deepLinkAplicado.current = true;
       setDetail({ type: "hilo", id: abrir });
-      const texto = params.get("texto");
-      if (texto) setAvisoEnPantalla({ texto, hiloId: abrir, fecha: params.get("fecha") || null, hora: params.get("hora") || null });
       window.history.replaceState({}, "", window.location.pathname);
     }
   }, [core]);
@@ -1674,7 +1735,7 @@ export default function CRM({ userId, onLogout }) {
               <Bell size={17} color="#FFFFFF" />
             </div>
             <button
-              onClick={() => { if (avisoEnPantalla.hiloId) openDetail("hilo", avisoEnPantalla.hiloId); setAvisoEnPantalla(null); }}
+              onClick={() => { marcarAvisoVisto(avisoEnPantalla._match); if (avisoEnPantalla.hiloId) openDetail("hilo", avisoEnPantalla.hiloId); setAvisoEnPantalla(null); }}
               className="flex-1 min-w-0 text-left"
             >
               <p className="text-[10px] font-bold tracking-widest uppercase text-[var(--tema-peligro)]">Aviso</p>
@@ -1683,7 +1744,7 @@ export default function CRM({ userId, onLogout }) {
                 <p className="text-xs font-semibold text-[#6B6352] mt-0.5">{fmtDateHora(avisoEnPantalla.fecha, avisoEnPantalla.hora)}</p>
               )}
             </button>
-            <button onClick={() => setAvisoEnPantalla(null)} aria-label="Cerrar" className="shrink-0 text-[#8A8272]"><X size={16} /></button>
+            <button onClick={() => { marcarAvisoVisto(avisoEnPantalla._match); setAvisoEnPantalla(null); }} aria-label="Cerrar" className="shrink-0 text-[#8A8272]"><X size={16} /></button>
           </div>
         </div>
       )}
@@ -1984,7 +2045,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
       const hora = modoFecha === "especifica" ? horaEspecifica : "";
       const aviso = modoFecha === "especifica" && hora && avisoEspecifica.activo ? avisoEspecifica : null;
       const idNueva = uid("A");
-      nuevas.push({ id: idNueva, hiloId, tipoAccionId: tipoAccionId2, estado: "Pendiente", fechaRealizada: "", fechaProgramada: fecha, horaProgramada: hora, prioridad, notaPlanificada: notas2, notaHecho: "", origenId: idPrimera, destinoId: null, numero: siguienteNumero++, recurrente, repiteCadaN: recurrente ? Number(repiteCadaN) : null, repiteUnidad: recurrente ? repiteUnidad : null, fechaCreacion: hoy, secuencia: Date.now(), aviso, avisoEnviado: false });
+      nuevas.push({ id: idNueva, hiloId, tipoAccionId: tipoAccionId2, estado: "Pendiente", fechaRealizada: "", fechaProgramada: fecha, horaProgramada: hora, prioridad, notaPlanificada: notas2, notaHecho: "", origenId: idPrimera, destinoId: null, numero: siguienteNumero++, recurrente, repiteCadaN: recurrente ? Number(repiteCadaN) : null, repiteUnidad: recurrente ? repiteUnidad : null, fechaCreacion: hoy, secuencia: Date.now(), aviso, avisoEnviado: false, avisoVistoEnApp: false });
       nuevas[0] = { ...nuevas[0], destinoId: idNueva };
     }
     return { nuevas, siguienteNumero };
@@ -2439,7 +2500,7 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
     if (!tituloNuevo.trim()) return;
     const hoy = todayISO();
     const aviso = horaNueva && avisoNuevo.activo ? avisoNuevo : null;
-    const nuevoHilo = { id: uid("H"), titulo: tituloNuevo.trim(), notas: "", fecha: fechaNueva, hora: horaNueva, aviso, avisoEnviado: false, estado: "Activo", fechaCreacion: hoy, tipo: "tarea", columnaTareaId: columnaActiva, hiloRelacionadoId: null, notaCierre: "" };
+    const nuevoHilo = { id: uid("H"), titulo: tituloNuevo.trim(), notas: "", fecha: fechaNueva, hora: horaNueva, aviso, avisoEnviado: false, avisoVistoEnApp: false, estado: "Activo", fechaCreacion: hoy, tipo: "tarea", columnaTareaId: columnaActiva, hiloRelacionadoId: null, notaCierre: "" };
     setCore((prev) => ({ ...prev, hilos: [nuevoHilo, ...prev.hilos] }));
     setTituloNuevo("");
     setFechaNueva("");
@@ -2575,7 +2636,7 @@ function EditarTareaForm({ hilo, core, setCore, onClose }) {
     const avisoCambio = fecha !== (hilo.fecha || "") || hora !== (hilo.hora || "") || JSON.stringify(avisoFinal) !== JSON.stringify(hilo.aviso || null);
     setCore((prev) => ({
       ...prev,
-      hilos: prev.hilos.map((h) => (h.id === hilo.id ? { ...h, titulo: tituloFinal, notas: notas.trim(), fecha, hora, aviso: avisoFinal, avisoEnviado: avisoCambio ? false : !!h.avisoEnviado } : h)),
+      hilos: prev.hilos.map((h) => (h.id === hilo.id ? { ...h, titulo: tituloFinal, notas: notas.trim(), fecha, hora, aviso: avisoFinal, avisoEnviado: avisoCambio ? false : !!h.avisoEnviado, avisoVistoEnApp: avisoCambio ? false : !!h.avisoVistoEnApp } : h)),
     }));
     onClose();
   };
@@ -2606,7 +2667,7 @@ function SubtareaForm({ initial, onSave, onSaveYNueva, onClose }) {
   const datosActuales = () => {
     const avisoFinal = hora && aviso.activo ? aviso : null;
     const avisoCambio = fecha !== (initial?.fecha || "") || hora !== (initial?.hora || "") || JSON.stringify(avisoFinal) !== JSON.stringify(initial?.aviso || null);
-    return { texto: texto.trim(), fecha: fecha || null, hora: hora || null, aviso: avisoFinal, avisoEnviado: avisoCambio ? false : !!initial?.avisoEnviado, nota: nota.trim() || null };
+    return { texto: texto.trim(), fecha: fecha || null, hora: hora || null, aviso: avisoFinal, avisoEnviado: avisoCambio ? false : !!initial?.avisoEnviado, avisoVistoEnApp: avisoCambio ? false : !!initial?.avisoVistoEnApp, nota: nota.trim() || null };
   };
 
   const guardar = () => {
@@ -5386,7 +5447,7 @@ function AgregarTareaAlHiloForm({ core, hiloClienteId, personasDelHilo, onVincul
     if (!titulo.trim()) return;
     const nuevoHilo = {
       id: uid("H"), titulo: titulo.trim(), notas: notas.trim(), fecha, hora,
-      aviso: hora && aviso.activo ? aviso : null, avisoEnviado: false,
+      aviso: hora && aviso.activo ? aviso : null, avisoEnviado: false, avisoVistoEnApp: false,
       estado: "Activo", fechaCreacion: todayISO(), tipo: "tarea",
       columnaTareaId: columnaId || null, hiloRelacionadoId: hiloClienteId, notaCierre: "",
     };
@@ -5475,7 +5536,7 @@ function AgregarTareaAEntidadForm({ core, tareasExcluidas, onVincular, onCrear, 
     if (!titulo.trim()) return;
     const nuevoHilo = {
       id: uid("H"), titulo: titulo.trim(), notas: notas.trim(), fecha, hora,
-      aviso: hora && aviso.activo ? aviso : null, avisoEnviado: false,
+      aviso: hora && aviso.activo ? aviso : null, avisoEnviado: false, avisoVistoEnApp: false,
       estado: "Activo", fechaCreacion: todayISO(), tipo: "tarea",
       columnaTareaId: columnaId || null, hiloRelacionadoId: null, notaCierre: "",
     };
@@ -5594,7 +5655,7 @@ function AvanzarHiloForm({ hilo, pendienteActual, core, setCore, acciones, setAc
         const idNueva = uid("A");
         // Hereda la columna del Kanban de la acción que se acaba de completar, para que el
         // hilo no se vaya a "Sin columna" al continuarlo (ver AvanzarHiloForm).
-        next = [{ id: idNueva, hiloId: hilo.id, tipoAccionId: tipoAccionId2, estado: "Pendiente", fechaRealizada: "", fechaProgramada: fecha, horaProgramada: hora, prioridad, notaPlanificada: notas2, notaHecho: "", origenId: idCompletada, destinoId: null, numero: siguienteNumero++, recurrente, repiteCadaN: recurrente ? Number(repiteCadaN) : null, repiteUnidad: recurrente ? repiteUnidad : null, fechaCreacion: hoy, secuencia: Date.now() + 1, columnaId: pendienteActual?.columnaId ?? null, aviso, avisoEnviado: false }, ...next];
+        next = [{ id: idNueva, hiloId: hilo.id, tipoAccionId: tipoAccionId2, estado: "Pendiente", fechaRealizada: "", fechaProgramada: fecha, horaProgramada: hora, prioridad, notaPlanificada: notas2, notaHecho: "", origenId: idCompletada, destinoId: null, numero: siguienteNumero++, recurrente, repiteCadaN: recurrente ? Number(repiteCadaN) : null, repiteUnidad: recurrente ? repiteUnidad : null, fechaCreacion: hoy, secuencia: Date.now() + 1, columnaId: pendienteActual?.columnaId ?? null, aviso, avisoEnviado: false, avisoVistoEnApp: false }, ...next];
         next = next.map((a) => (a.id === idCompletada ? { ...a, destinoId: idNueva } : a));
       }
       return next;
@@ -5759,13 +5820,13 @@ function EditAccionForm({ accion, core, setCore, otrasAccionesDelHilo = [], onCl
     if (yaHayPendiente) return;
     if (estado === "Pendiente" && inhabil && !confirmar) { setConfirmar(true); return; }
     if (estado === "Realizada") {
-      onSave({ tipoAccionId, estado, fechaRealizada, fechaProgramada: "", horaProgramada: "", prioridad: "", notaPlanificada, notaHecho, recurrente: false, repiteCadaN: null, repiteUnidad: null, secuencia: accion.secuencia || Date.now(), aviso: null, avisoEnviado: false });
+      onSave({ tipoAccionId, estado, fechaRealizada, fechaProgramada: "", horaProgramada: "", prioridad: "", notaPlanificada, notaHecho, recurrente: false, repiteCadaN: null, repiteUnidad: null, secuencia: accion.secuencia || Date.now(), aviso: null, avisoEnviado: false, avisoVistoEnApp: false });
     } else {
       const avisoFinal = horaProgramada && aviso.activo ? aviso : null;
       // Si fecha/hora/aviso no cambiaron, se conserva si ya se había enviado (para no
       // duplicar el aviso); si cambió algo de eso, se resetea para que pueda volver a avisar.
       const avisoCambio = fechaProgramada !== (accion.fechaProgramada || "") || horaProgramada !== (accion.horaProgramada || "") || JSON.stringify(avisoFinal) !== JSON.stringify(accion.aviso || null);
-      onSave({ tipoAccionId, estado, fechaRealizada: "", fechaProgramada, horaProgramada, prioridad, notaPlanificada, notaHecho, recurrente, repiteCadaN: recurrente ? Number(repiteCadaN) : null, repiteUnidad: recurrente ? repiteUnidad : null, aviso: avisoFinal, avisoEnviado: avisoCambio ? false : !!accion.avisoEnviado });
+      onSave({ tipoAccionId, estado, fechaRealizada: "", fechaProgramada, horaProgramada, prioridad, notaPlanificada, notaHecho, recurrente, repiteCadaN: recurrente ? Number(repiteCadaN) : null, repiteUnidad: recurrente ? repiteUnidad : null, aviso: avisoFinal, avisoEnviado: avisoCambio ? false : !!accion.avisoEnviado, avisoVistoEnApp: avisoCambio ? false : !!accion.avisoVistoEnApp });
     }
   };
 
