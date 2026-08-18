@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.31.0";
+const APP_VERSION = "2.31.1";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -1035,7 +1035,7 @@ function TextoConMenciones({ texto, onOpen }) {
 // letras se abre una lista de Personas/Empresas/Obras que coincidan; al elegir una se inserta
 // una mención @[Nombre](Tipo:id) en el texto, que TextoConMenciones muestra como enlace
 // donde sea que ese texto se lea después.
-function CampoConMenciones({ core, value, onChange, multiline, rows, placeholder, autoFocus, className }) {
+function CampoConMenciones({ core, value, onChange, multiline, rows, placeholder, autoFocus, className, onKeyDown }) {
   const [query, setQuery] = useState(null); // null = no se está armando una mención
   const [triggerPos, setTriggerPos] = useState(null);
   const wrapRef = useRef(null);
@@ -1061,6 +1061,10 @@ function CampoConMenciones({ core, value, onChange, multiline, rows, placeholder
     const antes = texto.slice(0, cursor);
     const arroba = antes.lastIndexOf("@");
     if (arroba === -1) { setQuery(null); return; }
+    // Solo cuenta como mención si el "@" arranca el campo o tiene un espacio/salto de línea
+    // justo antes — así escribir un email ("hugo@gmail.com") no dispara el buscador.
+    const anterior = antes[arroba - 1];
+    if (anterior !== undefined && !/\s/.test(anterior)) { setQuery(null); return; }
     const entreArrobaYCursor = antes.slice(arroba + 1);
     if (/[\s@]/.test(entreArrobaYCursor)) { setQuery(null); return; }
     setTriggerPos(arroba);
@@ -1102,6 +1106,7 @@ function CampoConMenciones({ core, value, onChange, multiline, rows, placeholder
         value={value}
         onChange={onChangeTexto}
         onClick={(e) => detectarMencion(value, e.target.selectionStart)}
+        onKeyDown={onKeyDown}
         onKeyUp={(e) => { if (e.key === "Escape") setQuery(null); else detectarMencion(value, e.target.selectionStart); }}
       />
       {query !== null && (
@@ -2645,13 +2650,15 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
     <div className="sticky top-0 z-10 bg-[#F7F5F0]">
       <div className="bg-white border border-[#E4DECF] rounded-sm p-3 mb-3">
         <div className="flex gap-2">
-          <input
-            value={tituloNuevo}
-            onChange={(e) => setTituloNuevo(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && crearTareaRapida()}
-            placeholder="+ Nueva tarea..."
-            className={`${inputCls} flex-1`}
-          />
+          <div className="flex-1 min-w-0">
+            <CampoConMenciones
+              core={core}
+              value={tituloNuevo}
+              onChange={setTituloNuevo}
+              onKeyDown={(e) => e.key === "Enter" && crearTareaRapida()}
+              placeholder="+ Nueva tarea..."
+            />
+          </div>
           <button
             onClick={() => setMostrarFecha((v) => !v)}
             aria-label="Fecha y hora"
