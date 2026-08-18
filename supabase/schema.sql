@@ -94,29 +94,82 @@ create policy "Users can delete own adjuntos"
 -- ---------------------------------------------------------------------------
 -- Avisos (notificaciones push) de Seguimientos y Tareas.
 --
--- INSTRUCCIONES — hay 3 pasos, en orden:
+-- INSTRUCTIVO PASO A PASO PARA ACTIVARLO (una sola vez). No hace falta saber
+-- de sistemas, son todo clics — seguí los pasos en orden, del 1 al 6.
 --
--- PASO 1) Variables de entorno. Generá y agregá estas 3 en tu hosting (donde
--- ya tenés NEXT_PUBLIC_SUPABASE_URL, GOOGLE_CLIENT_SECRET, etc.) y en tu
--- .env.local si probás en tu máquina:
---   NEXT_PUBLIC_VAPID_PUBLIC_KEY = BGEBlLvvShveL6910kwVed5mHBt8OagSF3rVixkgECnq_Y3Hz0HHWC4fmQJ_VTRNMiEUhkpYl4z6LHlpnDYySz8
---   VAPID_PRIVATE_KEY            = 1MbfFZCX5cenK5k6A0OagpEi-lVPW8_8RrAjexUZ6Fg
---   AVISOS_CRON_SECRET           = T5M6Ed3DIUdCeShADTcQiYwzyPJVAEe1
--- (Ya generadas y listas para usar — son solo para esta app, no hace falta
--- generarlas de nuevo. VAPID_PRIVATE_KEY y AVISOS_CRON_SECRET son secretos,
--- nunca deben ir con el prefijo NEXT_PUBLIC_.)
+-- ── PASO 1: conseguir el dominio de la app en Vercel ────────────────────────
+-- 1. Entrá a vercel.com e iniciá sesión con tu cuenta.
+-- 2. Hacé clic en el proyecto de este CRM (la lista de proyectos aparece
+--    apenas entrás).
+-- 3. Arriba de la pantalla del proyecto vas a ver un link que termina en
+--    ".vercel.app" (por ejemplo "mi-crm.vercel.app"). Copiá o anotá esa
+--    parte — la vas a necesitar en el Paso 4.
 --
--- PASO 2) Correr este bloque SQL (desde "create table push_subscriptions"
--- hasta el final del archivo) una sola vez en el SQL Editor de Supabase.
--- Crea la tabla donde se guarda qué dispositivos pueden recibir avisos, y
--- programa una tarea que corre sola cada 5 minutos revisando si hay algo
--- para avisar.
+-- ── PASO 2: cargar las 3 claves en Vercel ───────────────────────────────────
+-- 1. Todavía dentro del proyecto en Vercel, hacé clic en la pestaña
+--    "Settings" (arriba).
+-- 2. En el menú de la izquierda, hacé clic en "Environment Variables".
+-- 3. Vas a ver un formulario con dos campos: "Key" (nombre) y "Value"
+--    (valor). Cargá estas 3, una por una — en cada una: pegás el nombre en
+--    "Key", el valor en "Value", dejás tildados los 3 entornos (Production,
+--    Preview, Development) y hacés clic en "Save". Repetir 3 veces:
 --
--- PASO 3) Antes de correr el bloque, reemplazá TU-DOMINIO más abajo (dentro
--- de la función cron.schedule) por el dominio real donde está publicada la
--- app (ej: "mi-crm.vercel.app"), sin "https://" en el resto de la URL ya
--- puesto. Y reemplazá también el secreto en el header Authorization por el
--- mismo valor que pusiste en AVISOS_CRON_SECRET en el paso 1.
+--    Key:   NEXT_PUBLIC_VAPID_PUBLIC_KEY
+--    Value: BGEBlLvvShveL6910kwVed5mHBt8OagSF3rVixkgECnq_Y3Hz0HHWC4fmQJ_VTRNMiEUhkpYl4z6LHlpnDYySz8
+--
+--    Key:   VAPID_PRIVATE_KEY
+--    Value: 1MbfFZCX5cenK5k6A0OagpEi-lVPW8_8RrAjexUZ6Fg
+--
+--    Key:   AVISOS_CRON_SECRET
+--    Value: T5M6Ed3DIUdCeShADTcQiYwzyPJVAEe1
+--
+-- (Estos 3 valores ya están generados y listos para usar tal cual están acá
+-- arriba — no hay que inventarlos ni generarlos de nuevo vos.)
+--
+-- ── PASO 3: volver a publicar la app para que tome las claves nuevas ───────
+-- 1. En el mismo proyecto de Vercel, pestaña "Deployments".
+-- 2. En el despliegue de más arriba (el más reciente), hacé clic en los 3
+--    puntitos "..." de la derecha → "Redeploy" → confirmá con el botón
+--    "Redeploy" del cuadro que aparece.
+-- 3. Esperá a que diga "Ready" (un par de minutos).
+--
+-- ── PASO 4: correr el SQL en Supabase ───────────────────────────────────────
+-- 1. Entrá a supabase.com, elegí tu proyecto de este CRM.
+-- 2. En el menú de la izquierda, "SQL Editor".
+-- 3. Botón "New query".
+-- 4. Copiá y pegá el bloque de SQL que sigue después de este comentario
+--    (desde "create table if not exists public.push_subscriptions" hasta
+--    el final del archivo).
+-- 5. ANTES de ejecutarlo: buscá en el texto pegado la palabra "TU-DOMINIO"
+--    (aparece una sola vez, dentro de una línea que dice "url :=") y
+--    reemplazala por el dominio que copiaste en el Paso 1 — sin sacar las
+--    comillas ni el "https://" que ya está puesto. Por ejemplo, si tu
+--    dominio es "mi-crm.vercel.app", tiene que quedar así:
+--      url := 'https://mi-crm.vercel.app/api/avisos/check',
+-- 6. Hacé clic en "Run" (o Ctrl+Enter / Cmd+Enter).
+--
+-- ── PASO 5: activar los avisos en cada celular ──────────────────────────────
+-- 1. Abrí la app desde el ícono que tenés instalado en la pantalla de
+--    inicio (no desde el navegador suelto).
+-- 2. Menú ☰ (arriba) → Configuración.
+-- 3. Buscá la sección "Avisos" y tocá "Activar avisos en este dispositivo".
+-- 4. El celular te va a pedir permiso para mandar notificaciones — tocá
+--    "Permitir".
+-- 5. Repetí este Paso 5 en cada celular/dispositivo donde quieras recibir
+--    avisos — se activa por dispositivo, no una sola vez para toda la
+--    cuenta.
+--
+-- ── PASO 6: probarlo ─────────────────────────────────────────────────────
+-- 1. Cargá o editá un seguimiento o tarea con fecha y hora de acá a 10-15
+--    minutos.
+-- 2. Tildá el checkbox "Avisar" y dejá "30 minutos antes" o poné algo
+--    chico, tipo "5 minutos antes".
+-- 3. Guardá y esperá — la revisión corre sola cada 5 minutos, así que
+--    puede tardar hasta 5 minutos en aparecer el aviso aunque ya haya
+--    llegado el momento.
+--
+-- Si algo no funciona en cualquiera de estos pasos, avisale a Claude con el
+-- número de paso y lo que ves en pantalla.
 
 create table if not exists public.push_subscriptions (
   id uuid primary key default gen_random_uuid(),
