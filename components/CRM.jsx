@@ -6,7 +6,7 @@ import { HexColorPicker } from "react-colorful";
 import {
   Plus, X, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Search, Settings, Users, Building2,
   HardHat, CalendarClock, Trash2, Pencil, Check, AlertTriangle,
-  Tag, Star, Clock3, ListChecks, Repeat, ArrowLeft, ArrowDownAZ, ArrowUpAZ, GitBranch,
+  Tag, Star, ListChecks, Repeat, ArrowLeft, ArrowDownAZ, ArrowUpAZ, GitBranch,
   BarChart3, FileSpreadsheet, Download, Trello, GripVertical, LogOut, Menu, Tags, FolderKanban, Layers,
   FileText, Image as ImageIcon, Bell, Link2, CheckSquare, Square,
 } from "lucide-react";
@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.30.1";
+const APP_VERSION = "2.30.2";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -756,25 +756,22 @@ const inputCls = "w-full bg-white border border-[#D8D2C4] rounded-sm px-3 py-2 t
 const AVISO_DEFAULT = { activo: false, cantidad: 30, unidad: "minutos" };
 
 function SelectorFechaHora({ fecha, hora, onFecha, onHora, aviso, onAviso, labelFecha = "Fecha" }) {
-  const [editandoHora, setEditandoHora] = useState(false);
-  const [horaTemp, setHoraTemp] = useState(hora || "");
-  const timeRef = useRef(null);
+  const horaRef = useRef(null);
   const avisoActual = aviso || AVISO_DEFAULT;
 
-  const abrirHora = () => { setHoraTemp(hora || ""); setEditandoHora(true); };
-  const aceptarHora = () => { onHora(horaTemp); timeRef.current?.blur(); setEditandoHora(false); };
-  // Cancelar deja la hora vacía siempre, sin importar qué mostraba el selector al abrirse
-  // (que arranca precargado con la hora actual solo para que "Aceptar" sin tocar nada la
-  // conserve). Si había un aviso activo, se apaga junto con la hora.
-  const cancelarHora = () => { onHora(""); setEditandoHora(false); onAviso?.({ ...avisoActual, activo: false }); };
-  const quitarHora = () => { onHora(""); setEditandoHora(false); onAviso?.({ ...avisoActual, activo: false }); };
+  const quitarHora = () => { onHora(""); onAviso?.({ ...avisoActual, activo: false }); };
 
-  // Al cargar/cambiar la fecha pasa siempre al selector de hora (tenga o no una hora previa),
-  // precargado con la hora actual para que aceptar sin tocar nada la deje como estaba.
+  // Al cargar/cambiar la fecha, pasa el foco al campo de hora — mismo campo nativo que el de
+  // fecha, sin pantalla intermedia de aceptar/cancelar.
   const cambiarFecha = (e) => {
     const v = e.target.value;
     onFecha(v);
-    if (v) { setHoraTemp(hora || ""); setEditandoHora(true); }
+    if (v) {
+      requestAnimationFrame(() => {
+        try { horaRef.current?.showPicker?.(); } catch { /* no soportado en este navegador */ }
+        horaRef.current?.focus();
+      });
+    }
   };
 
   return (
@@ -782,28 +779,12 @@ function SelectorFechaHora({ fecha, hora, onFecha, onHora, aviso, onAviso, label
       <Field label={labelFecha}>
         <div className="flex gap-2 items-center">
           <input type="date" className={`${inputCls} flex-1 basis-0`} value={fecha} onChange={cambiarFecha} />
-          <button
-            type="button"
-            onClick={abrirHora}
-            className={`flex-1 basis-0 flex items-center justify-center gap-1 rounded-sm border border-[#D8D2C4] px-2.5 py-2 ${hora ? "text-sm font-semibold text-[#2A2118]" : "text-xs font-bold text-[var(--tema-vinculo)]"}`}
-          >
-            <Clock3 size={13} className={hora ? "text-[#8A8272]" : ""} /> {hora || "Hora"}
-          </button>
+          <input ref={horaRef} type="time" className={`${inputCls} flex-1 basis-0`} value={hora || ""} onChange={(e) => onHora(e.target.value)} />
           {hora && <IconBtn label="Quitar hora" danger onClick={quitarHora}><X size={14} /></IconBtn>}
         </div>
       </Field>
 
-      {editandoHora && (
-        <div className="mt-1.5">
-          <input ref={timeRef} type="time" autoFocus className={inputCls} value={horaTemp} onChange={(e) => setHoraTemp(e.target.value)} />
-          <div className="flex gap-2 mt-1.5">
-            <button type="button" onClick={cancelarHora} className="flex-1 border border-[#D8D2C4] rounded-sm py-1.5 text-xs font-bold text-[#6B6352]">Cancelar</button>
-            <button type="button" onClick={aceptarHora} className="flex-1 bg-[var(--tema-acento)] text-[#2A2118] rounded-sm py-1.5 text-xs font-bold">Aceptar</button>
-          </div>
-        </div>
-      )}
-
-      {hora && onAviso && (
+      {onAviso && (
         <div className="mt-2 flex items-center gap-2 flex-wrap">
           <label className="flex items-center gap-1.5 text-sm font-bold text-[#2A2118] shrink-0">
             <input type="checkbox" checked={avisoActual.activo} onChange={(e) => onAviso({ ...avisoActual, activo: e.target.checked })} /> Avisar
