@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.30.0";
+const APP_VERSION = "2.30.1";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -763,26 +763,29 @@ function SelectorFechaHora({ fecha, hora, onFecha, onHora, aviso, onAviso, label
 
   const abrirHora = () => { setHoraTemp(hora || ""); setEditandoHora(true); };
   const aceptarHora = () => { onHora(horaTemp); timeRef.current?.blur(); setEditandoHora(false); };
-  const cancelarHora = () => setEditandoHora(false);
+  // Cancelar deja la hora vacía siempre, sin importar qué mostraba el selector al abrirse
+  // (que arranca precargado con la hora actual solo para que "Aceptar" sin tocar nada la
+  // conserve). Si había un aviso activo, se apaga junto con la hora.
+  const cancelarHora = () => { onHora(""); setEditandoHora(false); onAviso?.({ ...avisoActual, activo: false }); };
   const quitarHora = () => { onHora(""); setEditandoHora(false); onAviso?.({ ...avisoActual, activo: false }); };
 
-  // Al cargar la fecha (todavía sin hora), pasa directo al selector de hora en vez de tener
-  // que tocar "+ Hora" aparte. Si ya había una hora cargada, cambiar la fecha no lo reabre.
+  // Al cargar/cambiar la fecha pasa siempre al selector de hora (tenga o no una hora previa),
+  // precargado con la hora actual para que aceptar sin tocar nada la deje como estaba.
   const cambiarFecha = (e) => {
     const v = e.target.value;
     onFecha(v);
-    if (v && !hora) { setHoraTemp(""); setEditandoHora(true); }
+    if (v) { setHoraTemp(hora || ""); setEditandoHora(true); }
   };
 
   return (
     <div className="mb-3">
       <Field label={labelFecha}>
         <div className="flex gap-2 items-center">
-          <input type="date" className={`${inputCls} flex-1`} value={fecha} onChange={cambiarFecha} />
+          <input type="date" className={`${inputCls} flex-1 basis-0`} value={fecha} onChange={cambiarFecha} />
           <button
             type="button"
             onClick={abrirHora}
-            className={`shrink-0 flex items-center gap-1 rounded-sm border border-[#D8D2C4] px-2.5 py-2 ${hora ? "text-sm font-semibold text-[#2A2118]" : "text-xs font-bold text-[var(--tema-vinculo)]"}`}
+            className={`flex-1 basis-0 flex items-center justify-center gap-1 rounded-sm border border-[#D8D2C4] px-2.5 py-2 ${hora ? "text-sm font-semibold text-[#2A2118]" : "text-xs font-bold text-[var(--tema-vinculo)]"}`}
           >
             <Clock3 size={13} className={hora ? "text-[#8A8272]" : ""} /> {hora || "Hora"}
           </button>
@@ -805,26 +808,24 @@ function SelectorFechaHora({ fecha, hora, onFecha, onHora, aviso, onAviso, label
           <label className="flex items-center gap-1.5 text-sm font-bold text-[#2A2118] shrink-0">
             <input type="checkbox" checked={avisoActual.activo} onChange={(e) => onAviso({ ...avisoActual, activo: e.target.checked })} /> Avisar
           </label>
-          {avisoActual.activo && (
-            <>
-              <input
-                type="number"
-                min={1}
-                className="w-16 bg-white border border-[#D8D2C4] rounded-sm px-2 py-2 text-sm text-[#2A2118] text-center focus:outline-none focus:ring-2 focus:ring-[var(--tema-acento)] focus:border-transparent"
-                value={avisoActual.cantidad}
-                onChange={(e) => onAviso({ ...avisoActual, cantidad: e.target.value })}
-              />
-              <select
-                className="flex-1 bg-white border border-[#D8D2C4] rounded-sm px-2 py-2 text-sm text-[#2A2118] focus:outline-none focus:ring-2 focus:ring-[var(--tema-acento)] focus:border-transparent"
-                value={avisoActual.unidad}
-                onChange={(e) => onAviso({ ...avisoActual, unidad: e.target.value })}
-              >
-                <option value="minutos">minutos antes</option>
-                <option value="horas">horas antes</option>
-                <option value="dias">días antes</option>
-              </select>
-            </>
-          )}
+          <input
+            type="number"
+            min={1}
+            disabled={!avisoActual.activo}
+            className="w-16 bg-white border border-[#D8D2C4] rounded-sm px-2 py-2 text-sm text-[#2A2118] text-center focus:outline-none focus:ring-2 focus:ring-[var(--tema-acento)] focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+            value={avisoActual.cantidad}
+            onChange={(e) => onAviso({ ...avisoActual, cantidad: e.target.value })}
+          />
+          <select
+            disabled={!avisoActual.activo}
+            className="flex-1 bg-white border border-[#D8D2C4] rounded-sm px-2 py-2 text-sm text-[#2A2118] focus:outline-none focus:ring-2 focus:ring-[var(--tema-acento)] focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+            value={avisoActual.unidad}
+            onChange={(e) => onAviso({ ...avisoActual, unidad: e.target.value })}
+          >
+            <option value="minutos">minutos antes</option>
+            <option value="horas">horas antes</option>
+            <option value="dias">días antes</option>
+          </select>
         </div>
       )}
     </div>
