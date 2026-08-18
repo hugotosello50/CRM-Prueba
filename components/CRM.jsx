@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.30.2";
+const APP_VERSION = "2.31.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -196,7 +196,7 @@ const seedCore = () => ({
     { id: uid("et"), etiquetaId: "ET03", entidadTipo: "Empresa", entidadId: "E001" },
     { id: uid("et"), etiquetaId: "ET02", entidadTipo: "Obra", entidadId: "O001" },
   ],
-  parametros: { umbralDiaLleno: 8, diasHabiles: [1, 2, 3, 4, 5], fechasNoHabiles: [], diasUrgente: 3, diasProximos: 7, googleContactsLabel: "CRM", tituloApp: "Seguimiento comercial", nombreSinColumnaSeguimientos: "Sin columna", nombreSinColumnaTareas: "Sin columna" },
+  parametros: { umbralDiaLleno: 8, diasHabiles: [1, 2, 3, 4, 5], fechasNoHabiles: [], diasUrgente: 3, diasProximos: 7, googleContactsLabel: "CRM", tituloApp: "Seguimiento comercial", nombreSinColumnaSeguimientos: "Sin columna", nombreSinColumnaTareas: "Sin columna", formatoHora: "24" },
   tema: { ...TEMA_DEFAULT },
   kanbanColumnas: [
     { id: "K1", nombre: "Por hacer", orden: 0 },
@@ -307,7 +307,7 @@ function normalizeCore(c) {
   if (!Array.isArray(out.vinculos)) out.vinculos = [];
   // Unifica todo al sistema de vínculos (migra las tablas viejas si todavía están).
   migrarAVinculos(out);
-  out.parametros = { umbralDiaLleno: 8, diasHabiles: [1, 2, 3, 4, 5], fechasNoHabiles: [], diasUrgente: 3, diasProximos: 7, googleContactsLabel: "CRM", tituloApp: "Seguimiento comercial", nombreSinColumnaSeguimientos: "Sin columna", nombreSinColumnaTareas: "Sin columna", ...(out.parametros || {}) };
+  out.parametros = { umbralDiaLleno: 8, diasHabiles: [1, 2, 3, 4, 5], fechasNoHabiles: [], diasUrgente: 3, diasProximos: 7, googleContactsLabel: "CRM", tituloApp: "Seguimiento comercial", nombreSinColumnaSeguimientos: "Sin columna", nombreSinColumnaTareas: "Sin columna", formatoHora: "24", ...(out.parametros || {}) };
   out.tema = { ...TEMA_DEFAULT, ...(out.tema || {}) };
   if (!Array.isArray(out.kanbanColumnas)) out.kanbanColumnas = seed.kanbanColumnas;
   if (!Array.isArray(out.kanbanColumnasTareas)) out.kanbanColumnasTareas = seed.kanbanColumnasTareas;
@@ -379,8 +379,20 @@ function fmtDate(iso) {
   const [y, m, d] = iso.split("-");
   return `${d}/${m}/${y}`;
 }
-function fmtDateHora(iso, hora) {
-  return fmtDate(iso) + (hora ? ` · ${hora} hs` : "");
+// formato: "24" (por defecto, "14:30 hs") o "12" ("2:30 pm").
+function fmtHora(hora, formato) {
+  if (!hora) return "";
+  if (formato === "12") {
+    const [hStr, m] = hora.split(":");
+    let h = parseInt(hStr, 10);
+    const ampm = h >= 12 ? "pm" : "am";
+    h = h % 12 || 12;
+    return `${h}:${m} ${ampm}`;
+  }
+  return `${hora} hs`;
+}
+function fmtDateHora(iso, hora, formato) {
+  return fmtDate(iso) + (hora ? ` · ${fmtHora(hora, formato)}` : "");
 }
 // Ordena acciones realizadas de más reciente a más antigua. Si dos comparten fecha,
 // desempata por el número de secuencia asignado al crearlas (orden real en que ocurrieron).
@@ -1857,7 +1869,7 @@ export default function CRM({ userId, onLogout }) {
               <p className="text-[10px] font-bold tracking-widest uppercase text-[var(--tema-peligro)]">Aviso</p>
               <p className="text-sm font-bold text-[#2A2118] hover:underline">{avisoEnPantalla.texto}</p>
               {(avisoEnPantalla.fecha || avisoEnPantalla.hora) && (
-                <p className="text-xs font-semibold text-[#6B6352] mt-0.5">{fmtDateHora(avisoEnPantalla.fecha, avisoEnPantalla.hora)}</p>
+                <p className="text-xs font-semibold text-[#6B6352] mt-0.5">{fmtDateHora(avisoEnPantalla.fecha, avisoEnPantalla.hora, core.parametros.formatoHora)}</p>
               )}
             </button>
             <button onClick={() => { marcarAvisoVisto(avisoEnPantalla._match); setAvisoEnPantalla(null); }} aria-label="Cerrar" className="shrink-0 text-[#8A8272]"><X size={16} /></button>
@@ -3825,7 +3837,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
             {(s.fecha || s.hora || s.nota) && (
               <p className="text-[10px] text-[#8A8272] mt-0.5 flex items-center flex-wrap gap-1">
                 <span>
-                  {s.fecha ? fmtDateHora(s.fecha, s.hora) : (s.hora ? `${s.hora} hs` : "")}
+                  {s.fecha ? fmtDateHora(s.fecha, s.hora, core.parametros.formatoHora) : fmtHora(s.hora, core.parametros.formatoHora)}
                   {(s.fecha || s.hora) && s.nota && " · "}
                   {s.nota}
                 </span>
@@ -3974,7 +3986,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
             <p className="text-base font-extrabold text-[#2A2118] truncate" title={textoPlanoDeMenciones(hilo.titulo)}><TextoConMenciones texto={hilo.titulo} onOpen={onOpen} /></p>
             {(hilo.fecha || hilo.hora) && (
               <p className="text-[10px] text-[#8A8272] mt-0.5 flex items-center gap-1">
-                {hilo.fecha ? fmtDateHora(hilo.fecha, hilo.hora) : `${hilo.hora} hs`}
+                {hilo.fecha ? fmtDateHora(hilo.fecha, hilo.hora, core.parametros.formatoHora) : fmtHora(hilo.hora, core.parametros.formatoHora)}
                 {hilo.aviso?.activo && <Bell size={10} className="shrink-0 text-[var(--tema-vinculo)]" aria-label="Tiene aviso programado" />}
               </p>
             )}
@@ -4994,7 +5006,7 @@ function HiloRow({ hilo, core, acciones, onOpen }) {
         </span>
         {pendiente ? (
           <span className="text-xs text-[#6B6352] flex items-center gap-1">
-            Próxima: {tipoPendiente?.nombre} · {fmtDateHora(pendiente.fechaProgramada, pendiente.horaProgramada)}
+            Próxima: {tipoPendiente?.nombre} · {fmtDateHora(pendiente.fechaProgramada, pendiente.horaProgramada, core.parametros.formatoHora)}
             {pendiente.aviso?.activo && <Bell size={11} className="shrink-0 text-[var(--tema-vinculo)]" aria-label="Tiene aviso programado" />}
           </span>
         ) : (
@@ -7794,6 +7806,7 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
   const setDiasProximos = (v) => setCore((prev) => ({ ...prev, parametros: { ...prev.parametros, diasProximos: Math.max(1, Number(v) || 1) } }));
   const setGoogleContactsLabel = (v) => setCore((prev) => ({ ...prev, parametros: { ...prev.parametros, googleContactsLabel: v } }));
   const setTituloApp = (v) => setCore((prev) => ({ ...prev, parametros: { ...prev.parametros, tituloApp: v } }));
+  const setFormatoHora = (v) => setCore((prev) => ({ ...prev, parametros: { ...prev.parametros, formatoHora: v } }));
 
   const setTemaColor = (clave, valor) => setCore((prev) => ({ ...prev, tema: { ...prev.tema, [clave]: valor } }));
   const restablecerTema = () => setCore((prev) => ({ ...prev, tema: { ...TEMA_DEFAULT } }));
@@ -7857,6 +7870,25 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
             <Field label="Título de la app">
               <input className={inputCls} value={core.parametros.tituloApp ?? "Seguimiento comercial"} onChange={(e) => setTituloApp(e.target.value)} placeholder="Seguimiento comercial" />
             </Field>
+          </div>
+
+          <div className="bg-white border border-[#E4DECF] rounded-sm p-4">
+            <p className="text-[11px] font-bold tracking-wide text-[#6B6352] mb-2">Formato de hora</p>
+            <div className="flex gap-1.5">
+              <button
+                type="button"
+                onClick={() => setFormatoHora("24")}
+                style={(core.parametros.formatoHora ?? "24") === "24" ? { backgroundColor: "#2A2F36", color: "#FFFFFF" } : { backgroundColor: "#E7E2D8", color: "#6B6352" }}
+                className="flex-1 py-2 rounded-sm text-xs font-bold"
+              >24 hs (14:30)</button>
+              <button
+                type="button"
+                onClick={() => setFormatoHora("12")}
+                style={core.parametros.formatoHora === "12" ? { backgroundColor: "#2A2F36", color: "#FFFFFF" } : { backgroundColor: "#E7E2D8", color: "#6B6352" }}
+                className="flex-1 py-2 rounded-sm text-xs font-bold"
+              >12 hs (2:30 pm)</button>
+            </div>
+            <p className="text-xs text-[#8A8272] mt-2">Se aplica a cómo se muestra la hora en toda la app. El campo para cargarla al editar sigue el formato del dispositivo, eso no lo controla la app.</p>
           </div>
 
           <div className="bg-white border border-[#E4DECF] rounded-sm p-4">
