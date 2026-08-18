@@ -8,14 +8,14 @@ import {
   HardHat, CalendarClock, Trash2, Pencil, Check, AlertTriangle,
   Tag, Star, Clock3, ListChecks, Repeat, ArrowLeft, ArrowDownAZ, ArrowUpAZ, GitBranch,
   BarChart3, FileSpreadsheet, Download, Trello, GripVertical, LogOut, Menu, Tags, FolderKanban, Layers,
-  FileText, Image as ImageIcon, Bell,
+  FileText, Image as ImageIcon, Bell, Link2,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.28.0";
+const APP_VERSION = "2.29.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -45,6 +45,7 @@ function formatBytes(bytes) {
 }
 
 function IconoAdjunto({ tipo, size = 14, className }) {
+  if (tipo === "link") return <Link2 size={size} className={className} />;
   const cat = ADJUNTO_ICONOS[tipo];
   if (cat === "imagen") return <ImageIcon size={size} className={className} />;
   if (cat === "excel") return <FileSpreadsheet size={size} className={className} />;
@@ -986,8 +987,35 @@ function textoPlanoDeMenciones(texto) {
   return (texto || "").replace(/@\[([^\]]+)\]\([^)]+\)/g, "@$1");
 }
 
+// Encuentra URLs sueltas ("https://...") dentro de un fragmento de texto plano y las devuelve
+// como un array de strings + <a> clicables — se usa adentro de TextoConMenciones para que
+// cualquier link pegado en una nota/título quede clicable, sin que haya que hacer nada más.
+function linkificarUrls(texto, keyPrefix) {
+  const URL_REGEX = /(https?:\/\/[^\s<>"']+)/g;
+  const partes = [];
+  let ultimo = 0;
+  let match;
+  let key = 0;
+  while ((match = URL_REGEX.exec(texto)) !== null) {
+    if (match.index > ultimo) partes.push(texto.slice(ultimo, match.index));
+    let url = match[0];
+    // No arrastrar puntuación de cierre pegada al link (ej. "mirá esto: https://x.com.")
+    const cierre = url.match(/[.,;:!?)\]]+$/);
+    if (cierre) url = url.slice(0, -cierre[0].length);
+    partes.push(
+      <a key={`${keyPrefix}u${key++}`} href={url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-[var(--tema-vinculo)] underline underline-offset-2 break-all">
+        {url}
+      </a>
+    );
+    ultimo = match.index + url.length;
+  }
+  if (ultimo < texto.length) partes.push(texto.slice(ultimo));
+  return partes;
+}
+
 // Muestra un texto que puede tener menciones @[Nombre](Tipo:id) como enlaces clicables a la
-// ficha correspondiente, dejando el resto como texto plano.
+// ficha correspondiente, y cualquier URL suelta como link clicable, dejando el resto como
+// texto plano.
 function TextoConMenciones({ texto, onOpen }) {
   if (!texto) return null;
   const regex = new RegExp(MENCION_REGEX);
@@ -996,7 +1024,7 @@ function TextoConMenciones({ texto, onOpen }) {
   let match;
   let key = 0;
   while ((match = regex.exec(texto)) !== null) {
-    if (match.index > ultimo) partes.push(<Fragment key={`t${key++}`}>{texto.slice(ultimo, match.index)}</Fragment>);
+    if (match.index > ultimo) partes.push(...linkificarUrls(texto.slice(ultimo, match.index), `t${key++}-`));
     const [, nombre, tipo, id] = match;
     partes.push(
       <button key={`m${key++}`} type="button" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onOpen(tipo.toLowerCase(), id); }} className="font-bold text-[var(--tema-mencion)] hover:underline underline-offset-2">
@@ -1005,7 +1033,7 @@ function TextoConMenciones({ texto, onOpen }) {
     );
     ultimo = match.index + match[0].length;
   }
-  if (ultimo < texto.length) partes.push(<Fragment key={`t${key++}`}>{texto.slice(ultimo)}</Fragment>);
+  if (ultimo < texto.length) partes.push(...linkificarUrls(texto.slice(ultimo), `t${key++}-`));
   return <>{partes}</>;
 }
 
@@ -5187,6 +5215,9 @@ function VinculosDeHilo({ hilo, hiloId, core, setCore, onOpen, agregarPersona, s
 function AdjuntosDeHilo({ hilo, hiloId, setCore, setConfirmar }) {
   const [subiendo, setSubiendo] = useState(false);
   const [error, setError] = useState("");
+  const [agregandoLink, setAgregandoLink] = useState(false);
+  const [linkNombre, setLinkNombre] = useState("");
+  const [linkUrl, setLinkUrl] = useState("");
   const inputRef = useRef(null);
   const adjuntos = hilo.adjuntos || [];
 
@@ -5213,6 +5244,13 @@ function AdjuntosDeHilo({ hilo, hiloId, setCore, setConfirmar }) {
     }
   };
 
+  const agregarLink = () => {
+    if (!linkUrl.trim()) return;
+    const url = /^https?:\/\//i.test(linkUrl.trim()) ? linkUrl.trim() : `https://${linkUrl.trim()}`;
+    guardarAdjuntos([{ id: uid("ADJ"), nombre: linkNombre.trim() || url, tipo: "link", url, subidoEn: todayISO() }, ...adjuntos]);
+    setLinkNombre(""); setLinkUrl(""); setAgregandoLink(false);
+  };
+
   const descargarArchivo = async (adjunto) => {
     setError("");
     const { data, error: urlError } = await supabase.storage.from("adjuntos").createSignedUrl(adjunto.path, 60);
@@ -5220,18 +5258,26 @@ function AdjuntosDeHilo({ hilo, hiloId, setCore, setConfirmar }) {
     window.open(data.signedUrl, "_blank");
   };
 
-  const eliminarArchivo = async (adjunto) => {
-    await supabase.storage.from("adjuntos").remove([adjunto.path]);
+  const abrirAdjunto = (adjunto) => {
+    if (adjunto.tipo === "link") { window.open(adjunto.url, "_blank", "noopener,noreferrer"); return; }
+    descargarArchivo(adjunto);
+  };
+
+  const eliminarAdjunto = async (adjunto) => {
+    if (adjunto.tipo !== "link" && adjunto.path) await supabase.storage.from("adjuntos").remove([adjunto.path]);
     guardarAdjuntos(adjuntos.filter((a) => a.id !== adjunto.id));
   };
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-1.5">
-        <p className="text-[10px] font-bold tracking-wide text-[#A69C88]">{adjuntos.length} archivo{adjuntos.length === 1 ? "" : "s"}</p>
-        <button type="button" onClick={() => inputRef.current?.click()} disabled={subiendo} className="text-xs font-bold text-[var(--tema-vinculo)] disabled:opacity-50">
-          {subiendo ? "Subiendo…" : "+ Agregar archivo"}
-        </button>
+      <div className="flex items-center justify-between gap-2 mb-1.5">
+        <p className="text-[10px] font-bold tracking-wide text-[#A69C88] shrink-0">{adjuntos.length} adjunto{adjuntos.length === 1 ? "" : "s"}</p>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={() => setAgregandoLink((v) => !v)} className="text-xs font-bold text-[var(--tema-vinculo)]">+ Agregar link</button>
+          <button type="button" onClick={() => inputRef.current?.click()} disabled={subiendo} className="text-xs font-bold text-[var(--tema-vinculo)] disabled:opacity-50">
+            {subiendo ? "Subiendo…" : "+ Agregar archivo"}
+          </button>
+        </div>
         <input
           ref={inputRef}
           type="file"
@@ -5239,19 +5285,29 @@ function AdjuntosDeHilo({ hilo, hiloId, setCore, setConfirmar }) {
           onChange={(e) => { const f = e.target.files?.[0]; if (f) subirArchivo(f); e.target.value = ""; }}
         />
       </div>
+      {agregandoLink && (
+        <div className="bg-[#F7F5F0] border border-[#E4DECF] rounded-sm p-2.5 mb-2 space-y-1.5">
+          <input className={inputCls} value={linkNombre} onChange={(e) => setLinkNombre(e.target.value)} placeholder="Nombre (opcional)" />
+          <input className={inputCls} value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} placeholder="https://..." autoFocus />
+          <div className="flex gap-2">
+            <button type="button" onClick={() => { setAgregandoLink(false); setLinkNombre(""); setLinkUrl(""); }} className="flex-1 border border-[#D8D2C4] rounded-sm py-1.5 text-xs font-bold text-[#6B6352]">Cancelar</button>
+            <button type="button" onClick={agregarLink} disabled={!linkUrl.trim()} className="flex-1 bg-[var(--tema-acento)] text-[#2A2118] rounded-sm py-1.5 text-xs font-bold disabled:opacity-50">Agregar</button>
+          </div>
+        </div>
+      )}
       {error && <p className="text-xs text-[var(--tema-peligro)] mb-1.5">{error}</p>}
       {adjuntos.length === 0 ? (
-        <p className="text-sm text-[#A69C88]">Sin archivos adjuntos.</p>
+        <p className="text-sm text-[#A69C88]">Sin adjuntos.</p>
       ) : (
         <div className="space-y-1">
           {adjuntos.map((a) => (
             <div key={a.id} className="flex items-center justify-between gap-2 text-sm">
-              <button onClick={() => descargarArchivo(a)} className="text-left flex-1 min-w-0 flex items-center gap-1.5">
+              <button onClick={() => abrirAdjunto(a)} className="text-left flex-1 min-w-0 flex items-center gap-1.5">
                 <IconoAdjunto tipo={a.tipo} className="shrink-0 text-[#8A8272]" />
                 <span className="truncate font-semibold text-[#2A2118]">{a.nombre}</span>
-                <span className="shrink-0 text-xs text-[#A69C88]">{formatBytes(a.tamano)}</span>
+                {a.tipo !== "link" && <span className="shrink-0 text-xs text-[#A69C88]">{formatBytes(a.tamano)}</span>}
               </button>
-              <IconBtn label="Eliminar archivo" danger onClick={() => setConfirmar({ texto: `¿Eliminar "${a.nombre}"? No se puede deshacer.`, onConfirm: () => eliminarArchivo(a) })}><Trash2 size={14} /></IconBtn>
+              <IconBtn label="Eliminar adjunto" danger onClick={() => setConfirmar({ texto: `¿Eliminar "${a.nombre}"? No se puede deshacer.`, onConfirm: () => eliminarAdjunto(a) })}><Trash2 size={14} /></IconBtn>
             </div>
           ))}
         </div>
