@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.27.0";
+const APP_VERSION = "2.27.1";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -765,10 +765,31 @@ function SelectorFechaHora({ fecha, hora, onFecha, onHora, aviso, onAviso, label
   const cancelarHora = () => setEditandoHora(false);
   const quitarHora = () => { onHora(""); setEditandoHora(false); onAviso?.({ ...avisoActual, activo: false }); };
 
+  // Al cargar la fecha (todavía sin hora), pasa directo al selector de hora en vez de tener
+  // que tocar "+ Hora" aparte. Si ya había una hora cargada, cambiar la fecha no lo reabre.
+  const cambiarFecha = (e) => {
+    const v = e.target.value;
+    onFecha(v);
+    if (v && !hora) { setHoraTemp(""); setEditandoHora(true); }
+  };
+
   return (
     <div className="mb-3">
-      <Field label={labelFecha}><input type="date" className={inputCls} value={fecha} onChange={(e) => onFecha(e.target.value)} /></Field>
-      {editandoHora ? (
+      <Field label={labelFecha}>
+        <div className="flex gap-2 items-center">
+          <input type="date" className={`${inputCls} flex-1`} value={fecha} onChange={cambiarFecha} />
+          <button
+            type="button"
+            onClick={abrirHora}
+            className={`shrink-0 flex items-center gap-1 rounded-sm border border-[#D8D2C4] px-2.5 py-2 ${hora ? "text-sm font-semibold text-[#2A2118]" : "text-xs font-bold text-[var(--tema-vinculo)]"}`}
+          >
+            <Clock3 size={13} className={hora ? "text-[#8A8272]" : ""} /> {hora || "Hora"}
+          </button>
+          {hora && <IconBtn label="Quitar hora" danger onClick={quitarHora}><X size={14} /></IconBtn>}
+        </div>
+      </Field>
+
+      {editandoHora && (
         <div className="mt-1.5">
           <input ref={timeRef} type="time" autoFocus className={inputCls} value={horaTemp} onChange={(e) => setHoraTemp(e.target.value)} />
           <div className="flex gap-2 mt-1.5">
@@ -776,34 +797,34 @@ function SelectorFechaHora({ fecha, hora, onFecha, onHora, aviso, onAviso, label
             <button type="button" onClick={aceptarHora} className="flex-1 bg-[var(--tema-acento)] text-[#2A2118] rounded-sm py-1.5 text-xs font-bold">Aceptar</button>
           </div>
         </div>
-      ) : hora ? (
-        <>
-          <div className="flex items-center justify-between mt-1.5">
-            <button type="button" onClick={abrirHora} className="flex items-center gap-1 text-sm font-semibold text-[#2A2118]">
-              <Clock3 size={13} className="text-[#8A8272]" /> {hora} hs
-            </button>
-            <IconBtn label="Quitar hora" danger onClick={quitarHora}><X size={14} /></IconBtn>
-          </div>
-          {onAviso && (
-            <div className="mt-2">
-              <label className="flex items-center gap-2 text-sm font-bold text-[#2A2118]">
-                <input type="checkbox" checked={avisoActual.activo} onChange={(e) => onAviso({ ...avisoActual, activo: e.target.checked })} /> Avisar
-              </label>
-              {avisoActual.activo && (
-                <div className="flex gap-2 mt-1.5">
-                  <input type="number" min={1} className={inputCls} value={avisoActual.cantidad} onChange={(e) => onAviso({ ...avisoActual, cantidad: e.target.value })} />
-                  <select className={inputCls} value={avisoActual.unidad} onChange={(e) => onAviso({ ...avisoActual, unidad: e.target.value })}>
-                    <option value="minutos">minutos antes</option>
-                    <option value="horas">horas antes</option>
-                    <option value="dias">días antes</option>
-                  </select>
-                </div>
-              )}
-            </div>
+      )}
+
+      {hora && onAviso && (
+        <div className="mt-2 flex items-center gap-2 flex-wrap">
+          <label className="flex items-center gap-1.5 text-sm font-bold text-[#2A2118] shrink-0">
+            <input type="checkbox" checked={avisoActual.activo} onChange={(e) => onAviso({ ...avisoActual, activo: e.target.checked })} /> Avisar
+          </label>
+          {avisoActual.activo && (
+            <>
+              <input
+                type="number"
+                min={1}
+                className="w-16 bg-white border border-[#D8D2C4] rounded-sm px-2 py-2 text-sm text-[#2A2118] text-center focus:outline-none focus:ring-2 focus:ring-[var(--tema-acento)] focus:border-transparent"
+                value={avisoActual.cantidad}
+                onChange={(e) => onAviso({ ...avisoActual, cantidad: e.target.value })}
+              />
+              <select
+                className="flex-1 bg-white border border-[#D8D2C4] rounded-sm px-2 py-2 text-sm text-[#2A2118] focus:outline-none focus:ring-2 focus:ring-[var(--tema-acento)] focus:border-transparent"
+                value={avisoActual.unidad}
+                onChange={(e) => onAviso({ ...avisoActual, unidad: e.target.value })}
+              >
+                <option value="minutos">minutos antes</option>
+                <option value="horas">horas antes</option>
+                <option value="dias">días antes</option>
+              </select>
+            </>
           )}
-        </>
-      ) : (
-        <button type="button" onClick={abrirHora} className="text-xs font-bold text-[var(--tema-vinculo)]">+ Establecer hora</button>
+        </div>
       )}
     </div>
   );
