@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.26.1";
+const APP_VERSION = "2.26.2";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -1456,7 +1456,7 @@ export default function CRM({ userId, onLogout }) {
   useEffect(() => {
     if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
     const onMessage = (event) => {
-      if (event.data?.tipo === "aviso") setAvisoEnPantalla({ texto: event.data.texto, hiloId: event.data.hiloId });
+      if (event.data?.tipo === "aviso") setAvisoEnPantalla({ texto: event.data.texto, hiloId: event.data.hiloId, fecha: event.data.fecha, hora: event.data.hora });
     };
     navigator.serviceWorker.addEventListener("message", onMessage);
     return () => navigator.serviceWorker.removeEventListener("message", onMessage);
@@ -1473,7 +1473,7 @@ export default function CRM({ userId, onLogout }) {
       deepLinkAplicado.current = true;
       setDetail({ type: "hilo", id: abrir });
       const texto = params.get("texto");
-      if (texto) setAvisoEnPantalla({ texto, hiloId: abrir });
+      if (texto) setAvisoEnPantalla({ texto, hiloId: abrir, fecha: params.get("fecha") || null, hora: params.get("hora") || null });
       window.history.replaceState({}, "", window.location.pathname);
     }
   }, [core]);
@@ -1647,14 +1647,20 @@ export default function CRM({ userId, onLogout }) {
       )}
 
       {avisoEnPantalla && (
-        <div className="fixed top-0 inset-x-0 z-[60] p-3">
-          <div className="max-w-md mx-auto bg-white border border-[#E4DECF] rounded-sm shadow-lg p-3 flex items-start gap-2.5">
-            <Bell size={18} className="shrink-0 text-[var(--tema-vinculo)] mt-0.5" />
+        <div className="fixed top-0 inset-x-0 z-[60] p-3 animate-[avisoIn_0.25s_ease-out]">
+          <div className="max-w-md mx-auto bg-[#FBEEE7] border-2 border-[var(--tema-peligro)] rounded-sm shadow-lg p-3 flex items-start gap-3">
+            <div className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center" style={{ backgroundColor: "var(--tema-peligro)" }}>
+              <Bell size={17} color="#FFFFFF" />
+            </div>
             <button
               onClick={() => { if (avisoEnPantalla.hiloId) openDetail("hilo", avisoEnPantalla.hiloId); setAvisoEnPantalla(null); }}
-              className="flex-1 min-w-0 text-left text-sm font-semibold text-[#2A2118] hover:underline"
+              className="flex-1 min-w-0 text-left"
             >
-              {avisoEnPantalla.texto}
+              <p className="text-[10px] font-bold tracking-widest uppercase text-[var(--tema-peligro)]">Aviso</p>
+              <p className="text-sm font-bold text-[#2A2118] hover:underline">{avisoEnPantalla.texto}</p>
+              {(avisoEnPantalla.fecha || avisoEnPantalla.hora) && (
+                <p className="text-xs font-semibold text-[#6B6352] mt-0.5">{fmtDateHora(avisoEnPantalla.fecha, avisoEnPantalla.hora)}</p>
+              )}
             </button>
             <button onClick={() => setAvisoEnPantalla(null)} aria-label="Cerrar" className="shrink-0 text-[#8A8272]"><X size={16} /></button>
           </div>

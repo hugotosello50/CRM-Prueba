@@ -32,7 +32,7 @@ self.addEventListener('push', (event) => {
       // notificación del sistema operativo.
       self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
         for (const client of clientList) {
-          client.postMessage({ tipo: 'aviso', texto: data.body || title, hiloId: data.hiloId || null });
+          client.postMessage({ tipo: 'aviso', texto: data.body || title, hiloId: data.hiloId || null, fecha: data.fecha || null, hora: data.hora || null });
         }
       }),
     ])

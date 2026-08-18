@@ -61,16 +61,16 @@ export async function POST(request) {
 
     for (const a of acciones) {
       if (a.estado === 'Pendiente' && debeAvisarAhora(a.fechaProgramada, a.horaProgramada, a.aviso, a.avisoEnviado, ahoraMs)) {
-        pendientes.push({ tipo: 'accion', id: a.id, hiloId: a.hiloId, texto: a.notaPlanificada || 'Acción programada' });
+        pendientes.push({ tipo: 'accion', id: a.id, hiloId: a.hiloId, texto: a.notaPlanificada || 'Acción programada', fecha: a.fechaProgramada, hora: a.horaProgramada });
       }
     }
     for (const h of core.hilos || []) {
       if (h.tipo === 'tarea' && h.estado === 'Activo' && debeAvisarAhora(h.fecha, h.hora, h.aviso, h.avisoEnviado, ahoraMs)) {
-        pendientes.push({ tipo: 'tarea', hiloId: h.id, texto: h.titulo });
+        pendientes.push({ tipo: 'tarea', hiloId: h.id, texto: h.titulo, fecha: h.fecha, hora: h.hora });
       }
       for (const s of h.subtareas || []) {
         if (!s.hecha && debeAvisarAhora(s.fecha, s.hora, s.aviso, s.avisoEnviado, ahoraMs)) {
-          pendientes.push({ tipo: 'subtarea', hiloId: h.id, subId: s.id, texto: s.texto });
+          pendientes.push({ tipo: 'subtarea', hiloId: h.id, subId: s.id, texto: s.texto, fecha: s.fecha, hora: s.hora });
         }
       }
     }
@@ -86,7 +86,14 @@ export async function POST(request) {
         try {
           await webpush.sendNotification(
             { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-            JSON.stringify({ title: 'Recordatorio', body: item.texto, url: `/?abrir=${item.hiloId}&texto=${encodeURIComponent(item.texto)}`, hiloId: item.hiloId })
+            JSON.stringify({
+              title: 'Recordatorio',
+              body: item.texto,
+              url: `/?abrir=${item.hiloId}&texto=${encodeURIComponent(item.texto)}&fecha=${item.fecha || ''}&hora=${item.hora || ''}`,
+              hiloId: item.hiloId,
+              fecha: item.fecha || null,
+              hora: item.hora || null,
+            })
           );
           envioOk = true;
         } catch (err) {
