@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.26.2";
+const APP_VERSION = "2.27.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -4449,16 +4449,42 @@ function PersonaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
 // activos de la entidad cuya contraparte es Persona/Empresa/Obra (los vínculos a hilos se ven
 // en la sección de hilos). Reutiliza el form genérico para "+ Vincular", con lápiz de editar y
 // papelera con confirmación en cada uno.
+// Pide la fecha en que terminó una relación (no necesariamente hoy) antes de finalizarla —
+// se usa en vez de un ConfirmDeleteModal genérico porque acá hace falta un dato (la fecha),
+// no solo un sí/no.
+function FinalizarVinculoModal({ etiqueta, onCancel, onConfirm }) {
+  const [hasta, setHasta] = useState(todayISO());
+  return (
+    <Modal title="Finalizar relación" onClose={onCancel}>
+      <p className="text-sm text-[#2A2118] mb-3">La relación con <b>{etiqueta}</b> queda registrada como finalizada (no se borra: se puede seguir viendo en el historial).</p>
+      <Field label="Fecha de finalización">
+        <input type="date" className={inputCls} value={hasta} onChange={(e) => setHasta(e.target.value)} />
+      </Field>
+      <div className="flex gap-2">
+        <button onClick={onCancel} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
+        <button onClick={() => onConfirm(hasta)} disabled={!hasta} style={{ backgroundColor: "var(--tema-peligro)", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm disabled:opacity-50">Finalizar</button>
+      </div>
+    </Modal>
+  );
+}
+
 function VinculosDeFicha({ core, setCore, entidadTipo, entidadId, onOpen }) {
   const [verVinculos, setVerVinculos] = useState(false);
   const [showVincular, setShowVincular] = useState(false);
   const [editVinculo, setEditVinculo] = useState(null);
-  const [deletingId, setDeletingId] = useState(null);
+  const [finalizandoId, setFinalizandoId] = useState(null);
+  const [verHistorial, setVerHistorial] = useState(false);
 
   const items = vinculosDeEntidad(core, entidadTipo, entidadId, true)
     .map((v) => ({ v, c: contraparteVinculo(v, entidadTipo, entidadId) }))
     .filter(({ c }) => c.tipo !== "Hilo");
-  const del = (vinculoId) => setCore((prev) => ({ ...prev, vinculos: (prev.vinculos || []).filter((x) => x.id !== vinculoId) }));
+  const historial = vinculosDeEntidad(core, entidadTipo, entidadId, false)
+    .filter((v) => v.hasta)
+    .map((v) => ({ v, c: contraparteVinculo(v, entidadTipo, entidadId) }))
+    .filter(({ c }) => c.tipo !== "Hilo")
+    .sort((a, b) => (b.v.hasta || "").localeCompare(a.v.hasta || ""));
+  const finalizar = (vinculoId, hasta) => setCore((prev) => ({ ...prev, vinculos: (prev.vinculos || []).map((x) => (x.id === vinculoId ? { ...x, hasta, principal: false } : x)) }));
+  const vinculoAFinalizar = finalizandoId ? items.find(({ v }) => v.id === finalizandoId) : null;
 
   return (
     <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
@@ -4494,10 +4520,31 @@ function VinculosDeFicha({ core, setCore, entidadTipo, entidadId, onOpen }) {
                     </button>
                     {persona && <WhatsAppLink persona={persona} size={15} />}
                     <IconBtn label="Editar vínculo" onClick={() => setEditVinculo(v)}><Pencil size={14} /></IconBtn>
-                    <IconBtn label="Eliminar vínculo" danger onClick={() => setDeletingId(v.id)}><Trash2 size={14} /></IconBtn>
+                    <IconBtn label="Finalizar vínculo" danger onClick={() => setFinalizandoId(v.id)}><Trash2 size={14} /></IconBtn>
                   </div>
                 );
               })}
+            </div>
+          )}
+          {historial.length > 0 && (
+            <div className="mt-2.5">
+              <button onClick={() => setVerHistorial((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
+                {verHistorial ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verHistorial ? "Ocultar historial de relaciones" : "Ver historial de relaciones"} ({historial.length})
+              </button>
+              {verHistorial && (
+                <div className="mt-1.5 space-y-1">
+                  {historial.map(({ v, c }) => {
+                    const tr = (core.tiposRelacion || []).find((t) => t.id === v.tipoRelacionId);
+                    const label = entidadLabel(c.tipo, c.id, core);
+                    if (!label) return null;
+                    return (
+                      <p key={v.id} className="text-xs text-[#8A8272]">
+                        {tr ? nombreRelacionLado(tr, c.esOrigen) : "vinculado a"} <span className="font-semibold text-[#6B6352]">{label}</span> · {fmtDate(v.desde)} – {fmtDate(v.hasta)}
+                      </p>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -4508,8 +4555,12 @@ function VinculosDeFicha({ core, setCore, entidadTipo, entidadId, onOpen }) {
       {editVinculo && (
         <EditVinculoForm core={core} setCore={setCore} vinculo={editVinculo} onClose={() => setEditVinculo(null)} />
       )}
-      {deletingId && (
-        <ConfirmDeleteModal title="¿Eliminar este vínculo?" texto="Se quita la relación entre las dos entidades. No se puede deshacer." onCancel={() => setDeletingId(null)} onConfirm={() => { del(deletingId); setDeletingId(null); }} />
+      {vinculoAFinalizar && (
+        <FinalizarVinculoModal
+          etiqueta={entidadLabel(vinculoAFinalizar.c.tipo, vinculoAFinalizar.c.id, core)}
+          onCancel={() => setFinalizandoId(null)}
+          onConfirm={(hasta) => { finalizar(finalizandoId, hasta); setFinalizandoId(null); }}
+        />
       )}
     </div>
   );
@@ -4521,11 +4572,12 @@ function EditVinculoForm({ core, setCore, vinculo, onClose }) {
   const [showNuevoTipo, setShowNuevoTipo] = useState(false);
   const [principal, setPrincipal] = useState(!!vinculo.principal);
   const [desde, setDesde] = useState(vinculo.desde || todayISO());
+  const [hasta, setHasta] = useState(vinculo.hasta || "");
   const [nota, setNota] = useState(vinculo.nota || "");
   const origenLabel = entidadLabel(vinculo.origenTipo, vinculo.origenId, core);
   const destinoLabel = entidadLabel(vinculo.destinoTipo, vinculo.destinoId, core);
   const guardar = () => {
-    setCore((prev) => ({ ...prev, vinculos: (prev.vinculos || []).map((v) => (v.id === vinculo.id ? { ...v, tipoRelacionId: tipoRelacionId || null, principal, desde, nota: nota.trim() } : v)) }));
+    setCore((prev) => ({ ...prev, vinculos: (prev.vinculos || []).map((v) => (v.id === vinculo.id ? { ...v, tipoRelacionId: tipoRelacionId || null, principal, desde, hasta: hasta || null, nota: nota.trim() } : v)) }));
     onClose();
   };
   return (
@@ -4545,6 +4597,8 @@ function EditVinculoForm({ core, setCore, vinculo, onClose }) {
         <input type="checkbox" checked={principal} onChange={(e) => setPrincipal(e.target.checked)} /> Marcar como vínculo principal
       </label>
       <Field label="Fecha"><input type="date" className={inputCls} value={desde} onChange={(e) => setDesde(e.target.value)} /></Field>
+      <Field label="Fecha de finalización (opcional)"><input type="date" className={inputCls} value={hasta} onChange={(e) => setHasta(e.target.value)} /></Field>
+      {hasta && <button type="button" onClick={() => setHasta("")} className="w-full text-center text-xs font-bold text-[var(--tema-peligro)] mb-3">Quitar fecha de finalización (la relación vuelve a estar activa)</button>}
       <Field label="Nota (opcional)"><textarea className={inputCls} rows={2} value={nota} onChange={(e) => setNota(e.target.value)} /></Field>
       <PrimaryBtn full onClick={guardar}>Guardar</PrimaryBtn>
 
@@ -7858,6 +7912,7 @@ function RelacionForm({ core, setCore, entidadFija, onCreado }) {
   const [destinos, setDestinos] = useState([]);
   const [destinoSel, setDestinoSel] = useState("");
   const [fecha, setFecha] = useState(todayISO());
+  const [hastaOpcional, setHastaOpcional] = useState("");
   const [nota, setNota] = useState("");
   const [feedback, setFeedback] = useState("");
 
@@ -7902,11 +7957,12 @@ function RelacionForm({ core, setCore, entidadFija, onCreado }) {
 
   const crearVinculos = () => {
     if (pares.length === 0 || !fecha) return;
-    const nuevos = pares.map(([o, d]) => ({ ...vinc(o.tipo, o.id, d.tipo, d.id, tipoRelacionId || null, false, fecha), nota: nota.trim() }));
+    const nuevos = pares.map(([o, d]) => ({ ...vinc(o.tipo, o.id, d.tipo, d.id, tipoRelacionId || null, false, fecha), hasta: hastaOpcional || null, nota: nota.trim() }));
     setCore((prev) => ({ ...prev, vinculos: [...(prev.vinculos || []), ...nuevos] }));
     setFeedback(nuevos.length === 1 ? "Se creó 1 vínculo." : `Se crearon ${nuevos.length} vínculos.`);
     setTimeout(() => setFeedback(""), 2500);
     setDestinos([]);
+    setHastaOpcional("");
     setNota("");
     onCreado?.();
   };
@@ -7968,6 +8024,7 @@ function RelacionForm({ core, setCore, entidadFija, onCreado }) {
       </Field>
 
       <Field label="Fecha"><input type="date" className={inputCls} value={fecha} onChange={(e) => setFecha(e.target.value)} /></Field>
+      <Field label="Fecha de finalización (opcional)"><input type="date" className={inputCls} value={hastaOpcional} onChange={(e) => setHastaOpcional(e.target.value)} /></Field>
       <Field label="Nota (opcional)"><textarea className={inputCls} rows={2} value={nota} onChange={(e) => setNota(e.target.value)} /></Field>
 
       {feedback && <p className="text-xs font-bold text-[#1B4D2E] mb-2">{feedback}</p>}
