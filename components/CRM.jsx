@@ -8,14 +8,14 @@ import {
   HardHat, CalendarClock, Trash2, Pencil, Check, AlertTriangle,
   Tag, Star, Clock3, ListChecks, Repeat, ArrowLeft, ArrowDownAZ, ArrowUpAZ, GitBranch,
   BarChart3, FileSpreadsheet, Download, Trello, GripVertical, LogOut, Menu, Tags, FolderKanban, Layers,
-  FileText, Image as ImageIcon,
+  FileText, Image as ImageIcon, Bell,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.25.0";
+const APP_VERSION = "2.25.1";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -3574,10 +3574,13 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
           <div className="flex-1 min-w-0">
             <p className={`text-xs ${s.hecha ? "line-through text-[#A69C88]" : "text-[#2A2118]"}`}>{s.texto}</p>
             {(s.fecha || s.hora || s.nota) && (
-              <p className="text-[10px] text-[#8A8272] mt-0.5">
-                {s.fecha ? fmtDateHora(s.fecha, s.hora) : (s.hora ? `${s.hora} hs` : "")}
-                {(s.fecha || s.hora) && s.nota && " · "}
-                {s.nota}
+              <p className="text-[10px] text-[#8A8272] mt-0.5 flex items-center flex-wrap gap-1">
+                <span>
+                  {s.fecha ? fmtDateHora(s.fecha, s.hora) : (s.hora ? `${s.hora} hs` : "")}
+                  {(s.fecha || s.hora) && s.nota && " · "}
+                  {s.nota}
+                </span>
+                {s.aviso?.activo && <Bell size={10} className="shrink-0 text-[var(--tema-vinculo)]" aria-label="Tiene aviso programado" />}
               </p>
             )}
           </div>
@@ -3721,8 +3724,9 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
           <div className="min-w-0 flex-1">
             <p className="text-base font-extrabold text-[#2A2118] truncate" title={textoPlanoDeMenciones(hilo.titulo)}><TextoConMenciones texto={hilo.titulo} onOpen={onOpen} /></p>
             {(hilo.fecha || hilo.hora) && (
-              <p className="text-[10px] text-[#8A8272] mt-0.5">
+              <p className="text-[10px] text-[#8A8272] mt-0.5 flex items-center gap-1">
                 {hilo.fecha ? fmtDateHora(hilo.fecha, hilo.hora) : `${hilo.hora} hs`}
+                {hilo.aviso?.activo && <Bell size={10} className="shrink-0 text-[var(--tema-vinculo)]" aria-label="Tiene aviso programado" />}
               </p>
             )}
           </div>
@@ -3801,6 +3805,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
                     {fmtDate(masUrgente.fechaProgramada)}
                   </span>
                 )}
+                {primary?.aviso?.activo && <Bell size={13} className="shrink-0 text-[var(--tema-vinculo)]" aria-label="Tiene aviso programado" />}
                 {primary && <span className="shrink-0"><IconBtn label="Reprogramar" onClick={() => setShowReprogramar(true)}><Pencil size={13} /></IconBtn></span>}
                 {primary?.recurrente && <Repeat size={12} className="shrink-0 text-[#8A8272]" />}
                 {primary && (
@@ -3946,6 +3951,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
               {fmtDate(masUrgente.fechaProgramada)}
             </span>
           )}
+          {primary?.aviso?.activo && <Bell size={13} className="shrink-0 text-[var(--tema-vinculo)]" aria-label="Tiene aviso programado" />}
           {primary && <span className="shrink-0"><IconBtn label="Reprogramar" onClick={() => setShowReprogramar(true)}><Pencil size={13} /></IconBtn></span>}
           {primary?.recurrente && <Repeat size={12} className="shrink-0 text-[#8A8272]" />}
           {primary && (
@@ -4659,7 +4665,10 @@ function HiloRow({ hilo, core, acciones, onOpen }) {
           {tareasVinculadas > 0 && ` · ${tareasVinculadas} tarea${tareasVinculadas === 1 ? "" : "s"}`}
         </span>
         {pendiente ? (
-          <span className="text-xs text-[#6B6352]">Próxima: {tipoPendiente?.nombre} · {fmtDateHora(pendiente.fechaProgramada, pendiente.horaProgramada)}</span>
+          <span className="text-xs text-[#6B6352] flex items-center gap-1">
+            Próxima: {tipoPendiente?.nombre} · {fmtDateHora(pendiente.fechaProgramada, pendiente.horaProgramada)}
+            {pendiente.aviso?.activo && <Bell size={11} className="shrink-0 text-[var(--tema-vinculo)]" aria-label="Tiene aviso programado" />}
+          </span>
         ) : (
           <span className="text-xs text-[#A69C88]">Sin próxima acción</span>
         )}
