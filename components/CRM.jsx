@@ -8,14 +8,14 @@ import {
   HardHat, CalendarClock, Trash2, Pencil, Check, AlertTriangle,
   Tag, Star, Clock3, ListChecks, Repeat, ArrowLeft, ArrowDownAZ, ArrowUpAZ, GitBranch,
   BarChart3, FileSpreadsheet, Download, Trello, GripVertical, LogOut, Menu, Tags, FolderKanban, Layers,
-  FileText, Image as ImageIcon, Bell, Link2,
+  FileText, Image as ImageIcon, Bell, Link2, CheckSquare, Square,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.29.0";
+const APP_VERSION = "2.30.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -1218,7 +1218,7 @@ function TagsSection({ core, setCore, entidadTipo, entidadId }) {
           core={core}
           setCore={setCore}
           entidadTipo={entidadTipo}
-          entidadId={entidadId}
+          entidadIds={[entidadId]}
           asignadas={asignadas}
           onClose={() => setShowPicker(false)}
         />
@@ -1227,7 +1227,10 @@ function TagsSection({ core, setCore, entidadTipo, entidadId }) {
   );
 }
 
-function TagPickerForm({ core, setCore, entidadTipo, entidadId, asignadas, onClose }) {
+// entidadIds: ids de las entidades a las que se les va a asignar la/s etiqueta/s. Con una sola
+// entidad se comporta como el selector de siempre (se puede seguir agregando sin cerrar); con
+// varias (selección múltiple en una lista) aplica a todas de una vez y cierra el modal.
+function TagPickerForm({ core, setCore, entidadTipo, entidadIds, asignadas = [], onClose }) {
   const [modo, setModo] = useState("existente");
   const [etiquetaId, setEtiquetaId] = useState("");
   const [nombre, setNombre] = useState("");
@@ -1235,12 +1238,22 @@ function TagPickerForm({ core, setCore, entidadTipo, entidadId, asignadas, onClo
   const [categoriaModo, setCategoriaModo] = useState("existente"); // 'existente' | 'nueva'
   const [nombreCategoriaNueva, setNombreCategoriaNueva] = useState("");
 
-  const disponibles = core.etiquetas.filter((e) => e.aplicaA === entidadTipo && !asignadas.some((r) => r.etiquetaId === e.id));
+  const esMultiple = entidadIds.length > 1;
+  const disponibles = core.etiquetas.filter((e) => e.aplicaA === entidadTipo && (esMultiple || !asignadas.some((r) => r.etiquetaId === e.id)));
+
+  const asignarAEntidad = (prev, etId, entidadId) =>
+    prev.entidadEtiqueta.some((r) => r.etiquetaId === etId && r.entidadTipo === entidadTipo && r.entidadId === entidadId)
+      ? []
+      : [{ id: uid("et"), etiquetaId: etId, entidadTipo, entidadId }];
 
   const asignar = () => {
     if (!etiquetaId) return;
-    setCore((prev) => ({ ...prev, entidadEtiqueta: [...prev.entidadEtiqueta, { id: uid("et"), etiquetaId, entidadTipo, entidadId }] }));
+    setCore((prev) => ({
+      ...prev,
+      entidadEtiqueta: [...prev.entidadEtiqueta, ...entidadIds.flatMap((entidadId) => asignarAEntidad(prev, etiquetaId, entidadId))],
+    }));
     setEtiquetaId("");
+    if (esMultiple) onClose();
   };
 
   const crearYAsignar = () => {
@@ -1258,16 +1271,17 @@ function TagPickerForm({ core, setCore, entidadTipo, entidadId, asignadas, onClo
       ...prev,
       categorias: categoriasActualizadas,
       etiquetas: [...prev.etiquetas, nueva],
-      entidadEtiqueta: [...prev.entidadEtiqueta, { id: uid("et"), etiquetaId: nueva.id, entidadTipo, entidadId }],
+      entidadEtiqueta: [...prev.entidadEtiqueta, ...entidadIds.map((entidadId) => ({ id: uid("et"), etiquetaId: nueva.id, entidadTipo, entidadId }))],
     }));
     setNombre("");
     setNombreCategoriaNueva("");
     setModo("existente");
+    if (esMultiple) onClose();
   };
 
   return (
-    <Modal title="Agregar etiquetas" onClose={onClose}>
-      {asignadas.length > 0 && (
+    <Modal title={esMultiple ? `Agregar etiqueta a ${entidadIds.length} registros` : "Agregar etiquetas"} onClose={onClose}>
+      {!esMultiple && asignadas.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mb-3">
           {asignadas.map((r) => {
             const et = core.etiquetas.find((e) => e.id === r.etiquetaId);
@@ -1345,6 +1359,98 @@ function TagPickerForm({ core, setCore, entidadTipo, entidadId, asignadas, onClo
       )}
       <button type="button" onClick={onClose} className="w-full mt-3 border border-[#E4DECF] rounded-sm py-2.5 font-bold text-sm text-[#2A2118]">Listo</button>
     </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Selección múltiple (Personas, Empresas, Obras) para asignar etiquetas en bloque.
+// En touch se activa manteniendo presionada una fila; en PC (sin gesto de long-press con
+// mouse) se activa con el botón "Seleccionar" de la barra superior. A partir de ahí, tocar/
+// cliquear una fila la suma o la saca de la selección, en ambas plataformas por igual.
+// ---------------------------------------------------------------------------
+function useLongPress(onLongPress, delay = 550) {
+  const timerRef = useRef(null);
+  const movedRef = useRef(false);
+  const clear = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = null;
+  };
+  return {
+    onTouchStart: () => {
+      movedRef.current = false;
+      clear();
+      timerRef.current = setTimeout(() => {
+        if (!movedRef.current) onLongPress();
+      }, delay);
+    },
+    onTouchMove: () => {
+      movedRef.current = true;
+      clear();
+    },
+    onTouchEnd: clear,
+    onTouchCancel: clear,
+  };
+}
+
+function FilaSeleccionable({ seleccionModo, seleccionado, onToggle, onAbrir, onLongPress, avatar, children, extra, onEditar, onEliminar, editLabel, eliminarLabel }) {
+  const longPress = useLongPress(onLongPress);
+  return (
+    <div
+      {...(seleccionModo ? {} : longPress)}
+      className="w-full bg-white border rounded-sm p-3 flex items-center gap-3"
+      style={{ borderColor: seleccionado ? "var(--tema-acento)" : "#E4DECF", backgroundColor: seleccionado ? "#FBEEE7" : undefined }}
+    >
+      {seleccionModo && (
+        <button type="button" onClick={onToggle} aria-label={seleccionado ? "Quitar de la selección" : "Sumar a la selección"} className="shrink-0" style={{ color: seleccionado ? "var(--tema-acento)" : "#C9C1AE" }}>
+          {seleccionado ? <CheckSquare size={20} /> : <Square size={20} />}
+        </button>
+      )}
+      <button onClick={seleccionModo ? onToggle : onAbrir} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+        {avatar}
+        <div className="min-w-0 flex-1">{children}</div>
+      </button>
+      {!seleccionModo && (
+        <>
+          {extra}
+          <IconBtn label={editLabel} onClick={onEditar}><Pencil size={15} /></IconBtn>
+          <IconBtn label={eliminarLabel} danger onClick={onEliminar}><Trash2 size={15} /></IconBtn>
+          <ChevronRight size={16} className="text-[#C9C1AE] shrink-0" />
+        </>
+      )}
+    </div>
+  );
+}
+
+function BotonSeleccionar({ activo, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={activo ? "Cancelar selección" : "Seleccionar"}
+      style={activo ? { backgroundColor: "var(--tema-peligro)", color: "#FFFFFF" } : undefined}
+      className={`shrink-0 rounded-sm px-3 py-2 font-bold text-xs flex items-center justify-center ${activo ? "" : "border border-[#E4DECF] text-[#6B6352]"}`}
+    >
+      {activo ? <X size={16} /> : <CheckSquare size={16} />}
+    </button>
+  );
+}
+
+function SeleccionBar({ count, onCancelar, onEtiquetar }) {
+  return (
+    <div className="fixed inset-x-0 bottom-0 z-20 flex justify-center pointer-events-none">
+      <div
+        className="pointer-events-auto w-full max-w-md mx-3 mb-3 rounded-sm shadow-lg flex items-center justify-between gap-3 px-4 py-3"
+        style={{ backgroundColor: "#2A2F36", paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
+      >
+        <span className="text-sm font-bold text-white">{count} seleccionad{count === 1 ? "o" : "os"}</span>
+        <div className="flex items-center gap-3 shrink-0">
+          <button type="button" onClick={onCancelar} className="text-xs font-bold text-[#C9C1AE]">Cancelar</button>
+          <button type="button" onClick={onEtiquetar} className="bg-[var(--tema-acento)] text-[#2A2118] rounded-sm px-3 py-2 font-bold text-xs flex items-center gap-1.5">
+            <Tag size={14} /> Agregar etiqueta
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -4203,6 +4309,11 @@ function PersonasView({ core, setCore, onOpen }) {
   const [googleEstado, setGoogleEstado] = useState("verificando"); // verificando | noConectado | sincronizando | ok | reconectar | sinEtiqueta | error
   const [googleLabel, setGoogleLabel] = useState("");
   const yaSincronizoRef = useRef(false);
+  const [seleccionModo, setSeleccionModo] = useState(false);
+  const [seleccionIds, setSeleccionIds] = useState([]);
+  const [showTagPickerMasivo, setShowTagPickerMasivo] = useState(false);
+  const salirSeleccion = () => { setSeleccionModo(false); setSeleccionIds([]); };
+  const toggleSeleccion = (id) => setSeleccionIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
 
   const sincronizarGoogle = async () => {
     setGoogleEstado("sincronizando");
@@ -4313,6 +4424,7 @@ function PersonasView({ core, setCore, onOpen }) {
           <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#A69C88]" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar persona..." className={`${inputCls} pl-8`} />
         </div>
+        <BotonSeleccionar activo={seleccionModo} onClick={() => (seleccionModo ? salirSeleccion() : setSeleccionModo(true))} />
         <button onClick={() => setModal({})} className="shrink-0 bg-[var(--tema-acento)] text-[#2A2118] rounded-sm px-3 py-1 flex flex-col items-center justify-center gap-0.5 leading-none">
           <span className="text-[9px] font-bold">{core.personas.length}</span>
           <Plus size={16} />
@@ -4327,27 +4439,46 @@ function PersonasView({ core, setCore, onOpen }) {
           {list.map((p) => {
             const empresas = empresaIdsDePersona(core, p.id).map((eid) => core.empresas.find((e) => e.id === eid)?.denominacion).filter(Boolean);
             return (
-              <div key={p.id} className="w-full bg-white border border-[#E4DECF] rounded-sm p-3 flex items-center gap-3">
-                <button onClick={() => onOpen("persona", p.id)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+              <FilaSeleccionable
+                key={p.id}
+                seleccionModo={seleccionModo}
+                seleccionado={seleccionIds.includes(p.id)}
+                onToggle={() => toggleSeleccion(p.id)}
+                onAbrir={() => onOpen("persona", p.id)}
+                onLongPress={() => { setSeleccionModo(true); toggleSeleccion(p.id); }}
+                editLabel="Editar persona"
+                eliminarLabel="Eliminar persona"
+                onEditar={() => setModal(p)}
+                onEliminar={() => setDeletingId(p.id)}
+                extra={<WhatsAppLink persona={p} size={17} />}
+                avatar={
                   <div
                     className="w-9 h-9 rounded-full flex items-center justify-center font-extrabold text-xs shrink-0"
                     style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}
                   >
                     {getIniciales(p.nombre)}
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-[#2A2118] truncate" title={p.nombre}>{p.nombre}</p>
-                    <p className="text-xs text-[#8A8272] truncate" title={empresas.length ? empresas.join(", ") : "Sin empresa vinculada"}>{empresas.length ? empresas.join(", ") : "Sin empresa vinculada"}</p>
-                  </div>
-                </button>
-                <WhatsAppLink persona={p} size={17} />
-                <IconBtn label="Editar persona" onClick={() => setModal(p)}><Pencil size={15} /></IconBtn>
-                <IconBtn label="Eliminar persona" danger onClick={() => setDeletingId(p.id)}><Trash2 size={15} /></IconBtn>
-                <ChevronRight size={16} className="text-[#C9C1AE] shrink-0" />
-              </div>
+                }
+              >
+                <p className="font-semibold text-[#2A2118] truncate" title={p.nombre}>{p.nombre}</p>
+                <p className="text-xs text-[#8A8272] truncate" title={empresas.length ? empresas.join(", ") : "Sin empresa vinculada"}>{empresas.length ? empresas.join(", ") : "Sin empresa vinculada"}</p>
+              </FilaSeleccionable>
             );
           })}
         </div>
+      )}
+      {seleccionIds.length > 0 && <div className="h-16" />}
+      {seleccionIds.length > 0 && (
+        <SeleccionBar count={seleccionIds.length} onCancelar={salirSeleccion} onEtiquetar={() => setShowTagPickerMasivo(true)} />
+      )}
+      {showTagPickerMasivo && (
+        <TagPickerForm
+          core={core}
+          setCore={setCore}
+          entidadTipo="Persona"
+          entidadIds={seleccionIds}
+          onClose={() => { setShowTagPickerMasivo(false); salirSeleccion(); }}
+        />
       )}
 
       {modal !== null && <PersonaForm initial={modal} core={core} setCore={setCore} onSave={savePersona} onDelete={modal.id ? () => { deletePersona(modal.id); setModal(null); } : null} onClose={() => setModal(null)} />}
@@ -6047,6 +6178,11 @@ function EmpresasView({ core, setCore, onOpen }) {
   const [deletingId, setDeletingId] = useState(null);
   const usoDeletingId = deletingId ? vinculosDeEntidad(core, "Empresa", deletingId, true).length : 0;
   const [showImportar, setShowImportar] = useState(false);
+  const [seleccionModo, setSeleccionModo] = useState(false);
+  const [seleccionIds, setSeleccionIds] = useState([]);
+  const [showTagPickerMasivo, setShowTagPickerMasivo] = useState(false);
+  const salirSeleccion = () => { setSeleccionModo(false); setSeleccionIds([]); };
+  const toggleSeleccion = (id) => setSeleccionIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
   const list = core.empresas.filter((e) => e.denominacion.toLowerCase().includes(q.toLowerCase()));
 
   const save = (data, vinculoPersona) => {
@@ -6076,6 +6212,7 @@ function EmpresasView({ core, setCore, onOpen }) {
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar empresa..." className={`${inputCls} pl-8`} />
         </div>
         <button onClick={() => setShowImportar(true)} aria-label="Importar desde Excel" className="shrink-0 border border-[#E4DECF] rounded-sm px-3.5 py-2 font-bold text-[#6B6352]"><FileSpreadsheet size={18} /></button>
+        <BotonSeleccionar activo={seleccionModo} onClick={() => (seleccionModo ? salirSeleccion() : setSeleccionModo(true))} />
         <button onClick={() => setModal({})} className="shrink-0 bg-[var(--tema-acento)] text-[#2A2118] rounded-sm px-3 py-1 flex flex-col items-center justify-center gap-0.5 leading-none">
           <span className="text-[9px] font-bold">{core.empresas.length}</span>
           <Plus size={16} />
@@ -6092,31 +6229,48 @@ function EmpresasView({ core, setCore, onOpen }) {
             const nSubsidiarias = subsidiariasDeEmpresa(e.id, core).length;
             const cabecera = cabeceraDeEmpresa(e.id, core);
             return (
-              <div key={e.id} className="w-full bg-white border border-[#E4DECF] rounded-sm p-3 flex items-center gap-3">
-                <button onClick={() => onOpen("empresa", e.id)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
-                  <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}><Building2 size={16} /></div>
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-[#2A2118] truncate" title={e.denominacion}>{e.denominacion}</p>
-                    {nPersonas > 0 ? (
-                      <p className="text-xs text-[#8A8272] truncate" title={`${e.ciudad ? e.ciudad + " · " : ""}${nPersonas} contacto${nPersonas !== 1 ? "s" : ""}`}>{e.ciudad ? `${e.ciudad} · ` : ""}{nPersonas} contacto{nPersonas !== 1 ? "s" : ""}</p>
-                    ) : (
-                      <Chip tone="estadoPendiente">A definir</Chip>
-                    )}
-                    {nSubsidiarias > 0 && (
-                      <p className="text-[11px] text-[var(--tema-vinculo)] font-semibold flex items-center gap-1 mt-0.5"><Layers size={11} /> Cabecera · {nSubsidiarias} empresa{nSubsidiarias !== 1 ? "s" : ""} del grupo</p>
-                    )}
-                    {cabecera && (
-                      <p className="text-[11px] text-[#8A8272] flex items-center gap-1 mt-0.5"><Layers size={11} /> Grupo {cabecera.denominacion}</p>
-                    )}
-                  </div>
-                </button>
-                <IconBtn label="Editar empresa" onClick={() => setModal(e)}><Pencil size={15} /></IconBtn>
-                <IconBtn label="Eliminar empresa" danger onClick={() => setDeletingId(e.id)}><Trash2 size={15} /></IconBtn>
-                <ChevronRight size={16} className="text-[#C9C1AE] shrink-0" />
-              </div>
+              <FilaSeleccionable
+                key={e.id}
+                seleccionModo={seleccionModo}
+                seleccionado={seleccionIds.includes(e.id)}
+                onToggle={() => toggleSeleccion(e.id)}
+                onAbrir={() => onOpen("empresa", e.id)}
+                onLongPress={() => { setSeleccionModo(true); toggleSeleccion(e.id); }}
+                editLabel="Editar empresa"
+                eliminarLabel="Eliminar empresa"
+                onEditar={() => setModal(e)}
+                onEliminar={() => setDeletingId(e.id)}
+                avatar={<div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}><Building2 size={16} /></div>}
+              >
+                <p className="font-semibold text-[#2A2118] truncate" title={e.denominacion}>{e.denominacion}</p>
+                {nPersonas > 0 ? (
+                  <p className="text-xs text-[#8A8272] truncate" title={`${e.ciudad ? e.ciudad + " · " : ""}${nPersonas} contacto${nPersonas !== 1 ? "s" : ""}`}>{e.ciudad ? `${e.ciudad} · ` : ""}{nPersonas} contacto{nPersonas !== 1 ? "s" : ""}</p>
+                ) : (
+                  <Chip tone="estadoPendiente">A definir</Chip>
+                )}
+                {nSubsidiarias > 0 && (
+                  <p className="text-[11px] text-[var(--tema-vinculo)] font-semibold flex items-center gap-1 mt-0.5"><Layers size={11} /> Cabecera · {nSubsidiarias} empresa{nSubsidiarias !== 1 ? "s" : ""} del grupo</p>
+                )}
+                {cabecera && (
+                  <p className="text-[11px] text-[#8A8272] flex items-center gap-1 mt-0.5"><Layers size={11} /> Grupo {cabecera.denominacion}</p>
+                )}
+              </FilaSeleccionable>
             );
           })}
         </div>
+      )}
+      {seleccionIds.length > 0 && <div className="h-16" />}
+      {seleccionIds.length > 0 && (
+        <SeleccionBar count={seleccionIds.length} onCancelar={salirSeleccion} onEtiquetar={() => setShowTagPickerMasivo(true)} />
+      )}
+      {showTagPickerMasivo && (
+        <TagPickerForm
+          core={core}
+          setCore={setCore}
+          entidadTipo="Empresa"
+          entidadIds={seleccionIds}
+          onClose={() => { setShowTagPickerMasivo(false); salirSeleccion(); }}
+        />
       )}
 
       {modal !== null && <EmpresaForm initial={modal} core={core} setCore={setCore} onSave={save} onDelete={modal.id ? () => { del(modal.id); setModal(null); } : null} onClose={() => setModal(null)} />}
@@ -6538,6 +6692,11 @@ function ObrasView({ core, setCore, onOpen }) {
   const [deletingId, setDeletingId] = useState(null);
   const usoDeletingId = deletingId ? vinculosDeEntidad(core, "Obra", deletingId, true).length : 0;
   const [q, setQ] = useState("");
+  const [seleccionModo, setSeleccionModo] = useState(false);
+  const [seleccionIds, setSeleccionIds] = useState([]);
+  const [showTagPickerMasivo, setShowTagPickerMasivo] = useState(false);
+  const salirSeleccion = () => { setSeleccionModo(false); setSeleccionIds([]); };
+  const toggleSeleccion = (id) => setSeleccionIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
   const list = core.obras.filter((o) => o.nombre.toLowerCase().includes(q.toLowerCase()));
   const save = (data, vinculoEmpresa) => {
     setCore((prev) => {
@@ -6565,6 +6724,7 @@ function ObrasView({ core, setCore, onOpen }) {
           <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#A69C88]" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar obra..." className={`${inputCls} pl-8`} />
         </div>
+        <BotonSeleccionar activo={seleccionModo} onClick={() => (seleccionModo ? salirSeleccion() : setSeleccionModo(true))} />
         <button onClick={() => setModal({})} className="shrink-0 bg-[var(--tema-acento)] text-[#2A2118] rounded-sm px-3 py-1 flex flex-col items-center justify-center gap-0.5 leading-none">
           <span className="text-[9px] font-bold">{core.obras.length}</span>
           <Plus size={16} />
@@ -6578,25 +6738,42 @@ function ObrasView({ core, setCore, onOpen }) {
           {list.map((o) => {
             const empresas = contrapartesDe(core, "Obra", o.id, "Empresa", true).map(({ c }) => core.empresas.find((e) => e.id === c.id)?.denominacion).filter(Boolean);
             return (
-              <div key={o.id} className="w-full bg-white border border-[#E4DECF] rounded-sm p-3 flex items-center gap-3">
-                <button onClick={() => onOpen("obra", o.id)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
-                  <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}><HardHat size={16} /></div>
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-[#2A2118] truncate" title={o.nombre}>{o.nombre}</p>
-                    {empresas.length ? (
-                      <p className="text-xs text-[#8A8272] truncate" title={empresas.join(", ")}>{empresas.join(", ")}</p>
-                    ) : (
-                      <Chip tone="estadoPendiente">A definir</Chip>
-                    )}
-                  </div>
-                </button>
-                <IconBtn label="Editar obra" onClick={() => setModal(o)}><Pencil size={15} /></IconBtn>
-                <IconBtn label="Eliminar obra" danger onClick={() => setDeletingId(o.id)}><Trash2 size={15} /></IconBtn>
-                <ChevronRight size={16} className="text-[#C9C1AE] shrink-0" />
-              </div>
+              <FilaSeleccionable
+                key={o.id}
+                seleccionModo={seleccionModo}
+                seleccionado={seleccionIds.includes(o.id)}
+                onToggle={() => toggleSeleccion(o.id)}
+                onAbrir={() => onOpen("obra", o.id)}
+                onLongPress={() => { setSeleccionModo(true); toggleSeleccion(o.id); }}
+                editLabel="Editar obra"
+                eliminarLabel="Eliminar obra"
+                onEditar={() => setModal(o)}
+                onEliminar={() => setDeletingId(o.id)}
+                avatar={<div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}><HardHat size={16} /></div>}
+              >
+                <p className="font-semibold text-[#2A2118] truncate" title={o.nombre}>{o.nombre}</p>
+                {empresas.length ? (
+                  <p className="text-xs text-[#8A8272] truncate" title={empresas.join(", ")}>{empresas.join(", ")}</p>
+                ) : (
+                  <Chip tone="estadoPendiente">A definir</Chip>
+                )}
+              </FilaSeleccionable>
             );
           })}
         </div>
+      )}
+      {seleccionIds.length > 0 && <div className="h-16" />}
+      {seleccionIds.length > 0 && (
+        <SeleccionBar count={seleccionIds.length} onCancelar={salirSeleccion} onEtiquetar={() => setShowTagPickerMasivo(true)} />
+      )}
+      {showTagPickerMasivo && (
+        <TagPickerForm
+          core={core}
+          setCore={setCore}
+          entidadTipo="Obra"
+          entidadIds={seleccionIds}
+          onClose={() => { setShowTagPickerMasivo(false); salirSeleccion(); }}
+        />
       )}
       {modal !== null && <ObraForm initial={modal} core={core} setCore={setCore} onSave={save} onDelete={modal.id ? () => { del(modal.id); setModal(null); } : null} onClose={() => setModal(null)} />}
       {deletingId && (
