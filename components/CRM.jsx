@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.26.0";
+const APP_VERSION = "2.26.1";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -1462,8 +1462,9 @@ export default function CRM({ userId, onLogout }) {
     return () => navigator.serviceWorker.removeEventListener("message", onMessage);
   }, []);
 
-  // Al tocar una notificación (o abrir la app desde ella), llega con "?abrir=<hiloId>" en la
-  // URL — esto la lee una sola vez, abre esa ficha, y limpia el parámetro de la URL.
+  // Al tocar una notificación (o abrir la app desde ella), llega con "?abrir=<hiloId>" (y
+  // "texto=" con el mensaje del aviso) en la URL — esto lo lee una sola vez, abre esa ficha,
+  // muestra el mismo cartel que cuando la app ya estaba abierta, y limpia la URL.
   useEffect(() => {
     if (!core || deepLinkAplicado.current) return;
     const params = new URLSearchParams(window.location.search);
@@ -1471,6 +1472,8 @@ export default function CRM({ userId, onLogout }) {
     if (abrir) {
       deepLinkAplicado.current = true;
       setDetail({ type: "hilo", id: abrir });
+      const texto = params.get("texto");
+      if (texto) setAvisoEnPantalla({ texto, hiloId: abrir });
       window.history.replaceState({}, "", window.location.pathname);
     }
   }, [core]);

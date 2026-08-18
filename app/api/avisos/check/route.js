@@ -86,7 +86,7 @@ export async function POST(request) {
         try {
           await webpush.sendNotification(
             { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-            JSON.stringify({ title: 'Recordatorio', body: item.texto, url: `/?abrir=${item.hiloId}`, hiloId: item.hiloId })
+            JSON.stringify({ title: 'Recordatorio', body: item.texto, url: `/?abrir=${item.hiloId}&texto=${encodeURIComponent(item.texto)}`, hiloId: item.hiloId })
           );
           envioOk = true;
         } catch (err) {
