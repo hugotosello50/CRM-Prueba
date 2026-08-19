@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.34.0";
+const APP_VERSION = "2.34.1";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -287,7 +287,9 @@ function migrarAVinculos(out) {
 function normalizeCore(c) {
   const seed = seedCore();
   const out = { ...seed, ...c };
-  if (!Array.isArray(out.categorias) || out.categorias.length === 0) out.categorias = seed.categorias;
+  // Solo repone las categorías de ejemplo si el dato está roto/ausente (cuenta nueva) — si el
+  // usuario las borró todas a propósito, un array vacío es un estado válido y se respeta.
+  if (!Array.isArray(out.categorias)) out.categorias = seed.categorias;
   out.empresas = (out.empresas || []).map((e) => ({ ciudad: "", cuit: "", ...e }));
   out.etiquetas = (out.etiquetas || []).map((e) => {
     if (e.categoriaId) return e;
