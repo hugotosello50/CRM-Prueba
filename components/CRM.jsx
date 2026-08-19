@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.32.1";
+const APP_VERSION = "2.33.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -683,6 +683,30 @@ function Chip({ children, tone = "estadoCerradoInactivo" }) {
     urgenciaVencida: "bg-[var(--tema-urgenciaVencida)] text-[#F2F0E9]",
   };
   return <span className={`text-[10px] font-bold tracking-widest px-2 py-1 rounded-sm ${tones[tone]}`}>{children}</span>;
+}
+
+// Selector de prioridad de una acción: 3 botones con el mismo color que usa el Chip de
+// prioridad en el resto de la app (rojo/amarillo/gris), en vez de un <select> nativo.
+function SelectorPrioridad({ value, onChange }) {
+  const opciones = [
+    { valor: "Alta", tone: "bg-[var(--tema-prioridadAlta)] text-[#F2F0E9]" },
+    { valor: "Media", tone: "bg-[var(--tema-prioridadMedia)] text-[#2A2118]" },
+    { valor: "Baja", tone: "bg-[var(--tema-prioridadBaja)] text-[#4A4438]" },
+  ];
+  return (
+    <div className="flex gap-1.5">
+      {opciones.map((o) => (
+        <button
+          key={o.valor}
+          type="button"
+          onClick={() => onChange(o.valor)}
+          className={`flex-1 py-2 rounded-sm text-xs font-bold ${value === o.valor ? o.tone : "bg-[#E7E2D8] text-[#6B6352]"}`}
+        >
+          {o.valor}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 // Chips de los ítems que se fueron agregando en esta apertura de un formulario de vínculo
@@ -2494,9 +2518,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
               )}
 
               <Field label="Prioridad">
-                <select className={inputCls} value={prioridad} onChange={(e) => setPrioridad(e.target.value)}>
-                  <option>Alta</option><option>Media</option><option>Baja</option>
-                </select>
+                <SelectorPrioridad value={prioridad} onChange={setPrioridad} />
               </Field>
               <label className="flex items-center gap-2 mb-2 text-sm text-[#2A2118]">
                 <input type="checkbox" checked={recurrente} onChange={(e) => setRecurrente(e.target.checked)} /> Es una acción repetitiva
@@ -6043,9 +6065,7 @@ function AvanzarHiloForm({ hilo, pendienteActual, core, setCore, acciones, setAc
             )}
 
             <Field label="Prioridad">
-              <select className={inputCls} value={prioridad} onChange={(e) => setPrioridad(e.target.value)}>
-                <option>Alta</option><option>Media</option><option>Baja</option>
-              </select>
+              <SelectorPrioridad value={prioridad} onChange={setPrioridad} />
             </Field>
             <label className="flex items-center gap-2 mb-2 text-sm text-[#2A2118]">
               <input type="checkbox" checked={recurrente} onChange={(e) => setRecurrente(e.target.checked)} /> Es una acción repetitiva
@@ -6158,9 +6178,7 @@ function EditAccionForm({ accion, core, setCore, otrasAccionesDelHilo = [], onCl
             </div>
           )}
           <Field label="Prioridad">
-            <select className={inputCls} value={prioridad} onChange={(e) => setPrioridad(e.target.value)}>
-              <option>Alta</option><option>Media</option><option>Baja</option>
-            </select>
+            <SelectorPrioridad value={prioridad} onChange={setPrioridad} />
           </Field>
           <label className="flex items-center gap-2 mb-2 text-sm text-[#2A2118]">
             <input type="checkbox" checked={recurrente} onChange={(e) => setRecurrente(e.target.checked)} /> Es una acción repetitiva
