@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.32.0";
+const APP_VERSION = "2.32.1";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -3642,16 +3642,33 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
         </span>
       ))}
     </p>
+  ) : !esTarea && (empresas.length > 0 || obras.length > 0) ? (
+    // Sin persona: el título muestra directamente la(s) empresa(s) y/o obra(s) vinculadas,
+    // cada una navegable — antes cuando no había persona el título quedaba en texto plano.
+    <p className="text-base font-extrabold text-[#2A2118] truncate">
+      {empresas.map((e, i) => (
+        <span key={e.id}>
+          {i > 0 && ", "}
+          <button onClick={() => onOpen("empresa", e.id)} className="hover:underline underline-offset-2">{e.denominacion}</button>
+        </span>
+      ))}
+      {empresas.length > 0 && obras.length > 0 && <span className="text-[#8A8272]"> · </span>}
+      {obras.map((o, i) => (
+        <span key={o.id}>
+          {i > 0 && ", "}
+          <button onClick={() => onOpen("obra", o.id)} className="hover:underline underline-offset-2">{o.nombre}</button>
+        </span>
+      ))}
+    </p>
   ) : (
     <p className="text-base font-extrabold text-[#2A2118] truncate" title={textoPlanoDeMenciones(nombrePrincipal)}><TextoConMenciones texto={nombrePrincipal} onOpen={onOpen} /></p>
   );
 
-  // Si no hay persona, el título principal ya muestra la empresa (o si tampoco hay, la obra)
-  // vía etiquetaVinculoHilo — así que ese mismo dato no se repite acá abajo.
-  const esTituloEmpresa = !esTarea && personasDelHilo.length === 0 && empresas.length > 0;
-  const esTituloObra = !esTarea && personasDelHilo.length === 0 && empresas.length === 0 && obras.length > 0;
-  const empresasSubtitulo = esTituloEmpresa ? [] : empresas;
-  const obrasSubtitulo = esTituloObra ? [] : obras;
+  // Si no hay persona, el título principal ya muestra la(s) empresa(s) y/o obra(s) — así que
+  // ese mismo dato no se repite como subtítulo acá abajo.
+  const tituloYaMuestraEmpresaObra = !esTarea && personasDelHilo.length === 0 && (empresas.length > 0 || obras.length > 0);
+  const empresasSubtitulo = tituloYaMuestraEmpresaObra ? [] : empresas;
+  const obrasSubtitulo = tituloYaMuestraEmpresaObra ? [] : obras;
 
   const empresasObrasLine = (empresasSubtitulo.length > 0 || obrasSubtitulo.length > 0) && (
     <p className="text-sm mt-0.5 truncate">
