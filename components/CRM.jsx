@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.31.1";
+const APP_VERSION = "2.31.2";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -5405,9 +5405,9 @@ function AdjuntosDeHilo({ hilo, hiloId, setCore, setConfirmar }) {
       <div className="flex items-center justify-between gap-2 mb-1.5">
         <p className="text-[10px] font-bold tracking-wide text-[#A69C88] shrink-0">{adjuntos.length} adjunto{adjuntos.length === 1 ? "" : "s"}</p>
         <div className="flex items-center gap-2">
-          <button type="button" onClick={() => setAgregandoLink((v) => !v)} className="text-xs font-bold text-[var(--tema-vinculo)]">+ Agregar link</button>
+          <button type="button" onClick={() => setAgregandoLink((v) => !v)} className="text-xs font-bold text-[var(--tema-vinculo)]">+Link</button>
           <button type="button" onClick={() => inputRef.current?.click()} disabled={subiendo} className="text-xs font-bold text-[var(--tema-vinculo)] disabled:opacity-50">
-            {subiendo ? "Subiendo…" : "+ Agregar archivo"}
+            {subiendo ? "Subiendo…" : "+Archivo"}
           </button>
         </div>
         <input
