@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.33.1";
+const APP_VERSION = "2.34.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -163,14 +163,14 @@ const seedCore = () => ({
     { id: "TA05", nombre: "Reunión" },
   ],
   etiquetas: [
-    { id: "ET01", etiqueta: "Zona Norte", categoriaId: "CAT1", aplicaA: "Empresa" },
-    { id: "ET02", etiqueta: "Solar", categoriaId: "CAT2", aplicaA: "Obra" },
-    { id: "ET03", etiqueta: "Cliente clave", categoriaId: "CAT3", aplicaA: "Empresa" },
+    { id: "ET01", etiqueta: "Zona Norte", categoriaId: "CAT1" },
+    { id: "ET02", etiqueta: "Solar", categoriaId: "CAT2" },
+    { id: "ET03", etiqueta: "Cliente clave", categoriaId: "CAT3" },
   ],
   categorias: [
-    { id: "CAT1", nombre: "Zona" },
-    { id: "CAT2", nombre: "Rubro" },
-    { id: "CAT3", nombre: "Prioridad" },
+    { id: "CAT1", nombre: "Zona", aplicaA: "Empresa" },
+    { id: "CAT2", nombre: "Rubro", aplicaA: "Obra" },
+    { id: "CAT3", nombre: "Prioridad", aplicaA: "Empresa" },
   ],
   tiposRelacion: seedTiposRelacion(),
   // Único sistema de relaciones de la app (Red de relaciones). Cada vínculo tiene origen y
@@ -295,7 +295,7 @@ function normalizeCore(c) {
     const nombreCat = (e.categoria || "").trim();
     let match = out.categorias.find((c2) => c2.nombre.toLowerCase() === nombreCat.toLowerCase());
     if (!match && nombreCat) {
-      match = { id: uid("CAT"), nombre: nombreCat };
+      match = { id: uid("CAT"), nombre: nombreCat, aplicaA: "Empresa" };
       out.categorias = [...out.categorias, match];
     }
     const { categoria, ...rest } = e;
@@ -1254,15 +1254,22 @@ function TagsSection({ core, setCore, entidadTipo, entidadId }) {
 // entidad se comporta como el selector de siempre (se puede seguir agregando sin cerrar); con
 // varias (selección múltiple en una lista) aplica a todas de una vez y cierra el modal.
 function TagPickerForm({ core, setCore, entidadTipo, entidadIds, asignadas = [], onClose }) {
+  // "Aplica a" vive en la categoría, no en la etiqueta — una etiqueta aplica al tipo de su
+  // categoría. Acá solo importan las categorías que ya aplican al tipo de entidad actual.
+  const categoriasDelTipo = (core.categorias || []).filter((c) => c.aplicaA === entidadTipo);
+
   const [modo, setModo] = useState("existente");
   const [etiquetaId, setEtiquetaId] = useState("");
   const [nombre, setNombre] = useState("");
-  const [categoriaId, setCategoriaId] = useState((core.categorias || [])[0]?.id || "");
-  const [categoriaModo, setCategoriaModo] = useState("existente"); // 'existente' | 'nueva'
+  const [categoriaId, setCategoriaId] = useState(categoriasDelTipo[0]?.id || "");
+  const [categoriaModo, setCategoriaModo] = useState(categoriasDelTipo.length > 0 ? "existente" : "nueva"); // 'existente' | 'nueva'
   const [nombreCategoriaNueva, setNombreCategoriaNueva] = useState("");
 
   const esMultiple = entidadIds.length > 1;
-  const disponibles = core.etiquetas.filter((e) => e.aplicaA === entidadTipo && (esMultiple || !asignadas.some((r) => r.etiquetaId === e.id)));
+  const disponibles = core.etiquetas.filter((e) => {
+    const cat = (core.categorias || []).find((c) => c.id === e.categoriaId);
+    return cat?.aplicaA === entidadTipo && (esMultiple || !asignadas.some((r) => r.etiquetaId === e.id));
+  });
 
   const asignarAEntidad = (prev, etId, entidadId) =>
     prev.entidadEtiqueta.some((r) => r.etiquetaId === etId && r.entidadTipo === entidadTipo && r.entidadId === entidadId)
@@ -1285,11 +1292,13 @@ function TagPickerForm({ core, setCore, entidadTipo, entidadIds, asignadas = [],
     let categoriasActualizadas = core.categorias || [];
     if (categoriaModo === "nueva") {
       if (!nombreCategoriaNueva.trim()) return;
-      const nuevaCat = { id: uid("CAT"), nombre: nombreCategoriaNueva.trim() };
+      // El "aplica a" de la categoría nueva se fija solo, según la entidad que se está
+      // etiquetando — acá no hace falta volver a preguntarlo.
+      const nuevaCat = { id: uid("CAT"), nombre: nombreCategoriaNueva.trim(), aplicaA: entidadTipo };
       categoriasActualizadas = [...categoriasActualizadas, nuevaCat];
       catId = nuevaCat.id;
     }
-    const nueva = { id: uid("ET"), etiqueta: nombre.trim(), categoriaId: catId, aplicaA: entidadTipo };
+    const nueva = { id: uid("ET"), etiqueta: nombre.trim(), categoriaId: catId };
     setCore((prev) => ({
       ...prev,
       categorias: categoriasActualizadas,
@@ -1349,24 +1358,26 @@ function TagPickerForm({ core, setCore, entidadTipo, entidadIds, asignadas = [],
         <>
           <Field label="Etiqueta *"><input className={inputCls} value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Ej: Zona Norte" /></Field>
 
-          <div className="flex gap-2 mb-2">
-            <button
-              type="button"
-              onClick={() => setCategoriaModo("existente")}
-              style={{ backgroundColor: categoriaModo === "existente" ? "#2A2F36" : "#E7E2D8", color: categoriaModo === "existente" ? "#FFFFFF" : "#6B6352" }}
-              className="flex-1 py-1.5 rounded-sm text-xs font-bold"
-            >Categoría existente</button>
-            <button
-              type="button"
-              onClick={() => setCategoriaModo("nueva")}
-              style={{ backgroundColor: categoriaModo === "nueva" ? "#2A2F36" : "#E7E2D8", color: categoriaModo === "nueva" ? "#FFFFFF" : "#6B6352" }}
-              className="flex-1 py-1.5 rounded-sm text-xs font-bold"
-            >Nueva categoría</button>
-          </div>
-          {categoriaModo === "existente" ? (
+          {categoriasDelTipo.length > 0 && (
+            <div className="flex gap-2 mb-2">
+              <button
+                type="button"
+                onClick={() => setCategoriaModo("existente")}
+                style={{ backgroundColor: categoriaModo === "existente" ? "#2A2F36" : "#E7E2D8", color: categoriaModo === "existente" ? "#FFFFFF" : "#6B6352" }}
+                className="flex-1 py-1.5 rounded-sm text-xs font-bold"
+              >Categoría existente</button>
+              <button
+                type="button"
+                onClick={() => setCategoriaModo("nueva")}
+                style={{ backgroundColor: categoriaModo === "nueva" ? "#2A2F36" : "#E7E2D8", color: categoriaModo === "nueva" ? "#FFFFFF" : "#6B6352" }}
+                className="flex-1 py-1.5 rounded-sm text-xs font-bold"
+              >Nueva categoría</button>
+            </div>
+          )}
+          {categoriaModo === "existente" && categoriasDelTipo.length > 0 ? (
             <Field label="Categoría">
               <BuscadorSelect
-                opciones={(core.categorias || []).map((c) => ({ id: c.id, label: c.nombre }))}
+                opciones={categoriasDelTipo.map((c) => ({ id: c.id, label: c.nombre }))}
                 value={categoriaId}
                 onChange={setCategoriaId}
                 placeholder="Buscar categoría..."
@@ -1376,7 +1387,7 @@ function TagPickerForm({ core, setCore, entidadTipo, entidadIds, asignadas = [],
             <Field label="Nueva categoría"><input className={inputCls} value={nombreCategoriaNueva} onChange={(e) => setNombreCategoriaNueva(e.target.value)} placeholder="Ej: Zona, Rubro, Prioridad" /></Field>
           )}
 
-          <p className="text-xs text-[#A69C88] mb-3">Se creará como etiqueta de tipo "{entidadTipo}" y se asigna automáticamente.</p>
+          <p className="text-xs text-[#A69C88] mb-3">Se creará como etiqueta de tipo "{entidadTipo}"{categoriaModo === "nueva" || categoriasDelTipo.length === 0 ? " (la categoría nueva queda con ese mismo \"aplica a\")" : ""} y se asigna automáticamente.</p>
           <PrimaryBtn full onClick={crearYAsignar}>Crear y asignar</PrimaryBtn>
         </>
       )}
@@ -7597,7 +7608,10 @@ function EtiquetasView({ core, setCore }) {
           <div key={t.id} className="bg-white border border-[#E4DECF] rounded-sm p-2.5 flex items-center justify-between text-sm">
             <div>
               <span className="font-semibold text-[#2A2118]">{t.etiqueta}</span>
-              <span className="text-[#8A8272]"> · {(core.categorias || []).find((c) => c.id === t.categoriaId)?.nombre || "sin categoría"} · aplica a {t.aplicaA}</span>
+              <span className="text-[#8A8272]"> · {(() => {
+                const cat = (core.categorias || []).find((c) => c.id === t.categoriaId);
+                return cat ? `${cat.nombre} · aplica a ${cat.aplicaA}` : "sin categoría";
+              })()}</span>
             </div>
             <div className="flex gap-1">
               <IconBtn label="Editar" onClick={() => setModal(t)}><Pencil size={14} /></IconBtn>
@@ -7656,7 +7670,7 @@ function CategoriasView({ core, setCore }) {
       <div className="space-y-1.5">
         {list.map((c) => (
           <div key={c.id} className="bg-white border border-[#E4DECF] rounded-sm p-2.5 flex items-center justify-between text-sm">
-            <span className="font-semibold text-[#2A2118]">{c.nombre}</span>
+            <span className="font-semibold text-[#2A2118]">{c.nombre} <span className="font-normal text-[#8A8272]">· aplica a {c.aplicaA}</span></span>
             <div className="flex gap-1">
               <IconBtn label="Editar" onClick={() => setModal(c)}><Pencil size={14} /></IconBtn>
               <IconBtn label="Eliminar" danger onClick={() => setDeletingId(c.id)}><Trash2 size={14} /></IconBtn>
@@ -8243,40 +8257,42 @@ function TipoAccionForm({ data, onSave }) {
 }
 
 function EtiquetaForm({ data, core, setCore, onSave }) {
+  const categorias = core.categorias || [];
   const [etiqueta, setEtiqueta] = useState(data.etiqueta || "");
-  const [categoriaId, setCategoriaId] = useState(data.categoriaId || (core.categorias || [])[0]?.id || "");
-  const [aplicaA, setAplicaA] = useState(data.aplicaA || "Empresa");
+  const [categoriaId, setCategoriaId] = useState(data.categoriaId || categorias[0]?.id || "");
   return (
     <div>
       <Field label="Etiqueta"><input className={inputCls} value={etiqueta} onChange={(e) => setEtiqueta(e.target.value)} placeholder="Ej: Zona Norte" /></Field>
-      <SelectConCrear
-        label="Categoría"
-        opciones={core.categorias || []}
-        value={categoriaId}
-        onChange={setCategoriaId}
-        placeholderCrear="Ej: Zona, Rubro, Prioridad"
-        onCrear={(nombre) => {
-          const nuevo = { id: uid("CAT"), nombre };
-          setCore((prev) => ({ ...prev, categorias: [...(prev.categorias || []), nuevo] }));
-          return nuevo;
-        }}
-      />
-      <Field label="Aplica a">
-        <select className={inputCls} value={aplicaA} onChange={(e) => setAplicaA(e.target.value)}>
-          <option>Persona</option><option>Empresa</option><option>Obra</option>
-        </select>
-      </Field>
-      <PrimaryBtn full onClick={() => etiqueta.trim() && onSave({ id: data.id || uid("ET"), etiqueta: etiqueta.trim(), categoriaId, aplicaA })}>Guardar</PrimaryBtn>
+      {categorias.length === 0 ? (
+        <p className="text-sm text-[#A69C88] mb-3">Todavía no hay categorías creadas — creá una primero en "Categorías de etiquetas" (ahí se define a qué aplica).</p>
+      ) : (
+        <Field label="Categoría (define a qué aplica la etiqueta)">
+          <BuscadorSelect
+            opciones={categorias.map((c) => ({ id: c.id, label: `${c.nombre} (${c.aplicaA})` }))}
+            value={categoriaId}
+            onChange={setCategoriaId}
+            placeholder="Buscar categoría..."
+          />
+        </Field>
+      )}
+      <PrimaryBtn full disabled={categorias.length === 0} onClick={() => etiqueta.trim() && categoriaId && onSave({ id: data.id || uid("ET"), etiqueta: etiqueta.trim(), categoriaId })}>Guardar</PrimaryBtn>
     </div>
   );
 }
 
 function CategoriaForm({ data, onSave }) {
   const [nombre, setNombre] = useState(data.nombre || "");
+  const [aplicaA, setAplicaA] = useState(data.aplicaA || "Empresa");
   return (
     <div>
       <Field label="Nombre"><input className={inputCls} value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Ej: Zona, Rubro, Prioridad" /></Field>
-      <PrimaryBtn full onClick={() => nombre.trim() && onSave({ id: data.id || uid("CAT"), nombre: nombre.trim() })}>Guardar</PrimaryBtn>
+      <Field label="Aplica a">
+        <select className={inputCls} value={aplicaA} onChange={(e) => setAplicaA(e.target.value)}>
+          <option>Persona</option><option>Empresa</option><option>Obra</option>
+        </select>
+      </Field>
+      <p className="text-xs text-[#A69C88] mb-3">Todas las etiquetas de esta categoría van a aplicar a este tipo.</p>
+      <PrimaryBtn full onClick={() => nombre.trim() && onSave({ id: data.id || uid("CAT"), nombre: nombre.trim(), aplicaA })}>Guardar</PrimaryBtn>
     </div>
   );
 }
