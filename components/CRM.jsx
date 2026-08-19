@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.31.2";
+const APP_VERSION = "2.32.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -3978,17 +3978,30 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   );
 
   if (esTarea) {
-    return (
-      <div className="bg-white border border-[#E4DECF] rounded-sm p-3 relative" style={{ opacity: arrastrando ? 0.35 : 1 }}>
-        {/* Encabezado mínimo: casilla, ícono, título+fecha chica y editar quedan siempre visibles. */}
+    // Encabezado mínimo: casilla, ícono, título+fecha chica, editar y los "Ver X" quedan
+    // siempre visibles. En modo standalone queda fijo arriba; el resto scrollea aparte.
+    const headerTarea = (
+      <>
         <div className="flex items-start gap-2.5 min-w-0">
           <CasillaFinalizar hilo={hilo} acciones={accionesDelHilo} setCore={setCore} size={18} />
-          <div
-            className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-extrabold"
-            style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}
-          >
-            <ListChecks size={15} />
-          </div>
+          {standalone ? (
+            <div
+              className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-extrabold"
+              style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}
+            >
+              <ListChecks size={15} />
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onOpen("hilo", id)}
+              aria-label="Abrir tarea"
+              className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-extrabold"
+              style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}
+            >
+              <ListChecks size={15} />
+            </button>
+          )}
           <div className="min-w-0 flex-1">
             <p className="text-base font-extrabold text-[#2A2118] truncate" title={textoPlanoDeMenciones(hilo.titulo)}><TextoConMenciones texto={hilo.titulo} onOpen={onOpen} /></p>
             {(hilo.fecha || hilo.hora) && (
@@ -4024,7 +4037,11 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
             {verDetallesTarea ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verDetallesTarea ? "Ocultar detalles" : "Ver detalles"}
           </button>
         </div>
+      </>
+    );
 
+    const bodyTarea = (
+      <>
         {/* Desplegar "detalles" también muestra las subtareas y los adjuntos; desplegar solo
             "subtareas" o solo "adjuntos" no abre "detalles". */}
         {(verSubtareas || verDetallesTarea) && (
@@ -4104,23 +4121,52 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
             )}
           </div>
         )}
+      </>
+    );
 
+    if (standalone) {
+      return (
+        <div className="h-full flex flex-col">
+          <div className="shrink-0 bg-white border border-[#E4DECF] rounded-sm p-3">{headerTarea}</div>
+          <div className="flex-1 min-h-0 overflow-y-auto mt-2 bg-white border border-[#E4DECF] rounded-sm p-3">{bodyTarea}</div>
+          {modales}
+        </div>
+      );
+    }
+
+    return (
+      <div className="bg-white border border-[#E4DECF] rounded-sm p-3 relative" style={{ opacity: arrastrando ? 0.35 : 1 }}>
+        {headerTarea}
+        {bodyTarea}
         {modales}
       </div>
     );
   }
 
-  return (
-    <div className="bg-white border border-[#E4DECF] rounded-sm p-3 relative" style={{ opacity: arrastrando ? 0.35 : 1 }}>
-      {/* Bloque 1: persona, empresa, obra */}
+  // Bloque 1 (identidad del hilo) + fila de pills quedan fijos arriba en modo standalone;
+  // todo lo demás scrollea aparte.
+  const headerCliente = (
+    <>
       <div className="flex items-start gap-2.5 min-w-0 mt-1">
         <CasillaFinalizar hilo={hilo} acciones={accionesDelHilo} setCore={setCore} size={18} />
-        <div
-          className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-extrabold"
-          style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}
-        >
-          {getIniciales(nombrePrincipal)}
-        </div>
+        {standalone ? (
+          <div
+            className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-extrabold"
+            style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}
+          >
+            {getIniciales(nombrePrincipal)}
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onOpen("hilo", id)}
+            aria-label="Abrir hilo"
+            className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-extrabold"
+            style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}
+          >
+            {getIniciales(nombrePrincipal)}
+          </button>
+        )}
         <div className="min-w-0 flex-1 flex items-start gap-1">
           <div className="min-w-0 flex-1">
             {nombreLine}
@@ -4143,6 +4189,11 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       </div>
 
       {filaPillsCliente}
+    </>
+  );
+
+  const bodyCliente = (
+    <>
       {contenidoRelaciones}
       <div className="mt-1.5">{contenidoVinculos}</div>
       {verAdjuntos && (
@@ -4258,7 +4309,23 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
           </div>
         </>
       )}
+    </>
+  );
 
+  if (standalone) {
+    return (
+      <div className="h-full flex flex-col">
+        <div className="shrink-0 bg-white border border-[#E4DECF] rounded-sm p-3">{headerCliente}</div>
+        <div className="flex-1 min-h-0 overflow-y-auto mt-2 bg-white border border-[#E4DECF] rounded-sm p-3">{bodyCliente}</div>
+        {modales}
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white border border-[#E4DECF] rounded-sm p-3 relative" style={{ opacity: arrastrando ? 0.35 : 1 }}>
+      {headerCliente}
+      {bodyCliente}
       {modales}
     </div>
   );
@@ -4266,9 +4333,11 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
 
 function HiloScreen({ id, core, setCore, acciones, setAcciones, onClose, onOpen }) {
   return (
-    <div>
-      <BackHeader onClose={onClose} />
-      <HiloAgendaCard hilo={core.hilos.find((h) => h.id === id)} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onOpen={onOpen} standalone />
+    <div className="h-full flex flex-col">
+      <div className="shrink-0"><BackHeader onClose={onClose} /></div>
+      <div className="flex-1 min-h-0">
+        <HiloAgendaCard hilo={core.hilos.find((h) => h.id === id)} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onOpen={onOpen} standalone />
+      </div>
     </div>
   );
 }
