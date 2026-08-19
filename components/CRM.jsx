@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.33.0";
+const APP_VERSION = "2.33.1";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -3806,10 +3806,10 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   const bloqueVinculosRelaciones = (
     <>
       <div className="mt-1.5 flex items-center gap-3">
-        <button onClick={() => setVerVinculos((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
+        <button onClick={() => setVerVinculos((v) => !v)} className={`text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 ${entidadesDelHilo.length > 0 || hiloRelacionado ? "underline underline-offset-2" : ""}`}>
           {verVinculos ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verVinculos ? "Ocultar vínculos" : "Ver vínculos"}
         </button>
-        <button onClick={() => setVerRelaciones((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
+        <button onClick={() => setVerRelaciones((v) => !v)} className={`text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 ${relacionesDelHilo.length > 0 ? "underline underline-offset-2" : ""}`}>
           {verRelaciones ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verRelaciones ? "Ocultar relaciones" : "Ver relaciones"}
         </button>
       </div>
@@ -3821,10 +3821,10 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   const bloqueContextoResumen = primary && (
     <div className="mt-1.5">
       <div className="flex items-center gap-3 flex-wrap">
-        <button onClick={() => setVerContextoPrimary((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
+        <button onClick={() => setVerContextoPrimary((v) => !v)} className={`text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 ${origenPrimary ? "underline underline-offset-2" : ""}`}>
           {verContextoPrimary ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verContextoPrimary ? "Ocultar contexto" : "Ver contexto"}
         </button>
-        <button onClick={() => { setVerResumen((v) => !v); setVerDetalle(false); }} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
+        <button onClick={() => { setVerResumen((v) => !v); setVerDetalle(false); }} className={`text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 ${historial.length > 0 ? "underline underline-offset-2" : ""}`}>
           {verResumen ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verResumen ? "Ocultar resumen" : "Ver resumen"}
         </button>
       </div>
@@ -3854,11 +3854,11 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   const filaPillsCliente = (
     <div className="mt-1.5 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
       <PillToggle activo={todoDesplegado} onClick={toggleTodosDesplegables}>Todo</PillToggle>
-      <PillToggle activo={verVinculos} onClick={() => setVerVinculos((v) => !v)}>Vínculos</PillToggle>
-      <PillToggle activo={verRelaciones} onClick={() => setVerRelaciones((v) => !v)}>Relaciones</PillToggle>
+      <PillToggle activo={verVinculos} marcado={entidadesDelHilo.length > 0} onClick={() => setVerVinculos((v) => !v)}>Vínculos</PillToggle>
+      <PillToggle activo={verRelaciones} marcado={relacionesDelHilo.length > 0} onClick={() => setVerRelaciones((v) => !v)}>Relaciones</PillToggle>
       <PillToggle activo={verAdjuntos} marcado={(hilo.adjuntos || []).length > 0} onClick={() => setVerAdjuntos((v) => !v)}>Adjuntos</PillToggle>
-      {primary && <PillToggle activo={verContextoPrimary} onClick={() => setVerContextoPrimary((v) => !v)}>Contexto</PillToggle>}
-      {primary && <PillToggle activo={verResumen} onClick={() => { setVerResumen((v) => !v); setVerDetalle(false); }}>Resumen</PillToggle>}
+      {primary && <PillToggle activo={verContextoPrimary} marcado={!!origenPrimary} onClick={() => setVerContextoPrimary((v) => !v)}>Contexto</PillToggle>}
+      {primary && <PillToggle activo={verResumen} marcado={historial.length > 0} onClick={() => { setVerResumen((v) => !v); setVerDetalle(false); }}>Resumen</PillToggle>}
       {primary && verResumen && historial.length > 0 && <PillToggle activo={verDetalle} onClick={() => setVerDetalle((v) => !v)}>Detallado</PillToggle>}
     </div>
   );
@@ -4066,13 +4066,13 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
         </div>
 
         <div className="mt-1.5 flex items-center gap-3 flex-wrap">
-          <button onClick={() => setVerSubtareas((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
+          <button onClick={() => setVerSubtareas((v) => !v)} className={`text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 ${subtareas.length > 0 ? "underline underline-offset-2" : ""}`}>
             {verSubtareas ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verSubtareas ? "Ocultar subtareas" : "Ver subtareas"}
           </button>
           <button onClick={() => setVerAdjuntos((v) => !v)} className={`text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 ${(hilo.adjuntos || []).length > 0 ? "underline underline-offset-2" : ""}`}>
             {verAdjuntos ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verAdjuntos ? "Ocultar adjuntos" : "Ver adjuntos"}
           </button>
-          <button onClick={() => setVerDetallesTarea((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
+          <button onClick={() => setVerDetallesTarea((v) => !v)} className={`text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 ${hilo.notas || primary || historial.length > 0 ? "underline underline-offset-2" : ""}`}>
             {verDetallesTarea ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verDetallesTarea ? "Ocultar detalles" : "Ver detalles"}
           </button>
         </div>
@@ -4838,7 +4838,7 @@ function VinculosDeFicha({ core, setCore, entidadTipo, entidadId, onOpen }) {
 
   return (
     <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-      <button onClick={() => setVerVinculos((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
+      <button onClick={() => setVerVinculos((v) => !v)} className={`text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 ${items.length > 0 ? "underline underline-offset-2" : ""}`}>
         {verVinculos ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verVinculos ? "Ocultar relaciones" : "Ver relaciones"}
       </button>
       {verVinculos && (
@@ -5004,7 +5004,7 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
         <VinculosDeFicha core={core} setCore={setCore} entidadTipo="Persona" entidadId={id} onOpen={onOpen} />
 
         <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-          <button onClick={() => setVerHilos((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
+          <button onClick={() => setVerHilos((v) => !v)} className={`text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 ${hilosActivos.length > 0 || hilosCerrados.length > 0 ? "underline underline-offset-2" : ""}`}>
             {verHilos ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verHilos ? "Ocultar hilos de seguimiento" : "Ver hilos de seguimiento"}
           </button>
           {verHilos && (
@@ -5037,7 +5037,7 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
         </div>
 
         <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-          <button onClick={() => setVerTareas((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
+          <button onClick={() => setVerTareas((v) => !v)} className={`text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 ${tareasDeLaPersona.length > 0 ? "underline underline-offset-2" : ""}`}>
             {verTareas ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verTareas ? "Ocultar tareas" : "Ver tareas"}
           </button>
           {verTareas && (
@@ -5156,7 +5156,7 @@ function AccionCard({ accion, acciones, core, onOpen, onEdit, onDelete }) {
       <div className="flex items-center gap-2 mt-1.5">
         {accion.prioridad && <Chip tone={prioTone}>{accion.prioridad}</Chip>}
         {accion.recurrente && <span className="text-[10px] text-[#8A8272] flex items-center gap-1"><Repeat size={11} /> cada {accion.repiteCadaN} {accion.repiteUnidad}</span>}
-        <button onClick={() => setVerContexto((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 ml-auto">
+        <button onClick={() => setVerContexto((v) => !v)} className={`text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 ml-auto ${accion.notaPlanificada || destino ? "underline underline-offset-2" : ""}`}>
           {verContexto ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verContexto ? "Ocultar contexto" : "Ver contexto"}
         </button>
       </div>
@@ -6682,7 +6682,7 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
         <VinculosDeFicha core={core} setCore={setCore} entidadTipo="Empresa" entidadId={id} onOpen={onOpen} />
 
         <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-          <button onClick={() => setVerHilos((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
+          <button onClick={() => setVerHilos((v) => !v)} className={`text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 ${hilosDeEstaEmpresa.length > 0 || hilosCerradosDeEmpresa.length > 0 ? "underline underline-offset-2" : ""}`}>
             {verHilos ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verHilos ? "Ocultar hilos de seguimiento" : "Ver hilos de seguimiento"}
           </button>
           {verHilos && (
@@ -6715,7 +6715,7 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
         </div>
 
         <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-          <button onClick={() => setVerTareas((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
+          <button onClick={() => setVerTareas((v) => !v)} className={`text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 ${tareasDeLaEmpresa.length > 0 ? "underline underline-offset-2" : ""}`}>
             {verTareas ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verTareas ? "Ocultar tareas" : "Ver tareas"}
           </button>
           {verTareas && (
@@ -7019,7 +7019,7 @@ function ObraDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
         <VinculosDeFicha core={core} setCore={setCore} entidadTipo="Obra" entidadId={id} onOpen={onOpen} />
 
         <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-          <button onClick={() => setVerHilos((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
+          <button onClick={() => setVerHilos((v) => !v)} className={`text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 ${hilosDeEstaObra.length > 0 || hilosCerradosDeObra.length > 0 ? "underline underline-offset-2" : ""}`}>
             {verHilos ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verHilos ? "Ocultar hilos de seguimiento" : "Ver hilos de seguimiento"}
           </button>
           {verHilos && (
@@ -7052,7 +7052,7 @@ function ObraDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
         </div>
 
         <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-          <button onClick={() => setVerTareas((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
+          <button onClick={() => setVerTareas((v) => !v)} className={`text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 ${tareasDeLaObra.length > 0 ? "underline underline-offset-2" : ""}`}>
             {verTareas ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verTareas ? "Ocultar tareas" : "Ver tareas"}
           </button>
           {verTareas && (
