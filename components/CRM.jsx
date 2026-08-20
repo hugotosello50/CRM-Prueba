@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useCallback, useRef, Fragment, Component 
 import * as XLSX from "xlsx";
 import { HexColorPicker } from "react-colorful";
 import {
-  Plus, X, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Search, Settings, Users, Building2,
+  Plus, X, ChevronRight, ChevronLeft, Search, Settings, Users, Building2,
   HardHat, CalendarClock, Trash2, Pencil, Check, AlertTriangle,
   Tag, Star, ListChecks, Repeat, ArrowLeft, ArrowDownAZ, ArrowUpAZ, GitBranch,
   BarChart3, FileSpreadsheet, Download, Trello, GripVertical, LogOut, Menu, Tags, FolderKanban, Layers,
@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.39.0";
+const APP_VERSION = "2.40.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -209,11 +209,11 @@ const seedCore = () => ({
     { id: "T3", nombre: "Hecho", orden: 2 },
   ],
   hilos: [
-    { id: "H001", titulo: "Presupuesto cables solares", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -15), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" },
-    { id: "H002", titulo: "Avance obra Anatonia Village", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -20), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" },
-    { id: "H003", titulo: "Datos de facturación", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -6), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" },
-    { id: "H004", titulo: "Propuesta anual", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -10), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" },
-    { id: "H005", titulo: "Comprar resma de hojas", estado: "Activo", fechaCreacion: todayISO(), tipo: "tarea", columnaTareaId: "T1", hiloRelacionadoId: null, notaCierre: "" },
+    { id: "H001", titulo: "Presupuesto cables solares", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -15), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "", notas: "" },
+    { id: "H002", titulo: "Avance obra Anatonia Village", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -20), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "", notas: "" },
+    { id: "H003", titulo: "Datos de facturación", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -6), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "", notas: "" },
+    { id: "H004", titulo: "Propuesta anual", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -10), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "", notas: "" },
+    { id: "H005", titulo: "Comprar resma de hojas", estado: "Activo", fechaCreacion: todayISO(), tipo: "tarea", columnaTareaId: "T1", hiloRelacionadoId: null, notaCierre: "", notas: "" },
   ],
 });
 
@@ -304,7 +304,7 @@ function normalizeCore(c) {
     return { ...rest, categoriaId: match ? match.id : out.categorias[0].id };
   });
   if (!Array.isArray(out.hilos)) out.hilos = [];
-  out.hilos = out.hilos.map((h) => ({ tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "", ...h }));
+  out.hilos = out.hilos.map((h) => ({ tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "", notas: "", ...h }));
   if (!Array.isArray(out.tiposRelacion)) out.tiposRelacion = [];
   if (!Array.isArray(out.vinculos)) out.vinculos = [];
   // Unifica todo al sistema de vínculos (migra las tablas viejas si todavía están).
@@ -751,6 +751,20 @@ function PillToggle({ activo, marcado, onClick, children }) {
     >
       {children}
     </button>
+  );
+}
+
+// Editor chico para el campo suelto "Notas" de un hilo (seguimiento o tarea) — solo el texto
+// de la nota, sin abrir el formulario completo de edición del hilo.
+function EditorNotaModal({ core, valorInicial, onGuardar, onClose }) {
+  const [valor, setValor] = useState(valorInicial || "");
+  return (
+    <Modal title="Editar nota" onClose={onClose}>
+      <Field label="Nota">
+        <CampoConMenciones core={core} multiline rows={4} value={valor} onChange={setValor} autoFocus />
+      </Field>
+      <PrimaryBtn full core={core} onClick={() => { onGuardar(valor.trim()); onClose(); }}>Guardar</PrimaryBtn>
+    </Modal>
   );
 }
 
@@ -2236,7 +2250,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
     if (!titulo.trim() || faltaVinculo) return;
     const hoy = todayISO();
     const personaIdFinal = personaFija ? personaFija.id : personaId;
-    const nuevoHilo = { id: uid("H"), titulo: titulo.trim(), estado: "Activo", fechaCreacion: hoy, tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" };
+    const nuevoHilo = { id: uid("H"), titulo: titulo.trim(), estado: "Activo", fechaCreacion: hoy, tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "", notas: "" };
     const nuevosVinculos = [
       ...(personaIdFinal ? [vinc("Persona", personaIdFinal, "Hilo", nuevoHilo.id, null, true, hoy)] : []),
       ...empresaIds.map((eid) => vinc("Hilo", nuevoHilo.id, "Empresa", eid, null, false, hoy)),
@@ -2258,7 +2272,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
   const crearMultiple = () => {
     if (!titulo.trim() || personaIdsMultiple.length === 0) return;
     const hoy = todayISO();
-    const nuevosHilos = personaIdsMultiple.map(() => ({ id: uid("H"), titulo: titulo.trim(), estado: "Activo", fechaCreacion: hoy, tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "" }));
+    const nuevosHilos = personaIdsMultiple.map(() => ({ id: uid("H"), titulo: titulo.trim(), estado: "Activo", fechaCreacion: hoy, tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "", notas: "" }));
     const nuevosVinculos = personaIdsMultiple.map((pid, i) => vinc("Persona", pid, "Hilo", nuevosHilos[i].id, null, true, hoy));
     setCore((prev) => ({ ...prev, hilos: [...nuevosHilos, ...prev.hilos], vinculos: [...(prev.vinculos || []), ...nuevosVinculos] }));
 
@@ -2784,9 +2798,7 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
 
       {tareasCerradas.length > 0 && (
         <div className="mt-4">
-          <button onClick={() => setVerCerradas((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
-            {verCerradas ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verCerradas ? "Ocultar" : "Ver"} tareas completadas ({tareasCerradas.length})
-          </button>
+          <PillToggle activo={verCerradas} marcado onClick={() => setVerCerradas((v) => !v)}>Tareas completadas ({tareasCerradas.length})</PillToggle>
           {verCerradas && (
             <div className="mt-2 space-y-2">
               {tareasCerradas.map((h) => (
@@ -3572,6 +3584,8 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   const [showAgregarTarea, setShowAgregarTarea] = useState(false);
   const [editingAccion, setEditingAccion] = useState(null);
   const [deletingAccionId, setDeletingAccionId] = useState(null);
+  const [verNotas, setVerNotas] = useState(false);
+  const [editandoNota, setEditandoNota] = useState(false);
   const [verVinculos, setVerVinculos] = useState(false);
   const [verRelaciones, setVerRelaciones] = useState(false);
   const [verTareasVinculadas, setVerTareasVinculadas] = useState(false);
@@ -3648,6 +3662,10 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   const desvincularTarea = (tareaId) => setCore((prev) => ({
     ...prev,
     hilos: prev.hilos.map((h) => (h.id === tareaId ? { ...h, hiloRelacionadoId: null } : h)),
+  }));
+  const guardarNota = (nuevaNota) => setCore((prev) => ({
+    ...prev,
+    hilos: prev.hilos.map((h) => (h.id === id ? { ...h, notas: nuevaNota } : h)),
   }));
   // Agrega la persona al hilo y, si tiene empresas vinculadas, arrastra también esas
   // empresas y las obras de esas empresas (además de las obras vinculadas directamente
@@ -3739,6 +3757,19 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   // Piezas de contenido reutilizadas por la tarjeta de tarea (con su propio botón "Ver X" +
   // flecha arriba de cada una) y por la tarjeta de hilo de cliente (con la fila de pills
   // "filaPillsCliente" más abajo controlando estos mismos estados).
+  const contenidoNotas = verNotas && (
+    <div className="mt-2.5">
+      {hilo.notas ? (
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-sm text-[#2A2118] flex-1 min-w-0"><TextoConMenciones texto={hilo.notas} onOpen={onOpen} /></p>
+          <IconBtn label="Editar nota" onClick={() => setEditandoNota(true)}><Pencil size={13} /></IconBtn>
+        </div>
+      ) : (
+        <button onClick={() => setEditandoNota(true)} className="text-xs font-bold text-[var(--tema-vinculo)]">+ Agregar nota</button>
+      )}
+    </div>
+  );
+
   const contenidoRelaciones = verRelaciones && (
     <div className="mt-2.5">
       {relacionesDelHilo.length === 0 ? (
@@ -3767,17 +3798,17 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
     <div className="mt-2.5 space-y-3">
       {esTarea && (
         <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <p className="text-[10px] font-bold tracking-wide text-[#8A8272]">Hilo</p>
-            {!hiloRelacionado && <button onClick={() => setShowVincularCliente(true)} className="text-xs font-bold text-[var(--tema-vinculo)]">+ Vincular</button>}
-          </div>
+          <p className="text-[10px] font-bold tracking-wide text-[#8A8272] mb-1.5">Hilo</p>
           {hiloRelacionado ? (
             <div className="flex items-center justify-between gap-2 text-sm">
               <button onClick={() => onOpen("hilo", hiloRelacionado.id)} className="text-left flex-1 min-w-0 font-semibold text-[#2A2118]">{hiloRelacionado.titulo}</button>
               <IconBtn label="Desvincular" danger onClick={() => setConfirmar({ texto: "¿Desvincular esta tarea del hilo de cliente?", onConfirm: () => setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === id ? { ...h, hiloRelacionadoId: null } : h)) })) })}><X size={14} /></IconBtn>
             </div>
           ) : (
-            <p className="text-sm text-[#A69C88]">Sin hilo vinculado.</p>
+            <>
+              <p className="text-sm text-[#A69C88] mb-1.5">Sin hilo vinculado.</p>
+              <button onClick={() => setShowVincularCliente(true)} className="text-xs font-bold text-[var(--tema-vinculo)]">+ Vincular</button>
+            </>
           )}
         </div>
       )}
@@ -3816,9 +3847,9 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
             </div>
           )}
           {mostrarBotonDetalle && (
-            <button onClick={() => setVerDetalle((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 mt-2">
-              {verDetalle ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verDetalle ? "Ocultar resumen detallado" : "Ver resumen detallado"}
-            </button>
+            <div className="mt-2">
+              <PillToggle activo={verDetalle} onClick={() => setVerDetalle((v) => !v)}>Detallado</PillToggle>
+            </div>
           )}
         </>
       )}
@@ -3829,13 +3860,9 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   // igual que antes de separar contenido y botones.
   const bloqueVinculosRelaciones = (
     <>
-      <div className="mt-1.5 flex items-center gap-3">
-        <button onClick={() => setVerVinculos((v) => !v)} className={`text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 ${entidadesDelHilo.length > 0 || hiloRelacionado ? "underline underline-offset-2" : ""}`}>
-          {verVinculos ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verVinculos ? "Ocultar vínculos" : "Ver vínculos"}
-        </button>
-        <button onClick={() => setVerRelaciones((v) => !v)} className={`text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 ${relacionesDelHilo.length > 0 ? "underline underline-offset-2" : ""}`}>
-          {verRelaciones ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verRelaciones ? "Ocultar relaciones" : "Ver relaciones"}
-        </button>
+      <div className="mt-1.5 flex items-center gap-1.5">
+        <PillToggle activo={verVinculos} marcado={entidadesDelHilo.length > 0 || !!hiloRelacionado} onClick={() => setVerVinculos((v) => !v)}>Vínculos</PillToggle>
+        <PillToggle activo={verRelaciones} marcado={relacionesDelHilo.length > 0} onClick={() => setVerRelaciones((v) => !v)}>Relaciones</PillToggle>
       </div>
       {contenidoRelaciones}
       <div className="mt-1.5">{contenidoVinculos}</div>
@@ -3844,13 +3871,9 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
 
   const bloqueContextoResumen = primary && (
     <div className="mt-1.5">
-      <div className="flex items-center gap-3 flex-wrap">
-        <button onClick={() => setVerContextoPrimary((v) => !v)} className={`text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 ${origenPrimary ? "underline underline-offset-2" : ""}`}>
-          {verContextoPrimary ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verContextoPrimary ? "Ocultar contexto" : "Ver contexto"}
-        </button>
-        <button onClick={() => { setVerResumen((v) => !v); setVerDetalle(false); }} className={`text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 ${historial.length > 0 ? "underline underline-offset-2" : ""}`}>
-          {verResumen ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verResumen ? "Ocultar resumen" : "Ver resumen"}
-        </button>
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <PillToggle activo={verContextoPrimary} marcado={!!origenPrimary} onClick={() => setVerContextoPrimary((v) => !v)}>Contexto</PillToggle>
+        <PillToggle activo={verResumen} marcado={historial.length > 0} onClick={() => { setVerResumen((v) => !v); setVerDetalle(false); }}>Resumen</PillToggle>
       </div>
       {contenidoContexto}
       {contenidoResumenLista(true)}
@@ -3864,6 +3887,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   // efectivamente disponibles (contexto/resumen requieren una acción pendiente; resumen
   // detallado requiere además que haya historial).
   const togglesDesplegables = [
+    [verNotas, setVerNotas],
     [verVinculos, setVerVinculos],
     [verRelaciones, setVerRelaciones],
     [verAdjuntos, setVerAdjuntos],
@@ -3878,6 +3902,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   const filaPillsCliente = (
     <div className="mt-1.5 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
       <PillToggle activo={todoDesplegado} onClick={toggleTodosDesplegables}>Todo</PillToggle>
+      <PillToggle activo={verNotas} marcado={!!hilo.notas} onClick={() => setVerNotas((v) => !v)}>Notas</PillToggle>
       <PillToggle activo={verVinculos} marcado={entidadesDelHilo.length > 0} onClick={() => setVerVinculos((v) => !v)}>Vínculos</PillToggle>
       <PillToggle activo={verRelaciones} marcado={relacionesDelHilo.length > 0} onClick={() => setVerRelaciones((v) => !v)}>Relaciones</PillToggle>
       <PillToggle activo={verAdjuntos} marcado={(hilo.adjuntos || []).length > 0} onClick={() => setVerAdjuntos((v) => !v)}>Adjuntos</PillToggle>
@@ -3926,6 +3951,9 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   // Todos los modales/confirmaciones de la tarjeta — iguales para hilo de cliente y tarea.
   const modales = (
     <>
+      {editandoNota && (
+        <EditorNotaModal core={core} valorInicial={hilo.notas} onGuardar={guardarNota} onClose={() => setEditandoNota(false)} />
+      )}
       {showReprogramar && primary && (
         <ReprogramarModal
           fechaActual={primary.fechaProgramada}
@@ -4089,42 +4117,39 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
           )}
         </div>
 
-        <div className="mt-1.5 flex items-center gap-3 flex-wrap">
-          <button onClick={() => setVerSubtareas((v) => !v)} className={`text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 ${subtareas.length > 0 ? "underline underline-offset-2" : ""}`}>
-            {verSubtareas ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verSubtareas ? "Ocultar subtareas" : "Ver subtareas"}
-          </button>
-          <button onClick={() => setVerAdjuntos((v) => !v)} className={`text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 ${(hilo.adjuntos || []).length > 0 ? "underline underline-offset-2" : ""}`}>
-            {verAdjuntos ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verAdjuntos ? "Ocultar adjuntos" : "Ver adjuntos"}
-          </button>
-          <button onClick={() => setVerDetallesTarea((v) => !v)} className={`text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 ${hilo.notas || primary || historial.length > 0 ? "underline underline-offset-2" : ""}`}>
-            {verDetallesTarea ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verDetallesTarea ? "Ocultar detalles" : "Ver detalles"}
-          </button>
+        <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+          <PillToggle activo={verNotas} marcado={!!hilo.notas} onClick={() => setVerNotas((v) => !v)}>Notas</PillToggle>
+          <PillToggle activo={verSubtareas} marcado={subtareas.length > 0} onClick={() => setVerSubtareas((v) => !v)}>Subtareas</PillToggle>
+          <PillToggle activo={verAdjuntos} marcado={(hilo.adjuntos || []).length > 0} onClick={() => setVerAdjuntos((v) => !v)}>Adjuntos</PillToggle>
+          <PillToggle activo={verDetallesTarea} marcado={primary || historial.length > 0} onClick={() => setVerDetallesTarea((v) => !v)}>Detalles</PillToggle>
         </div>
       </>
     );
 
     const bodyTarea = (
       <>
+        {verNotas && (
+          <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
+            {contenidoNotas}
+          </div>
+        )}
+
         {/* Desplegar "detalles" también muestra las subtareas y los adjuntos; desplegar solo
             "subtareas" o solo "adjuntos" no abre "detalles". */}
         {(verSubtareas || verDetallesTarea) && (
-          <div className="mt-2.5">
+          <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
             {bloqueSubtareas}
           </div>
         )}
 
         {(verAdjuntos || verDetallesTarea) && (
-          <div className="mt-2.5">
+          <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
             <AdjuntosDeHilo hilo={hilo} hiloId={id} setCore={setCore} setConfirmar={setConfirmar} />
           </div>
         )}
 
         {verDetallesTarea && (
           <div className="mt-3 pt-3 border-t border-dashed border-[#E4DECF] space-y-3">
-            {hilo.notas && (
-              <p className="text-xs text-[#2A2118]"><TextoConMenciones texto={hilo.notas} onOpen={onOpen} /></p>
-            )}
-
             {bloqueVinculosRelaciones}
 
             {primary && (
@@ -4257,10 +4282,19 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
 
   const bodyCliente = (
     <>
-      {contenidoRelaciones}
-      <div className="mt-1.5">{contenidoVinculos}</div>
+      {verNotas && (
+        <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
+          {contenidoNotas}
+        </div>
+      )}
+      {(verVinculos || verRelaciones) && (
+        <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
+          {contenidoRelaciones}
+          <div className="mt-1.5">{contenidoVinculos}</div>
+        </div>
+      )}
       {verAdjuntos && (
-        <div className="mt-2.5">
+        <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
           <AdjuntosDeHilo hilo={hilo} hiloId={id} setCore={setCore} setConfirmar={setConfirmar} />
         </div>
       )}
@@ -4862,16 +4896,11 @@ function VinculosDeFicha({ core, setCore, entidadTipo, entidadId, onOpen }) {
 
   return (
     <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-      <button onClick={() => setVerVinculos((v) => !v)} className={`text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 ${items.length > 0 ? "underline underline-offset-2" : ""}`}>
-        {verVinculos ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verVinculos ? "Ocultar relaciones" : "Ver relaciones"}
-      </button>
+      <PillToggle activo={verVinculos} marcado={items.length > 0} onClick={() => setVerVinculos((v) => !v)}>Relaciones</PillToggle>
       {verVinculos && (
         <div className="mt-2.5">
-          <div className="flex justify-end mb-1.5">
-            <button onClick={() => setShowVincular(true)} className="text-xs font-bold text-[var(--tema-vinculo)]">+ Vincular</button>
-          </div>
           {items.length === 0 ? (
-            <p className="text-sm text-[#A69C88]">Sin vínculos cargados.</p>
+            <p className="text-sm text-[#A69C88] mb-1.5">Sin vínculos cargados.</p>
           ) : (
             <div className="space-y-1.5">
               {items.map(({ v, c }) => {
@@ -4900,11 +4929,10 @@ function VinculosDeFicha({ core, setCore, entidadTipo, entidadId, onOpen }) {
               })}
             </div>
           )}
+          <button onClick={() => setShowVincular(true)} className="text-xs font-bold text-[var(--tema-vinculo)] mt-1.5">+ Vincular</button>
           {historial.length > 0 && (
             <div className="mt-2.5">
-              <button onClick={() => setVerHistorial((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
-                {verHistorial ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verHistorial ? "Ocultar historial de relaciones" : "Ver historial de relaciones"} ({historial.length})
-              </button>
+              <PillToggle activo={verHistorial} marcado onClick={() => setVerHistorial((v) => !v)}>Historial de relaciones ({historial.length})</PillToggle>
               {verHistorial && (
                 <div className="mt-1.5 space-y-1">
                   {historial.map(({ v, c }) => {
@@ -5028,14 +5056,9 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
         <VinculosDeFicha core={core} setCore={setCore} entidadTipo="Persona" entidadId={id} onOpen={onOpen} />
 
         <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-          <button onClick={() => setVerHilos((v) => !v)} className={`text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 ${hilosActivos.length > 0 || hilosCerrados.length > 0 ? "underline underline-offset-2" : ""}`}>
-            {verHilos ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verHilos ? "Ocultar hilos de seguimiento" : "Ver hilos de seguimiento"}
-          </button>
+          <PillToggle activo={verHilos} marcado={hilosActivos.length > 0 || hilosCerrados.length > 0} onClick={() => setVerHilos((v) => !v)}>Hilos de seguimiento</PillToggle>
           {verHilos && (
             <div className="mt-2.5">
-              <div className="flex justify-end mb-1.5">
-                <button onClick={() => setShowNuevoHilo(true)} className="text-xs font-bold text-[var(--tema-vinculo)] flex items-center gap-1"><Plus size={12} /> Nuevo hilo</button>
-              </div>
               {hilosActivos.length === 0 ? (
                 <EmptyState icon={<GitBranch size={22} />} text="Todavía no hay hilos de seguimiento con esta persona." />
               ) : (
@@ -5046,9 +5069,7 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
 
               {hilosCerrados.length > 0 && (
                 <div className="mt-3">
-                  <button onClick={() => setVerCerrados((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
-                    {verCerrados ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verCerrados ? "Ocultar" : "Ver"} hilos cerrados ({hilosCerrados.length})
-                  </button>
+                  <PillToggle activo={verCerrados} marcado onClick={() => setVerCerrados((v) => !v)}>Hilos cerrados ({hilosCerrados.length})</PillToggle>
                   {verCerrados && (
                     <div className="space-y-2 mt-2">
                       {hilosCerrados.map((h) => <HiloRow key={h.id} hilo={h} core={core} acciones={acciones} onOpen={onOpen} />)}
@@ -5056,26 +5077,24 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
                   )}
                 </div>
               )}
+
+              <button onClick={() => setShowNuevoHilo(true)} className="text-xs font-bold text-[var(--tema-vinculo)] flex items-center gap-1 mt-3"><Plus size={12} /> Nuevo hilo</button>
             </div>
           )}
         </div>
 
         <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-          <button onClick={() => setVerTareas((v) => !v)} className={`text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 ${tareasDeLaPersona.length > 0 ? "underline underline-offset-2" : ""}`}>
-            {verTareas ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verTareas ? "Ocultar tareas" : "Ver tareas"}
-          </button>
+          <PillToggle activo={verTareas} marcado={tareasDeLaPersona.length > 0} onClick={() => setVerTareas((v) => !v)}>Tareas</PillToggle>
           {verTareas && (
             <div className="mt-2.5">
-              <div className="flex justify-end mb-1.5">
-                <button onClick={() => setShowAgregarTareaEntidad(true)} className="text-xs font-bold text-[var(--tema-vinculo)] flex items-center gap-1"><Plus size={12} /> Agregar tarea</button>
-              </div>
               {tareasDeLaPersona.length === 0 ? (
-                <p className="text-sm text-[#A69C88]">Sin tareas todavía.</p>
+                <p className="text-sm text-[#A69C88] mb-1.5">Sin tareas todavía.</p>
               ) : (
                 <div className="space-y-2">
                   {tareasDeLaPersona.map((t) => <HiloAgendaCard key={t.id} hilo={t} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onOpen={onOpen} />)}
                 </div>
               )}
+              <button onClick={() => setShowAgregarTareaEntidad(true)} className="text-xs font-bold text-[var(--tema-vinculo)] flex items-center gap-1 mt-3"><Plus size={12} /> Agregar tarea</button>
             </div>
           )}
         </div>
@@ -5180,12 +5199,10 @@ function AccionCard({ accion, acciones, core, onOpen, onEdit, onDelete }) {
       <div className="flex items-center gap-2 mt-1.5">
         {accion.prioridad && <Chip tone={prioTone}>{accion.prioridad}</Chip>}
         {accion.recurrente && <span className="text-[10px] text-[#8A8272] flex items-center gap-1"><Repeat size={11} /> cada {accion.repiteCadaN} {accion.repiteUnidad}</span>}
-        <button onClick={() => setVerContexto((v) => !v)} className={`text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 ml-auto ${accion.notaPlanificada || destino ? "underline underline-offset-2" : ""}`}>
-          {verContexto ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verContexto ? "Ocultar contexto" : "Ver contexto"}
-        </button>
+        <span className="ml-auto"><PillToggle activo={verContexto} marcado={!!(accion.notaPlanificada || destino)} onClick={() => setVerContexto((v) => !v)}>Contexto</PillToggle></span>
       </div>
       {verContexto && (
-        <div className="mt-2 pt-2 border-t border-[#EFEBE0] space-y-1.5">
+        <div className="mt-2 pt-2 border-t border-dashed border-[#E4DECF] space-y-1.5">
           <p className="text-xs text-[#6B6352]"><span className="font-bold text-[#8A8272]">Se había planificado:</span> {accion.notaPlanificada ? <TextoConMenciones texto={accion.notaPlanificada} onOpen={onOpen} /> : "Sin registro."}</p>
           <p className="text-xs text-[#6B6352]"><span className="font-bold text-[#8A8272]">Se hizo:</span> {accion.notaHecho ? <TextoConMenciones texto={accion.notaHecho} onOpen={onOpen} /> : "Sin registro."}</p>
           <p className="text-xs text-[#6B6352]"><span className="font-bold text-[#8A8272]">Se planificó:</span> {destino ? (destino.notaPlanificada ? <TextoConMenciones texto={destino.notaPlanificada} onOpen={onOpen} /> : "Sin registro.") : "No se generó una próxima acción en ese momento."}</p>
@@ -5448,9 +5465,7 @@ function VinculosDeHilo({ hilo, hiloId, core, setCore, onOpen, agregarPersona, s
       )}
       {participantesInactivos.length > 0 && (
         <div className="mt-2">
-          <button onClick={() => setVerHistorialPersonas((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
-            {verHistorialPersonas ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verHistorialPersonas ? "Ocultar historial de interlocutores" : "Ver historial de interlocutores"} ({participantesInactivos.length})
-          </button>
+          <PillToggle activo={verHistorialPersonas} marcado onClick={() => setVerHistorialPersonas((v) => !v)}>Historial de interlocutores ({participantesInactivos.length})</PillToggle>
           {verHistorialPersonas && (
             <div className="mt-1.5 space-y-1">
               {participantesInactivos.map((part) => {
@@ -6706,14 +6721,9 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
         <VinculosDeFicha core={core} setCore={setCore} entidadTipo="Empresa" entidadId={id} onOpen={onOpen} />
 
         <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-          <button onClick={() => setVerHilos((v) => !v)} className={`text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 ${hilosDeEstaEmpresa.length > 0 || hilosCerradosDeEmpresa.length > 0 ? "underline underline-offset-2" : ""}`}>
-            {verHilos ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verHilos ? "Ocultar hilos de seguimiento" : "Ver hilos de seguimiento"}
-          </button>
+          <PillToggle activo={verHilos} marcado={hilosDeEstaEmpresa.length > 0 || hilosCerradosDeEmpresa.length > 0} onClick={() => setVerHilos((v) => !v)}>Hilos de seguimiento</PillToggle>
           {verHilos && (
             <div className="mt-2.5">
-              <div className="flex justify-end mb-1.5">
-                <button onClick={() => setShowNuevoHiloEmpresa(true)} className="text-xs font-bold text-[var(--tema-vinculo)] flex items-center gap-1"><Plus size={12} /> Nuevo hilo</button>
-              </div>
               {hilosDeEstaEmpresa.length === 0 ? (
                 <p className="text-sm text-[#A69C88]">Sin hilos todavía. Podés arrancar uno acá aunque todavía no tengas el contacto.</p>
               ) : (
@@ -6724,9 +6734,7 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
 
               {hilosCerradosDeEmpresa.length > 0 && (
                 <div className="mt-3">
-                  <button onClick={() => setVerCerrados((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
-                    {verCerrados ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verCerrados ? "Ocultar" : "Ver"} hilos cerrados ({hilosCerradosDeEmpresa.length})
-                  </button>
+                  <PillToggle activo={verCerrados} marcado onClick={() => setVerCerrados((v) => !v)}>Hilos cerrados ({hilosCerradosDeEmpresa.length})</PillToggle>
                   {verCerrados && (
                     <div className="space-y-2 mt-2">
                       {hilosCerradosDeEmpresa.map((h) => <HiloRow key={h.id} hilo={h} core={core} acciones={acciones} onOpen={onOpen} />)}
@@ -6734,35 +6742,31 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
                   )}
                 </div>
               )}
+
+              <button onClick={() => setShowNuevoHiloEmpresa(true)} className="text-xs font-bold text-[var(--tema-vinculo)] flex items-center gap-1 mt-3"><Plus size={12} /> Nuevo hilo</button>
             </div>
           )}
         </div>
 
         <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-          <button onClick={() => setVerTareas((v) => !v)} className={`text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 ${tareasDeLaEmpresa.length > 0 ? "underline underline-offset-2" : ""}`}>
-            {verTareas ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verTareas ? "Ocultar tareas" : "Ver tareas"}
-          </button>
+          <PillToggle activo={verTareas} marcado={tareasDeLaEmpresa.length > 0} onClick={() => setVerTareas((v) => !v)}>Tareas</PillToggle>
           {verTareas && (
             <div className="mt-2.5">
-              <div className="flex justify-end mb-1.5">
-                <button onClick={() => setShowAgregarTareaEntidad(true)} className="text-xs font-bold text-[var(--tema-vinculo)] flex items-center gap-1"><Plus size={12} /> Agregar tarea</button>
-              </div>
               {tareasDeLaEmpresa.length === 0 ? (
-                <p className="text-sm text-[#A69C88]">Sin tareas todavía.</p>
+                <p className="text-sm text-[#A69C88] mb-1.5">Sin tareas todavía.</p>
               ) : (
                 <div className="space-y-2">
                   {tareasDeLaEmpresa.map((t) => <HiloAgendaCard key={t.id} hilo={t} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onOpen={onOpen} />)}
                 </div>
               )}
+              <button onClick={() => setShowAgregarTareaEntidad(true)} className="text-xs font-bold text-[var(--tema-vinculo)] flex items-center gap-1 mt-3"><Plus size={12} /> Agregar tarea</button>
             </div>
           )}
         </div>
 
         {subsidiarias.length > 0 && (
           <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-            <button onClick={() => setVerGrupo((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
-              {verGrupo ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verGrupo ? "Ocultar empresas del grupo" : "Ver empresas del grupo"}
-            </button>
+            <PillToggle activo={verGrupo} marcado onClick={() => setVerGrupo((v) => !v)}>Empresas del grupo</PillToggle>
             {verGrupo && (
               <div className="space-y-1 mt-2.5">
                 {subsidiarias.map((s) => (
@@ -7043,14 +7047,9 @@ function ObraDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
         <VinculosDeFicha core={core} setCore={setCore} entidadTipo="Obra" entidadId={id} onOpen={onOpen} />
 
         <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-          <button onClick={() => setVerHilos((v) => !v)} className={`text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 ${hilosDeEstaObra.length > 0 || hilosCerradosDeObra.length > 0 ? "underline underline-offset-2" : ""}`}>
-            {verHilos ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verHilos ? "Ocultar hilos de seguimiento" : "Ver hilos de seguimiento"}
-          </button>
+          <PillToggle activo={verHilos} marcado={hilosDeEstaObra.length > 0 || hilosCerradosDeObra.length > 0} onClick={() => setVerHilos((v) => !v)}>Hilos de seguimiento</PillToggle>
           {verHilos && (
             <div className="mt-2.5">
-              <div className="flex justify-end mb-1.5">
-                <button onClick={() => setShowNuevoHiloObra(true)} className="text-xs font-bold text-[var(--tema-vinculo)] flex items-center gap-1"><Plus size={12} /> Nuevo hilo</button>
-              </div>
               {hilosDeEstaObra.length === 0 ? (
                 <p className="text-sm text-[#A69C88]">Sin hilos todavía. Podés arrancar uno acá aunque todavía no sepas la empresa o el contacto.</p>
               ) : (
@@ -7061,9 +7060,7 @@ function ObraDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
 
               {hilosCerradosDeObra.length > 0 && (
                 <div className="mt-3">
-                  <button onClick={() => setVerCerrados((v) => !v)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5">
-                    {verCerrados ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verCerrados ? "Ocultar" : "Ver"} hilos cerrados ({hilosCerradosDeObra.length})
-                  </button>
+                  <PillToggle activo={verCerrados} marcado onClick={() => setVerCerrados((v) => !v)}>Hilos cerrados ({hilosCerradosDeObra.length})</PillToggle>
                   {verCerrados && (
                     <div className="space-y-2 mt-2">
                       {hilosCerradosDeObra.map((h) => <HiloRow key={h.id} hilo={h} core={core} acciones={acciones} onOpen={onOpen} />)}
@@ -7071,26 +7068,24 @@ function ObraDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
                   )}
                 </div>
               )}
+
+              <button onClick={() => setShowNuevoHiloObra(true)} className="text-xs font-bold text-[var(--tema-vinculo)] flex items-center gap-1 mt-3"><Plus size={12} /> Nuevo hilo</button>
             </div>
           )}
         </div>
 
         <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
-          <button onClick={() => setVerTareas((v) => !v)} className={`text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center gap-0.5 ${tareasDeLaObra.length > 0 ? "underline underline-offset-2" : ""}`}>
-            {verTareas ? <ChevronUp size={11} /> : <ChevronDown size={11} />} {verTareas ? "Ocultar tareas" : "Ver tareas"}
-          </button>
+          <PillToggle activo={verTareas} marcado={tareasDeLaObra.length > 0} onClick={() => setVerTareas((v) => !v)}>Tareas</PillToggle>
           {verTareas && (
             <div className="mt-2.5">
-              <div className="flex justify-end mb-1.5">
-                <button onClick={() => setShowAgregarTareaEntidad(true)} className="text-xs font-bold text-[var(--tema-vinculo)] flex items-center gap-1"><Plus size={12} /> Agregar tarea</button>
-              </div>
               {tareasDeLaObra.length === 0 ? (
-                <p className="text-sm text-[#A69C88]">Sin tareas todavía.</p>
+                <p className="text-sm text-[#A69C88] mb-1.5">Sin tareas todavía.</p>
               ) : (
                 <div className="space-y-2">
                   {tareasDeLaObra.map((t) => <HiloAgendaCard key={t.id} hilo={t} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onOpen={onOpen} />)}
                 </div>
               )}
+              <button onClick={() => setShowAgregarTareaEntidad(true)} className="text-xs font-bold text-[var(--tema-vinculo)] flex items-center gap-1 mt-3"><Plus size={12} /> Agregar tarea</button>
             </div>
           )}
         </div>
