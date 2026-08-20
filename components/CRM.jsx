@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.36.0";
+const APP_VERSION = "2.37.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -7771,6 +7771,94 @@ function TiposRelacionView({ core, setCore }) {
   );
 }
 
+// Prueba técnica del asistente de IA (Fase 3 del plan — ver conversación). Todavía no es el
+// lugar definitivo (eso es la Fase 4): sirve para probar de punta a punta que interpretar +
+// confirmar + ejecutar funciona. Los cambios que aplica ya son reales — la app los ve
+// enseguida por la suscripción en tiempo real, igual que un cambio hecho desde otro dispositivo.
+function AsistenteIAPrueba() {
+  const [texto, setTexto] = useState("");
+  const [cargando, setCargando] = useState(false);
+  const [error, setError] = useState("");
+  const [propuesta, setPropuesta] = useState(null); // { accion, parametros, resumen }
+  const [confirmando, setConfirmando] = useState(false);
+  const [resultadoOk, setResultadoOk] = useState("");
+
+  const consultar = async () => {
+    if (!texto.trim()) return;
+    setError(""); setResultadoOk(""); setPropuesta(null); setCargando(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { setError("No se encontró la sesión — volvé a iniciar sesión."); setCargando(false); return; }
+      const res = await fetch("/api/asistente", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ texto }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) { setError(data.error || "No se pudo procesar el pedido."); setCargando(false); return; }
+      if (!data.ok) { setError(data.detalle || "No se pudo interpretar el pedido."); setCargando(false); return; }
+      setPropuesta(data);
+    } catch {
+      setError("No se pudo conectar con el asistente. Probá de nuevo.");
+    }
+    setCargando(false);
+  };
+
+  const confirmar = async () => {
+    if (!propuesta) return;
+    setConfirmando(true);
+    setError("");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { setError("No se encontró la sesión — volvé a iniciar sesión."); setConfirmando(false); return; }
+      const res = await fetch("/api/asistente", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ accion: propuesta.accion, parametros: propuesta.parametros, confirmar: true }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) { setError(data.error || "No se pudo ejecutar la acción."); setConfirmando(false); return; }
+      setResultadoOk("Listo, se aplicó el cambio.");
+      setPropuesta(null);
+      setTexto("");
+    } catch {
+      setError("No se pudo conectar con el asistente. Probá de nuevo.");
+    }
+    setConfirmando(false);
+  };
+
+  return (
+    <div className="mt-6 pt-4 border-t border-[#E4DECF]">
+      <p className="text-[11px] font-bold tracking-wide text-[#6B6352] mb-2">Asistente de IA (prueba)</p>
+      <p className="text-xs text-[#A69C88] mb-2">Escribí un pedido en lenguaje natural. Todavía es una prueba técnica, no el lugar definitivo del asistente en la app.</p>
+      <textarea
+        className={inputCls}
+        rows={2}
+        value={texto}
+        onChange={(e) => setTexto(e.target.value)}
+        placeholder='Ej: "Creale una tarea a Juan Pérez para el jueves: llamarlo por el presupuesto"'
+      />
+      <button onClick={consultar} disabled={cargando || !texto.trim()} className="mt-2 text-xs font-bold tracking-wide text-[var(--tema-vinculo)] disabled:opacity-50">
+        {cargando ? "Consultando..." : "Consultar"}
+      </button>
+      {error && <p className="text-xs text-[var(--tema-peligro)] mt-2">{error}</p>}
+      {resultadoOk && <p className="text-xs font-bold text-[var(--tema-exito)] mt-2">{resultadoOk}</p>}
+
+      {propuesta && (
+        <Modal title="¿Confirmás esta acción?" onClose={() => setPropuesta(null)}>
+          <p className="text-sm text-[#2A2118] mb-4">{propuesta.resumen}</p>
+          <div className="flex gap-2">
+            <button onClick={() => setPropuesta(null)} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
+            <button onClick={confirmar} disabled={confirmando} style={{ backgroundColor: "var(--tema-exito)", color: "#FFFFFF" }} className="flex-1 rounded-sm py-2.5 font-bold text-sm disabled:opacity-50">
+              {confirmando ? "Aplicando..." : "Sí, confirmar"}
+            </button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
 function ConfigView({ core, setCore, acciones, setAcciones }) {
   const [section, setSection] = useState("parametros");
   const [confirmVaciar, setConfirmVaciar] = useState(false);
@@ -8200,6 +8288,8 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
         {pushError && <p className="text-xs text-[var(--tema-peligro)] mt-1">{pushError}</p>}
         <p className="text-xs text-[#A69C88] mt-1">Se activa por separado en cada dispositivo donde quieras recibirlos. Marcá "Avisar" al cargar una fecha y hora para que dispare un aviso acá.</p>
       </div>
+
+      <AsistenteIAPrueba />
 
       <div className="mt-6 pt-4 border-t border-[#E4DECF]">
         <p className="text-[11px] font-bold tracking-wide text-[#6B6352] mb-2">Datos de prueba</p>
