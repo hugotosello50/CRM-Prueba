@@ -8,14 +8,14 @@ import {
   HardHat, CalendarClock, Trash2, Pencil, Check, AlertTriangle,
   Tag, Star, ListChecks, Repeat, ArrowLeft, ArrowDownAZ, ArrowUpAZ, GitBranch,
   BarChart3, FileSpreadsheet, Download, Trello, GripVertical, LogOut, Menu, Tags, FolderKanban, Layers,
-  FileText, Image as ImageIcon, Bell, Link2, CheckSquare, Square, Sparkles,
+  FileText, Image as ImageIcon, Bell, Link2, CheckSquare, Square, Sparkles, Mic,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.38.0";
+const APP_VERSION = "2.39.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -7793,6 +7793,38 @@ function AsistenteIAPrueba({ onClose }) {
   const [propuesta, setPropuesta] = useState(null); // { accion, parametros, resumen }
   const [confirmando, setConfirmando] = useState(false);
   const [resultadoOk, setResultadoOk] = useState("");
+  const [grabando, setGrabando] = useState(false);
+  const [vozSoportada, setVozSoportada] = useState(false);
+  const recognitionRef = useRef(null);
+
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+    const recognition = new SpeechRecognition();
+    recognition.lang = "es-AR";
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.onresult = (e) => {
+      let agregado = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) agregado += e.results[i][0].transcript;
+      setTexto((t) => (t.trim() ? `${t.trim()} ${agregado}` : agregado));
+    };
+    recognition.onerror = () => setGrabando(false);
+    recognition.onend = () => setGrabando(false);
+    recognitionRef.current = recognition;
+    setVozSoportada(true);
+    return () => recognition.stop();
+  }, []);
+
+  const toggleGrabacion = () => {
+    if (!recognitionRef.current) return;
+    if (grabando) {
+      recognitionRef.current.stop();
+    } else {
+      recognitionRef.current.start();
+      setGrabando(true);
+    }
+  };
 
   const consultar = async () => {
     if (!texto.trim()) return;
@@ -7841,13 +7873,28 @@ function AsistenteIAPrueba({ onClose }) {
   return (
     <Modal title="Asistente de IA (prueba)" onClose={onClose}>
       <p className="text-xs text-[#A69C88] mb-2">Escribí un pedido en lenguaje natural. Todavía es una prueba técnica, no el lugar definitivo del asistente en la app.</p>
-      <textarea
-        className={inputCls}
-        rows={2}
-        value={texto}
-        onChange={(e) => setTexto(e.target.value)}
-        placeholder='Ej: "Creale una tarea a Juan Pérez para el jueves: llamarlo por el presupuesto"'
-      />
+      <div className="relative">
+        <textarea
+          className={`${inputCls} ${vozSoportada ? "pr-9" : ""}`}
+          rows={2}
+          value={texto}
+          onChange={(e) => setTexto(e.target.value)}
+          placeholder='Ej: "Creale una tarea a Juan Pérez para el jueves: llamarlo por el presupuesto"'
+        />
+        {vozSoportada && (
+          <button
+            type="button"
+            onClick={toggleGrabacion}
+            aria-label={grabando ? "Detener grabación" : "Dictar por voz"}
+            title={grabando ? "Detener grabación" : "Dictar por voz"}
+            className="absolute right-2 top-2 flex items-center justify-center w-6 h-6 rounded-full"
+            style={grabando ? { backgroundColor: "var(--tema-peligro)", color: "#FFFFFF" } : { color: "#A69C88" }}
+          >
+            <Mic size={15} />
+          </button>
+        )}
+      </div>
+      {grabando && <p className="text-xs font-bold text-[var(--tema-peligro)] mt-1">Escuchando...</p>}
       <button onClick={consultar} disabled={cargando || !texto.trim()} className="mt-2 text-xs font-bold tracking-wide text-[var(--tema-vinculo)] disabled:opacity-50">
         {cargando ? "Consultando..." : "Consultar"}
       </button>
