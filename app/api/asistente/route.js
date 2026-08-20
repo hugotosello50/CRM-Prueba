@@ -79,7 +79,7 @@ export async function POST(request) {
   let response;
   try {
     response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.6-flash',
       contents: texto,
       config: {
         systemInstruction: `${PROMPT_SISTEMA}\n\nHoy es ${todayISO()}.`,
