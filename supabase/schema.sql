@@ -212,3 +212,39 @@ select cron.schedule(
 
 -- Para desactivar los avisos más adelante (si hiciera falta), correr en el SQL Editor:
 -- select cron.unschedule('avisos-cada-5-min');
+
+-- =============================================================================
+-- Asistente de IA (Fase 2 del "frente de IA" — poder hablarle a la app).
+--
+-- INSTRUCTIVO PASO A PASO PARA ACTIVARLO (una sola vez). No hace falta saber
+-- de sistemas, son todo clics. No hay ningún SQL que correr para esto — es
+-- una sola clave que se carga en Vercel.
+--
+-- ── PASO 1: conseguir una clave de Gemini (gratis) ──────────────────────────
+-- 1. Entrá a aistudio.google.com/apikey (con tu cuenta de Google).
+-- 2. Hacé clic en "Create API key" (o "Crear clave de API").
+-- 3. Elegí o creá un proyecto cuando te lo pida (cualquier nombre sirve).
+-- 4. Te va a mostrar la clave: es un texto largo que empieza con "AIza...".
+--    Copiala — la vas a necesitar en el Paso 2. No hace falta cargar tarjeta.
+--
+-- ── PASO 2: cargar la clave en Vercel ────────────────────────────────────────
+-- 1. Entrá a vercel.com e iniciá sesión, y hacé clic en el proyecto de este CRM.
+-- 2. Pestaña "Settings" (arriba) → "Environment Variables" (menú de la izquierda).
+-- 3. Cargá una sola clave:
+--
+--    Key:   GEMINI_API_KEY
+--    Value: (la clave que copiaste en el Paso 1)
+--
+--    Dejá tildados los 3 entornos (Production, Preview, Development) y
+--    hacé clic en "Save".
+--
+-- ── PASO 3: volver a publicar la app para que tome la clave nueva ───────────
+-- 1. Pestaña "Deployments".
+-- 2. En el despliegue de más arriba, "..." → "Redeploy" → confirmá.
+-- 3. Esperá a que diga "Ready" (un par de minutos).
+--
+-- Con esto la ruta /api/asistente ya puede consultar a la IA. Todavía no hay
+-- ninguna pantalla en la app conectada a esto (eso es una fase más adelante)
+-- — por ahora es una pieza de backend que se puede probar con una
+-- herramienta de requests HTTP. Si algo no funciona, avisale a Claude con el
+-- número de paso y lo que ves en pantalla.
