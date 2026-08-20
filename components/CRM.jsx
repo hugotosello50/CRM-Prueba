@@ -8,14 +8,14 @@ import {
   HardHat, CalendarClock, Trash2, Pencil, Check, AlertTriangle,
   Tag, Star, ListChecks, Repeat, ArrowLeft, ArrowDownAZ, ArrowUpAZ, GitBranch,
   BarChart3, FileSpreadsheet, Download, Trello, GripVertical, LogOut, Menu, Tags, FolderKanban, Layers,
-  FileText, Image as ImageIcon, Bell, Link2, CheckSquare, Square,
+  FileText, Image as ImageIcon, Bell, Link2, CheckSquare, Square, Sparkles,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.37.2";
+const APP_VERSION = "2.38.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -1500,6 +1500,7 @@ export default function CRM({ userId, onLogout }) {
   const [detail, setDetail] = useState(null); // { type: 'persona'|'empresa'|'obra', id }
   const [search, setSearch] = useState("");
   const [showMenu, setShowMenu] = useState(false);
+  const [showAsistente, setShowAsistente] = useState(false);
   const [guardado, setGuardado] = useState("ok"); // 'ok' | 'guardando' | 'error'
   const [showResumenHoy, setShowResumenHoy] = useState(false);
   const [avisoEnPantalla, setAvisoEnPantalla] = useState(null); // { texto, hiloId } — aviso llegado por push mientras la app está abierta
@@ -1797,6 +1798,14 @@ export default function CRM({ userId, onLogout }) {
               <Search size={17} />
             </button>
             <button
+              onClick={() => setShowAsistente(true)}
+              aria-label="Asistente de IA"
+              style={{ backgroundColor: core.tema.botonInactivo, color: core.tema.ink }}
+              className="flex items-center justify-center w-10 h-10 rounded-sm"
+            >
+              <Sparkles size={17} />
+            </button>
+            <button
               onClick={() => setShowMenu(true)}
               aria-label="Menú"
               style={{ backgroundColor: core.tema.botonInactivo, color: core.tema.ink }}
@@ -1850,6 +1859,8 @@ export default function CRM({ userId, onLogout }) {
           )}
         </main>
       </div>
+
+      {showAsistente && <AsistenteIAPrueba onClose={() => setShowAsistente(false)} />}
 
       {showMenu && (
         <Modal title="Menú" onClose={() => setShowMenu(false)}>
@@ -7775,7 +7786,7 @@ function TiposRelacionView({ core, setCore }) {
 // lugar definitivo (eso es la Fase 4): sirve para probar de punta a punta que interpretar +
 // confirmar + ejecutar funciona. Los cambios que aplica ya son reales — la app los ve
 // enseguida por la suscripción en tiempo real, igual que un cambio hecho desde otro dispositivo.
-function AsistenteIAPrueba() {
+function AsistenteIAPrueba({ onClose }) {
   const [texto, setTexto] = useState("");
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState("");
@@ -7828,8 +7839,7 @@ function AsistenteIAPrueba() {
   };
 
   return (
-    <div className="mt-6 pt-4 border-t border-[#E4DECF]">
-      <p className="text-[11px] font-bold tracking-wide text-[#6B6352] mb-2">Asistente de IA (prueba)</p>
+    <Modal title="Asistente de IA (prueba)" onClose={onClose}>
       <p className="text-xs text-[#A69C88] mb-2">Escribí un pedido en lenguaje natural. Todavía es una prueba técnica, no el lugar definitivo del asistente en la app.</p>
       <textarea
         className={inputCls}
@@ -7855,7 +7865,7 @@ function AsistenteIAPrueba() {
           </div>
         </Modal>
       )}
-    </div>
+    </Modal>
   );
 }
 
@@ -8288,8 +8298,6 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
         {pushError && <p className="text-xs text-[var(--tema-peligro)] mt-1">{pushError}</p>}
         <p className="text-xs text-[#A69C88] mt-1">Se activa por separado en cada dispositivo donde quieras recibirlos. Marcá "Avisar" al cargar una fecha y hora para que dispare un aviso acá.</p>
       </div>
-
-      <AsistenteIAPrueba />
 
       <div className="mt-6 pt-4 border-t border-[#E4DECF]">
         <p className="text-[11px] font-bold tracking-wide text-[#6B6352] mb-2">Datos de prueba</p>
