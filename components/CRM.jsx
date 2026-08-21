@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.45.0";
+const APP_VERSION = "2.45.1";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -3744,7 +3744,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   const reprogramar = (nuevaFecha) => { if (primary) updateAccion(primary.id, { fechaProgramada: nuevaFecha }); setShowReprogramar(false); };
 
   const nombreLine = !esTarea && personasDelHilo.length > 0 ? (
-    <p ref={nombreRef} className={`text-base font-extrabold text-[#2A2118] ${verEntidadesCompleto ? "" : "truncate"}`}>
+    <p ref={nombreRef} className={`text-base font-extrabold text-[#2A2118] text-left ${verEntidadesCompleto ? "" : "truncate"}`}>
       {personasDelHilo.map((p, i) => (
         <span key={p.id}>
           {i > 0 && ", "}
@@ -3755,7 +3755,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   ) : !esTarea && (empresas.length > 0 || obras.length > 0) ? (
     // Sin persona: el título muestra directamente la(s) empresa(s) y/o obra(s) vinculadas,
     // cada una navegable — antes cuando no había persona el título quedaba en texto plano.
-    <p ref={nombreRef} className={`text-base font-extrabold text-[#2A2118] ${verEntidadesCompleto ? "" : "truncate"}`}>
+    <p ref={nombreRef} className={`text-base font-extrabold text-[#2A2118] text-left ${verEntidadesCompleto ? "" : "truncate"}`}>
       {empresas.map((e, i) => (
         <span key={e.id}>
           {i > 0 && ", "}
@@ -3771,7 +3771,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       ))}
     </p>
   ) : (
-    <p ref={nombreRef} className={`text-base font-extrabold text-[#2A2118] ${verEntidadesCompleto ? "" : "truncate"}`} title={textoPlanoDeMenciones(nombrePrincipal)}><TextoConMenciones texto={nombrePrincipal} onOpen={onOpen} /></p>
+    <p ref={nombreRef} className={`text-base font-extrabold text-[#2A2118] text-left ${verEntidadesCompleto ? "" : "truncate"}`} title={textoPlanoDeMenciones(nombrePrincipal)}><TextoConMenciones texto={nombrePrincipal} onOpen={onOpen} /></p>
   );
 
   // Si no hay persona, el título principal ya muestra la(s) empresa(s) y/o obra(s) — así que
@@ -3781,7 +3781,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   const obrasSubtitulo = tituloYaMuestraEmpresaObra ? [] : obras;
 
   const empresasObrasLine = (empresasSubtitulo.length > 0 || obrasSubtitulo.length > 0) && (
-    <p ref={subtituloRef} className={`text-sm mt-0.5 ${verEntidadesCompleto ? "" : "truncate"}`}>
+    <p ref={subtituloRef} className={`text-sm mt-0.5 text-left ${verEntidadesCompleto ? "" : "truncate"}`}>
       {empresasSubtitulo.map((e, i) => (
         <span key={e.id}>
           {i > 0 && ", "}
