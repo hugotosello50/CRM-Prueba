@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.44.0";
+const APP_VERSION = "2.44.1";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -4995,7 +4995,7 @@ function VinculosDeFicha({ core, setCore, entidadTipo, entidadId, onOpen }) {
               })}
             </div>
           )}
-          <button onClick={() => setShowVincular(true)} className="text-xs font-bold text-[var(--tema-vinculo)] mt-1.5">+ Vincular</button>
+          <button onClick={() => setShowVincular(true)} className="text-xs font-bold text-[var(--tema-vinculo)] mt-1.5">+ Relacionar</button>
           {historial.length > 0 && (
             <div className="mt-2.5">
               <PillToggle activo={verHistorial} marcado onClick={() => setVerHistorial((v) => !v)}>Historial de relaciones ({historial.length})</PillToggle>
