@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.44.1";
+const APP_VERSION = "2.45.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -3619,6 +3619,10 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, t, soloTipo 
 }
 
 function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, acciones, setAcciones, onOpen, t, onIniciarDrag, arrastrando, standalone }) {
+  const [verEntidadesCompleto, setVerEntidadesCompleto] = useState(false);
+  const [titulosTruncados, setTitulosTruncados] = useState(false);
+  const nombreRef = useRef(null);
+  const subtituloRef = useRef(null);
   const [showAvanzar, setShowAvanzar] = useState(false);
   const [showReprogramar, setShowReprogramar] = useState(false);
   const [showEditarTitulo, setShowEditarTitulo] = useState(false);
@@ -3740,7 +3744,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   const reprogramar = (nuevaFecha) => { if (primary) updateAccion(primary.id, { fechaProgramada: nuevaFecha }); setShowReprogramar(false); };
 
   const nombreLine = !esTarea && personasDelHilo.length > 0 ? (
-    <p className="text-base font-extrabold text-[#2A2118] truncate">
+    <p ref={nombreRef} className={`text-base font-extrabold text-[#2A2118] ${verEntidadesCompleto ? "" : "truncate"}`}>
       {personasDelHilo.map((p, i) => (
         <span key={p.id}>
           {i > 0 && ", "}
@@ -3751,7 +3755,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   ) : !esTarea && (empresas.length > 0 || obras.length > 0) ? (
     // Sin persona: el título muestra directamente la(s) empresa(s) y/o obra(s) vinculadas,
     // cada una navegable — antes cuando no había persona el título quedaba en texto plano.
-    <p className="text-base font-extrabold text-[#2A2118] truncate">
+    <p ref={nombreRef} className={`text-base font-extrabold text-[#2A2118] ${verEntidadesCompleto ? "" : "truncate"}`}>
       {empresas.map((e, i) => (
         <span key={e.id}>
           {i > 0 && ", "}
@@ -3767,7 +3771,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       ))}
     </p>
   ) : (
-    <p className="text-base font-extrabold text-[#2A2118] truncate" title={textoPlanoDeMenciones(nombrePrincipal)}><TextoConMenciones texto={nombrePrincipal} onOpen={onOpen} /></p>
+    <p ref={nombreRef} className={`text-base font-extrabold text-[#2A2118] ${verEntidadesCompleto ? "" : "truncate"}`} title={textoPlanoDeMenciones(nombrePrincipal)}><TextoConMenciones texto={nombrePrincipal} onOpen={onOpen} /></p>
   );
 
   // Si no hay persona, el título principal ya muestra la(s) empresa(s) y/o obra(s) — así que
@@ -3777,7 +3781,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   const obrasSubtitulo = tituloYaMuestraEmpresaObra ? [] : obras;
 
   const empresasObrasLine = (empresasSubtitulo.length > 0 || obrasSubtitulo.length > 0) && (
-    <p className="text-sm mt-0.5 truncate">
+    <p ref={subtituloRef} className={`text-sm mt-0.5 ${verEntidadesCompleto ? "" : "truncate"}`}>
       {empresasSubtitulo.map((e, i) => (
         <span key={e.id}>
           {i > 0 && ", "}
@@ -3793,6 +3797,15 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       ))}
     </p>
   );
+
+  // Detecta si el nombre/subtítulo se está cortando (más entidades de las que entran en el
+  // ancho de la tarjeta) para mostrar los puntos suspensivos debajo del ícono de arrastrar.
+  useEffect(() => {
+    if (verEntidadesCompleto) { setTitulosTruncados(false); return; }
+    const nombreTruncado = nombreRef.current ? nombreRef.current.scrollWidth > nombreRef.current.clientWidth : false;
+    const subtituloTruncado = subtituloRef.current ? subtituloRef.current.scrollWidth > subtituloRef.current.clientWidth : false;
+    setTitulosTruncados(nombreTruncado || subtituloTruncado);
+  }, [personasDelHilo.length, empresas.length, obras.length, verEntidadesCompleto]); // eslint-disable-line
 
   // Vínculos/Relaciones y Contexto/Resumen se reusan tal cual en los dos casos: para un
   // hilo de cliente van siempre visibles; para una tarea, adentro de "Ver/Ocultar detalles".
@@ -4311,15 +4324,27 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
         {persona && <WhatsAppLink persona={persona} size={15} />}
         {hilo.estado === "Cerrado" && <Chip tone="estadoCerradoInactivo">{hilo.estado}</Chip>}
         {onIniciarDrag && (
-          <button
-            onPointerDown={(e) => { e.preventDefault(); onIniciarDrag(); }}
-            onTouchStart={(e) => { e.preventDefault(); onIniciarDrag(); }}
-            aria-label="Arrastrar a otra columna"
-            style={{ touchAction: "none" }}
-            className="shrink-0 text-[#8A8272] cursor-grab active:cursor-grabbing p-1 -mr-1"
-          >
-            <GripVertical size={16} />
-          </button>
+          <div className="shrink-0 flex flex-col items-center">
+            <button
+              onPointerDown={(e) => { e.preventDefault(); onIniciarDrag(); }}
+              onTouchStart={(e) => { e.preventDefault(); onIniciarDrag(); }}
+              aria-label="Arrastrar a otra columna"
+              style={{ touchAction: "none" }}
+              className="text-[#8A8272] cursor-grab active:cursor-grabbing p-1 -mr-1"
+            >
+              <GripVertical size={16} />
+            </button>
+            {titulosTruncados && !verEntidadesCompleto && (
+              <button
+                type="button"
+                onClick={() => setVerEntidadesCompleto(true)}
+                aria-label="Ver todas las entidades"
+                className="text-[#8A8272] font-extrabold leading-none -mt-1"
+              >
+                …
+              </button>
+            )}
+          </div>
         )}
       </div>
     </>
