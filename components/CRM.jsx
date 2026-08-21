@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.42.0";
+const APP_VERSION = "2.42.1";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -840,7 +840,7 @@ const inputCls = "w-full bg-white border border-[#D8D2C4] rounded-sm px-3 py-2 t
 const AVISO_DEFAULT = { activo: false, cantidad: 30, unidad: "minutos" };
 
 // Fila "Avisar N minutos/horas/días antes" reutilizada por cualquier selector que programe
-// una hora (SelectorFechaHora y SelectorHoraAviso).
+// una hora (SelectorFechaHora y el modo "dentro de un período" de NuevoHiloForm/AvanzarHiloForm).
 function AvisoFields({ aviso, onAviso }) {
   if (!onAviso) return null;
   const avisoActual = aviso || AVISO_DEFAULT;
@@ -896,25 +896,6 @@ function SelectorFechaHora({ fecha, hora, onFecha, onHora, aviso, onAviso, label
         <div className="flex gap-2 items-center">
           <input type="date" className={`${inputCls} flex-1 basis-0`} value={fecha} onChange={cambiarFecha} />
           <input ref={horaRef} type="time" className={`${inputCls} flex-1 basis-0`} value={hora || ""} onChange={(e) => onHora(e.target.value)} />
-          {hora && <IconBtn label="Quitar hora" danger onClick={quitarHora}><X size={14} /></IconBtn>}
-        </div>
-      </Field>
-
-      <AvisoFields aviso={aviso} onAviso={onAviso} />
-    </div>
-  );
-}
-
-// Igual que SelectorFechaHora, pero sin el campo de fecha — para cuando la fecha ya está
-// resuelta de otra forma (ej: "dentro de un período") y solo falta la hora y el aviso.
-function SelectorHoraAviso({ hora, onHora, aviso, onAviso }) {
-  const avisoActual = aviso || AVISO_DEFAULT;
-  const quitarHora = () => { onHora(""); onAviso?.({ ...avisoActual, activo: false }); };
-  return (
-    <div className="mb-3">
-      <Field label="Hora (opcional)">
-        <div className="flex gap-2 items-center">
-          <input type="time" className={`${inputCls} flex-1 basis-0`} value={hora || ""} onChange={(e) => onHora(e.target.value)} />
           {hora && <IconBtn label="Quitar hora" danger onClick={quitarHora}><X size={14} /></IconBtn>}
         </div>
       </Field>
@@ -2580,7 +2561,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
 
               {modoFecha === "periodo" ? (
                 <>
-                  <Field label="¿Dentro de cuánto?">
+                  <Field label="¿Dentro de cuánto? (hora opcional)">
                     <div className="flex gap-2">
                       <input type="number" min={1} className={inputCls} value={cantidad} onChange={(e) => setCantidad(e.target.value)} />
                       <select className={inputCls} value={unidad} onChange={(e) => setUnidad(e.target.value)}>
@@ -2588,6 +2569,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
                         <option value="semanas">semanas</option>
                         <option value="meses">meses</option>
                       </select>
+                      <input type="time" className={inputCls} value={horaEspecifica || ""} onChange={(e) => setHoraEspecifica(e.target.value)} />
                     </div>
                   </Field>
                   {preview && (
@@ -2595,7 +2577,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
                       Fecha sugerida: <span className="font-bold">{fmtDate(preview)}</span> (ajustada para no caer en día no hábil ni en un día muy cargado)
                     </p>
                   )}
-                  <SelectorHoraAviso hora={horaEspecifica} onHora={setHoraEspecifica} aviso={avisoEspecifica} onAviso={setAvisoEspecifica} />
+                  <div className="mb-3"><AvisoFields aviso={avisoEspecifica} onAviso={setAvisoEspecifica} /></div>
                 </>
               ) : (
                 <>
@@ -4480,7 +4462,9 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
         </>
       )}
 
-      {filaPillsCliente}
+      <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
+        {filaPillsCliente}
+      </div>
     </>
   );
 
@@ -6140,7 +6124,7 @@ function AvanzarHiloForm({ hilo, pendienteActual, core, setCore, acciones, setAc
 
             {modoFecha === "periodo" ? (
               <>
-                <Field label="¿Dentro de cuánto?">
+                <Field label="¿Dentro de cuánto? (hora opcional)">
                   <div className="flex gap-2">
                     <input type="number" min={1} className={inputCls} value={cantidad} onChange={(e) => setCantidad(e.target.value)} />
                     <select className={inputCls} value={unidad} onChange={(e) => setUnidad(e.target.value)}>
@@ -6148,6 +6132,7 @@ function AvanzarHiloForm({ hilo, pendienteActual, core, setCore, acciones, setAc
                       <option value="semanas">semanas</option>
                       <option value="meses">meses</option>
                     </select>
+                    <input type="time" className={inputCls} value={horaEspecifica || ""} onChange={(e) => setHoraEspecifica(e.target.value)} />
                   </div>
                 </Field>
                 {preview && (
@@ -6155,7 +6140,7 @@ function AvanzarHiloForm({ hilo, pendienteActual, core, setCore, acciones, setAc
                     Fecha sugerida: <span className="font-bold">{fmtDate(preview)}</span> (ajustada para no caer en día no hábil ni en un día muy cargado)
                   </p>
                 )}
-                <SelectorHoraAviso hora={horaEspecifica} onHora={setHoraEspecifica} aviso={avisoEspecifica} onAviso={setAvisoEspecifica} />
+                <div className="mb-3"><AvisoFields aviso={avisoEspecifica} onAviso={setAvisoEspecifica} /></div>
               </>
             ) : (
               <>
