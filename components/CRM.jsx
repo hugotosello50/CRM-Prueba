@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.40.1";
+const APP_VERSION = "2.41.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -78,7 +78,12 @@ const TEMA_DEFAULT = {
   prioridadAlta: "#B0452E", prioridadMedia: "#F4A742", prioridadBaja: "#E7E2D8",
   estadoActivo: "#3F6B4A", estadoCerradoInactivo: "#E7E2D8", estadoPendiente: "#F4A742", estadoRealizada: "#3F6B4A",
   marcadorTareas: "#6B4FA0",
+  tituloSeccion: "#8A8272",
 };
+
+// Tamaños posibles del título de sección (Configuración > Apariencia) — el valor es el
+// tamaño de fuente real que usa TituloSeccion.
+const TITULO_SECCION_TAMANOS = { Chico: "10px", Mediano: "12px", Grande: "14px" };
 
 // Metadatos para renderizar los selectores en Configuración > Apariencia: cada grupo se
 // separa con una línea, pero cada color adentro se elige individualmente.
@@ -95,6 +100,15 @@ const TEMA_GRUPOS = [
         { clave: "peligro", label: "Peligro (eliminar, cancelar, error)" },
         { clave: "exito", label: "Éxito (confirmaciones)" },
         { clave: "acento", label: "Acento (botones \"+\" de agregar)" },
+      ],
+    ],
+  },
+  {
+    titulo: "Títulos de sección",
+    ayuda: "Los títulos de cada desplegable dentro de una ficha (\"Notas\", \"Vínculos\", \"Subtareas\"...).",
+    subgrupos: [
+      [
+        { clave: "tituloSeccion", label: "Color del título de sección" },
       ],
     ],
   },
@@ -196,7 +210,7 @@ const seedCore = () => ({
     { id: uid("et"), etiquetaId: "ET03", entidadTipo: "Empresa", entidadId: "E001" },
     { id: uid("et"), etiquetaId: "ET02", entidadTipo: "Obra", entidadId: "O001" },
   ],
-  parametros: { umbralDiaLleno: 8, diasHabiles: [1, 2, 3, 4, 5], fechasNoHabiles: [], diasUrgente: 3, diasProximos: 7, googleContactsLabel: "CRM", tituloApp: "Seguimiento comercial", nombreSinColumnaSeguimientos: "Sin columna", nombreSinColumnaTareas: "Sin columna", formatoHora: "24" },
+  parametros: { umbralDiaLleno: 8, diasHabiles: [1, 2, 3, 4, 5], fechasNoHabiles: [], diasUrgente: 3, diasProximos: 7, googleContactsLabel: "CRM", tituloApp: "Seguimiento comercial", nombreSinColumnaSeguimientos: "Sin columna", nombreSinColumnaTareas: "Sin columna", formatoHora: "24", tituloSeccionTamano: "Chico", tituloSeccionNegrita: true },
   tema: { ...TEMA_DEFAULT },
   kanbanColumnas: [
     { id: "K1", nombre: "Por hacer", orden: 0 },
@@ -309,7 +323,7 @@ function normalizeCore(c) {
   if (!Array.isArray(out.vinculos)) out.vinculos = [];
   // Unifica todo al sistema de vínculos (migra las tablas viejas si todavía están).
   migrarAVinculos(out);
-  out.parametros = { umbralDiaLleno: 8, diasHabiles: [1, 2, 3, 4, 5], fechasNoHabiles: [], diasUrgente: 3, diasProximos: 7, googleContactsLabel: "CRM", tituloApp: "Seguimiento comercial", nombreSinColumnaSeguimientos: "Sin columna", nombreSinColumnaTareas: "Sin columna", formatoHora: "24", ...(out.parametros || {}) };
+  out.parametros = { umbralDiaLleno: 8, diasHabiles: [1, 2, 3, 4, 5], fechasNoHabiles: [], diasUrgente: 3, diasProximos: 7, googleContactsLabel: "CRM", tituloApp: "Seguimiento comercial", nombreSinColumnaSeguimientos: "Sin columna", nombreSinColumnaTareas: "Sin columna", formatoHora: "24", tituloSeccionTamano: "Chico", tituloSeccionNegrita: true, ...(out.parametros || {}) };
   out.tema = { ...TEMA_DEFAULT, ...(out.tema || {}) };
   if (!Array.isArray(out.kanbanColumnas)) out.kanbanColumnas = seed.kanbanColumnas;
   if (!Array.isArray(out.kanbanColumnasTareas)) out.kanbanColumnasTareas = seed.kanbanColumnasTareas;
@@ -751,6 +765,24 @@ function PillToggle({ activo, marcado, onClick, children }) {
     >
       {children}
     </button>
+  );
+}
+
+// Título de sección único y parametrizable, usado por todo desplegable de la app (Notas,
+// Vínculos, Relaciones, Resumen, Subtareas, Adjuntos, etc.) — color, tamaño y negrita se
+// ajustan desde Configuración > Apariencia y se aplican acá, en un solo lugar.
+function TituloSeccion({ core, children }) {
+  return (
+    <p
+      className="tracking-wide mb-1.5"
+      style={{
+        color: "var(--tema-tituloSeccion)",
+        fontSize: TITULO_SECCION_TAMANOS[core.parametros.tituloSeccionTamano] || TITULO_SECCION_TAMANOS.Chico,
+        fontWeight: core.parametros.tituloSeccionNegrita === false ? 400 : 700,
+      }}
+    >
+      {children}
+    </p>
   );
 }
 
@@ -3759,6 +3791,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   // "filaPillsCliente" más abajo controlando estos mismos estados).
   const contenidoNotas = verNotas && (
     <div className="mt-2.5">
+      <TituloSeccion core={core}>Notas</TituloSeccion>
       {hilo.notas ? (
         <div className="flex items-start justify-between gap-2">
           <p className="text-sm text-[#2A2118] flex-1 min-w-0"><TextoConMenciones texto={hilo.notas} onOpen={onOpen} /></p>
@@ -3772,6 +3805,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
 
   const contenidoRelaciones = verRelaciones && (
     <div className="mt-2.5">
+      <TituloSeccion core={core}>Relaciones</TituloSeccion>
       {relacionesDelHilo.length === 0 ? (
         <p className="text-sm text-[#A69C88]">Sin relaciones cargadas.</p>
       ) : (
@@ -3796,9 +3830,10 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
 
   const contenidoVinculos = verVinculos && (
     <div className="mt-2.5 space-y-3">
+      <TituloSeccion core={core}>Vínculos</TituloSeccion>
       {esTarea && (
         <div>
-          <p className="text-[10px] font-bold tracking-wide text-[#8A8272] mb-1.5">Hilo</p>
+          <TituloSeccion core={core}>Hilo</TituloSeccion>
           {hiloRelacionado ? (
             <div className="flex items-center justify-between gap-2 text-sm">
               <button onClick={() => onOpen("hilo", hiloRelacionado.id)} className="text-left flex-1 min-w-0 font-semibold text-[#2A2118]">{hiloRelacionado.titulo}</button>
@@ -3828,6 +3863,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   // al final de la lista; la de cliente lo controla desde la fila de pills, así que no lo repite acá.
   const contenidoResumenLista = (mostrarBotonDetalle) => verResumen && (
     <div className="mt-2">
+      <TituloSeccion core={core}>{verDetalle ? "Resumen detallado" : "Resumen"}</TituloSeccion>
       {historial.length === 0 ? (
         <p className="text-xs text-[#A69C88]">Todavía no hay acciones anteriores en este hilo.</p>
       ) : (
@@ -3917,7 +3953,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   // Checklist de subtareas (solo tareas) — se muestra adentro de "Ver/Ocultar detalles".
   const bloqueSubtareas = esTarea && (
     <div>
-      <p className="text-[10px] font-bold tracking-wide text-[#8A8272] mb-1.5">Subtareas</p>
+      <TituloSeccion core={core}>Subtareas</TituloSeccion>
       {subtareas.map((s) => (
         <div key={s.id} className="flex items-start gap-1.5 py-1">
           <button
@@ -4146,7 +4182,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
 
         {(verAdjuntos || verDetallesTarea) && (
           <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
-            <AdjuntosDeHilo hilo={hilo} hiloId={id} setCore={setCore} setConfirmar={setConfirmar} />
+            <AdjuntosDeHilo hilo={hilo} hiloId={id} core={core} setCore={setCore} setConfirmar={setConfirmar} />
           </div>
         )}
 
@@ -4289,22 +4325,26 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
           {contenidoNotas}
         </div>
       )}
-      {(verVinculos || verRelaciones) && (
+      {verVinculos && (
+        <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
+          {contenidoVinculos}
+        </div>
+      )}
+      {verRelaciones && (
         <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
           {contenidoRelaciones}
-          <div className="mt-1.5">{contenidoVinculos}</div>
         </div>
       )}
       {verAdjuntos && (
         <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
-          <AdjuntosDeHilo hilo={hilo} hiloId={id} setCore={setCore} setConfirmar={setConfirmar} />
+          <AdjuntosDeHilo hilo={hilo} hiloId={id} core={core} setCore={setCore} setConfirmar={setConfirmar} />
         </div>
       )}
 
       {/* Bloque 2: tema del hilo */}
       <div className="mt-2 pt-2 border-t border-dashed border-[#E4DECF]">
         <div className="flex items-center justify-between gap-2">
-          <p className="text-[10px] font-bold tracking-wide text-[#A69C88] mb-0.5">Tema del hilo</p>
+          <TituloSeccion core={core}>Tema del hilo</TituloSeccion>
           <IconBtn label="Editar hilo" onClick={() => setShowEditarTitulo(true)}><Pencil size={12} /></IconBtn>
         </div>
         <p className="text-base font-extrabold text-[#2A2118]"><TextoConMenciones texto={hilo.titulo} onOpen={onOpen} /></p>
@@ -4327,12 +4367,10 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
         </div>
       )}
 
-      {(verContextoPrimary || verResumen) && (
-        <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
-          {contenidoContexto}
-          {contenidoResumenLista(false)}
-        </div>
-      )}
+      <div className="mt-1.5">
+        {contenidoContexto}
+        {contenidoResumenLista(false)}
+      </div>
 
       {bucket.length > 1 && (
         <p className="text-[10px] text-[var(--tema-peligro)] font-bold tracking-wide mt-1.5">⚠ Este hilo tiene {bucket.length} acciones pendientes a la vez — revisalo, no debería pasar.</p>
@@ -4377,7 +4415,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
 
       {verTareasVinculadas && (
         <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
-          <p className="text-[10px] font-bold tracking-wide text-[#A69C88] mb-1.5">Tareas vinculadas ({tareasVinculadas.length})</p>
+          <TituloSeccion core={core}>Tareas vinculadas ({tareasVinculadas.length})</TituloSeccion>
           {tareasVinculadas.length === 0 ? (
             <p className="text-sm text-[#A69C88] mb-1.5">Sin tareas vinculadas.</p>
           ) : (
@@ -5488,7 +5526,7 @@ function VinculosDeHilo({ hilo, hiloId, core, setCore, onOpen, agregarPersona, s
 // bucket privado "adjuntos" de Supabase Storage (ver supabase/schema.sql). Solo se guarda el
 // archivo en sí en Storage; la metadata (nombre, tipo, tamaño, ruta, fecha) viaja dentro del
 // hilo, junto con el resto de sus datos.
-function AdjuntosDeHilo({ hilo, hiloId, setCore, setConfirmar }) {
+function AdjuntosDeHilo({ hilo, hiloId, core, setCore, setConfirmar }) {
   const [subiendo, setSubiendo] = useState(false);
   const [error, setError] = useState("");
   const [agregandoLink, setAgregandoLink] = useState(false);
@@ -5546,7 +5584,7 @@ function AdjuntosDeHilo({ hilo, hiloId, setCore, setConfirmar }) {
 
   return (
     <div>
-      <p className="text-[10px] font-bold tracking-wide text-[#A69C88] mb-1.5">Adjuntos ({adjuntos.length})</p>
+      <TituloSeccion core={core}>Adjuntos ({adjuntos.length})</TituloSeccion>
       {agregandoLink && (
         <div className="bg-[#F7F5F0] border border-[#E4DECF] rounded-sm p-2.5 mb-2 space-y-1.5">
           <input className={inputCls} value={linkNombre} onChange={(e) => setLinkNombre(e.target.value)} placeholder="Nombre (opcional)" />
@@ -8072,6 +8110,8 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
 
   const setTemaColor = (clave, valor) => setCore((prev) => ({ ...prev, tema: { ...prev.tema, [clave]: valor } }));
   const restablecerTema = () => setCore((prev) => ({ ...prev, tema: { ...TEMA_DEFAULT } }));
+  const setTituloSeccionTamano = (v) => setCore((prev) => ({ ...prev, parametros: { ...prev.parametros, tituloSeccionTamano: v } }));
+  const setTituloSeccionNegrita = (v) => setCore((prev) => ({ ...prev, parametros: { ...prev.parametros, tituloSeccionNegrita: v } }));
 
   const PALETAS = [
     {
@@ -8303,6 +8343,41 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
                   ))}
                 </div>
               ))}
+              {grupo.titulo === "Títulos de sección" && (
+                <div className="border-t border-[#E4DECF] mt-2 pt-2 space-y-3">
+                  <div>
+                    <p className="text-sm text-[#2A2118] mb-1.5">Tamaño</p>
+                    <div className="flex gap-1.5">
+                      {Object.keys(TITULO_SECCION_TAMANOS).map((t) => (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => setTituloSeccionTamano(t)}
+                          style={(core.parametros.tituloSeccionTamano ?? "Chico") === t ? { backgroundColor: "#2A2F36", color: "#FFFFFF" } : { backgroundColor: "#E7E2D8", color: "#6B6352" }}
+                          className="flex-1 py-2 rounded-sm text-xs font-bold"
+                        >{t}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-[#2A2118]">Negrita</p>
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setTituloSeccionNegrita(true)}
+                        style={core.parametros.tituloSeccionNegrita !== false ? { backgroundColor: "#2A2F36", color: "#FFFFFF" } : { backgroundColor: "#E7E2D8", color: "#6B6352" }}
+                        className="px-3 py-2 rounded-sm text-xs font-bold"
+                      >Sí</button>
+                      <button
+                        type="button"
+                        onClick={() => setTituloSeccionNegrita(false)}
+                        style={core.parametros.tituloSeccionNegrita === false ? { backgroundColor: "#2A2F36", color: "#FFFFFF" } : { backgroundColor: "#E7E2D8", color: "#6B6352" }}
+                        className="px-3 py-2 rounded-sm text-xs font-bold"
+                      >No</button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
 
