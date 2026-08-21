@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.45.1";
+const APP_VERSION = "2.46.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -3638,7 +3638,6 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   const [verContextoPrimary, setVerContextoPrimary] = useState(false);
   const [verResumen, setVerResumen] = useState(false);
   const [verDetalle, setVerDetalle] = useState(false);
-  const [verDetallesTarea, setVerDetallesTarea] = useState(false);
   const [verSubtareas, setVerSubtareas] = useState(false);
   const [verAdjuntos, setVerAdjuntos] = useState(false);
   const [showNuevaSubtarea, setShowNuevaSubtarea] = useState(false);
@@ -3915,30 +3914,6 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
     </div>
   );
 
-  // Versión de la tarjeta de tarea: cada bloque con su propio botón "Ver X"/"Ocultar X" arriba,
-  // igual que antes de separar contenido y botones.
-  const bloqueVinculosRelaciones = (
-    <>
-      <div className="mt-1.5 flex items-center gap-1.5">
-        <PillToggle activo={verVinculos} marcado={entidadesDelHilo.length > 0 || !!hiloRelacionado} onClick={() => setVerVinculos((v) => !v)}>Vínculos</PillToggle>
-        <PillToggle activo={verRelaciones} marcado={relacionesDelHilo.length > 0} onClick={() => setVerRelaciones((v) => !v)}>Relaciones</PillToggle>
-      </div>
-      {contenidoRelaciones}
-      <div className="mt-1.5">{contenidoVinculos}</div>
-    </>
-  );
-
-  const bloqueContextoResumen = primary && (
-    <div className="mt-1.5">
-      <div className="flex items-center gap-1.5 flex-wrap">
-        <PillToggle activo={verContextoPrimary} marcado={!!origenPrimary} onClick={() => setVerContextoPrimary((v) => !v)}>Contexto</PillToggle>
-        <PillToggle activo={verResumen} marcado={historial.length > 0} onClick={() => { setVerResumen((v) => !v); setVerDetalle(false); }}>Resumen</PillToggle>
-      </div>
-      {contenidoContexto}
-      {contenidoResumenLista(true)}
-    </div>
-  );
-
   // Fila única de pills de la tarjeta de hilo de cliente: reemplaza los botones "Ver X/Ocultar
   // X" con flecha (ocupaban varios renglones) por chips angostos de color fijo — el estado se
   // ve por el relleno, no por el texto — todos en un mismo renglón con scroll horizontal si no
@@ -3947,6 +3922,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   // detallado requiere además que haya historial).
   const togglesDesplegables = [
     [verNotas, setVerNotas],
+    ...(esTarea ? [[verSubtareas, setVerSubtareas]] : []),
     [verVinculos, setVerVinculos],
     [verRelaciones, setVerRelaciones],
     [verAdjuntos, setVerAdjuntos],
@@ -3958,11 +3934,14 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
     const nuevoValor = !todoDesplegado;
     togglesDesplegables.forEach(([, set]) => set(nuevoValor));
   };
-  const filaPillsCliente = (
+  // Fila de pills única, misma lógica para hilo cliente y tarea — "Subtareas" solo aparece
+  // para tareas.
+  const filaPills = (
     <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
       <PillToggle activo={todoDesplegado} onClick={toggleTodosDesplegables}>Todo</PillToggle>
       <PillToggle activo={verNotas} marcado={!!hilo.notas} onClick={() => setVerNotas((v) => !v)}>Notas</PillToggle>
-      <PillToggle activo={verVinculos} marcado={entidadesDelHilo.length > 0} onClick={() => setVerVinculos((v) => !v)}>Vínculos</PillToggle>
+      {esTarea && <PillToggle activo={verSubtareas} marcado={subtareas.length > 0} onClick={() => setVerSubtareas((v) => !v)}>Subtareas</PillToggle>}
+      <PillToggle activo={verVinculos} marcado={entidadesDelHilo.length > 0 || !!hiloRelacionado} onClick={() => setVerVinculos((v) => !v)}>Vínculos</PillToggle>
       <PillToggle activo={verRelaciones} marcado={relacionesDelHilo.length > 0} onClick={() => setVerRelaciones((v) => !v)}>Relaciones</PillToggle>
       <PillToggle activo={verAdjuntos} marcado={(hilo.adjuntos || []).length > 0} onClick={() => setVerAdjuntos((v) => !v)}>Adjuntos</PillToggle>
       {primary && <PillToggle activo={verContextoPrimary} marcado={!!origenPrimary} onClick={() => setVerContextoPrimary((v) => !v)}>Contexto</PillToggle>}
@@ -4129,7 +4108,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   );
 
   if (esTarea) {
-    // Encabezado mínimo: casilla, ícono, título+fecha chica, editar y los "Ver X" quedan
+    // Encabezado mínimo: casilla, ícono, título+fecha chica, editar y la fila de pills quedan
     // siempre visibles. En modo standalone queda fijo arriba; el resto scrollea aparte.
     const headerTarea = (
       <>
@@ -4177,96 +4156,99 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
           )}
         </div>
 
-        <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
-          <PillToggle activo={verNotas} marcado={!!hilo.notas} onClick={() => setVerNotas((v) => !v)}>Notas</PillToggle>
-          <PillToggle activo={verSubtareas} marcado={subtareas.length > 0} onClick={() => setVerSubtareas((v) => !v)}>Subtareas</PillToggle>
-          <PillToggle activo={verAdjuntos} marcado={(hilo.adjuntos || []).length > 0} onClick={() => setVerAdjuntos((v) => !v)}>Adjuntos</PillToggle>
-          <PillToggle activo={verDetallesTarea} marcado={primary || historial.length > 0} onClick={() => setVerDetallesTarea((v) => !v)}>Detalles</PillToggle>
-        </div>
+        {filaPills}
       </>
     );
 
     const bodyTarea = (
       <>
+        {/* Bloque: acción pendiente — siempre visible, misma lógica que en seguimientos. */}
+        {primary && (
+          <div className="flex items-start justify-between gap-2 mt-2">
+            {primary.notaPlanificada ? (
+              <p className="text-xs font-bold text-[#2A2118] pl-2.5 flex-1 min-w-0" style={{ borderLeft: `10px solid ${colorBorde}` }}><TextoConMenciones texto={primary.notaPlanificada} onOpen={onOpen} /></p>
+            ) : <span />}
+            <div className="flex items-center gap-0.5 shrink-0">
+              <IconBtn label="Editar acción" onClick={() => setEditingAccion(primary)}><Pencil size={16} /></IconBtn>
+              <IconBtn label="Eliminar acción" danger onClick={() => setDeletingAccionId(primary.id)}><Trash2 size={16} /></IconBtn>
+            </div>
+          </div>
+        )}
+
+        <div className="mt-1.5">
+          {contenidoContexto}
+        </div>
+
+        {bucket.length > 1 && (
+          <p className="text-[10px] text-[var(--tema-peligro)] font-bold tracking-wide mt-1.5">⚠ Este hilo tiene {bucket.length} acciones pendientes a la vez — revisalo, no debería pasar.</p>
+        )}
+
+        <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-dashed border-[#E4DECF] flex-nowrap">
+          <div className="flex items-center gap-1.5 ml-auto min-w-0">
+            {primary && tipoPrimary && <span className="min-w-0 flex-1 truncate text-right text-xs font-mono font-bold text-black" title={tipoPrimary.nombre}>{tipoPrimary.nombre}</span>}
+            {primary && (
+              <span className="shrink-0 text-[11px] font-bold font-mono px-2 py-1 rounded-sm bg-[#F1DFB9] text-[#5C3F18]">
+                {fmtDate(masUrgente.fechaProgramada)}
+              </span>
+            )}
+            {primary?.aviso?.activo && <Bell size={13} className="shrink-0 text-[var(--tema-vinculo)]" aria-label="Tiene aviso programado" />}
+            {primary && <span className="shrink-0"><IconBtn label="Reprogramar" onClick={() => setShowReprogramar(true)}><Pencil size={13} /></IconBtn></span>}
+            {primary?.recurrente && <Repeat size={12} className="shrink-0 text-[#8A8272]" />}
+            {primary && (
+              <button
+                type="button"
+                onClick={() => setShowAvanzar(true)}
+                className="shrink-0 inline-flex items-center gap-0.5 text-[11px] font-bold px-2 py-1 rounded-sm"
+                style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}
+              >
+                <ChevronRight size={12} /> Hilo
+              </button>
+            )}
+          </div>
+        </div>
+
+        {!primary && (
+          <div className="flex items-center justify-between gap-2 mt-2">
+            <p className="text-xs text-[#A69C88]">Sin acciones programadas.</p>
+            <button
+              type="button"
+              onClick={() => setShowAvanzar(true)}
+              className="shrink-0 inline-flex items-center gap-0.5 text-[11px] font-bold px-2 py-1 rounded-sm"
+              style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}
+            >
+              <ChevronRight size={12} /> Avanzar
+            </button>
+          </div>
+        )}
+
         {verNotas && (
           <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
             {contenidoNotas}
           </div>
         )}
-
-        {/* Desplegar "detalles" también muestra las subtareas y los adjuntos; desplegar solo
-            "subtareas" o solo "adjuntos" no abre "detalles". */}
-        {(verSubtareas || verDetallesTarea) && (
+        {verSubtareas && (
           <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
             {bloqueSubtareas}
           </div>
         )}
-
-        {(verAdjuntos || verDetallesTarea) && (
+        {verAdjuntos && (
           <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
             <AdjuntosDeHilo hilo={hilo} hiloId={id} core={core} setCore={setCore} setConfirmar={setConfirmar} />
           </div>
         )}
-
-        {verDetallesTarea && (
-          <div className="mt-3 pt-3 border-t border-dashed border-[#E4DECF] space-y-3">
-            {bloqueVinculosRelaciones}
-
-            {primary && (
-              <div className="flex items-start justify-between gap-2">
-                {primary.notaPlanificada ? (
-                  <p className="text-xs font-bold text-[#2A2118] pl-2.5 flex-1 min-w-0" style={{ borderLeft: `10px solid ${colorBorde}` }}><TextoConMenciones texto={primary.notaPlanificada} onOpen={onOpen} /></p>
-                ) : <span />}
-                <div className="flex items-center gap-0.5 shrink-0">
-                  <IconBtn label="Editar acción" onClick={() => setEditingAccion(primary)}><Pencil size={16} /></IconBtn>
-                  <IconBtn label="Eliminar acción" danger onClick={() => setDeletingAccionId(primary.id)}><Trash2 size={16} /></IconBtn>
-                </div>
-              </div>
-            )}
-
-            {bloqueContextoResumen}
-
-            {bucket.length > 1 && (
-              <p className="text-[10px] text-[var(--tema-peligro)] font-bold tracking-wide">⚠ Este hilo tiene {bucket.length} acciones pendientes a la vez — revisalo, no debería pasar.</p>
-            )}
-
-            <div className="flex items-center gap-1.5 flex-nowrap">
-              <div className="flex items-center gap-1.5 ml-auto min-w-0">
-                {primary && tipoPrimary && <span className="min-w-0 flex-1 truncate text-right text-xs font-mono font-bold text-black" title={tipoPrimary.nombre}>{tipoPrimary.nombre}</span>}
-                {primary && (
-                  <span className="shrink-0 text-[11px] font-bold font-mono px-2 py-1 rounded-sm bg-[#F1DFB9] text-[#5C3F18]">
-                    {fmtDate(masUrgente.fechaProgramada)}
-                  </span>
-                )}
-                {primary?.aviso?.activo && <Bell size={13} className="shrink-0 text-[var(--tema-vinculo)]" aria-label="Tiene aviso programado" />}
-                {primary && <span className="shrink-0"><IconBtn label="Reprogramar" onClick={() => setShowReprogramar(true)}><Pencil size={13} /></IconBtn></span>}
-                {primary?.recurrente && <Repeat size={12} className="shrink-0 text-[#8A8272]" />}
-                {primary && (
-                  <button
-                    type="button"
-                    onClick={() => setShowAvanzar(true)}
-                    className="shrink-0 inline-flex items-center gap-0.5 text-[11px] font-bold px-2 py-1 rounded-sm"
-                    style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}
-                  >
-                    <ChevronRight size={12} /> Hilo
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {!primary && (
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs text-[#A69C88]">Sin acciones programadas.</p>
-                <button
-                  type="button"
-                  onClick={() => setShowAvanzar(true)}
-                  className="shrink-0 inline-flex items-center gap-0.5 text-[11px] font-bold px-2 py-1 rounded-sm"
-                  style={{ backgroundColor: core.tema.botonActivo, color: contrastText(core.tema.botonActivo) }}
-                >
-                  <ChevronRight size={12} /> Avanzar
-                </button>
-              </div>
-            )}
+        {verResumen && (
+          <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
+            {contenidoResumenLista(false)}
+          </div>
+        )}
+        {verVinculos && (
+          <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
+            {contenidoVinculos}
+          </div>
+        )}
+        {verRelaciones && (
+          <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
+            {contenidoRelaciones}
           </div>
         )}
       </>
@@ -4467,7 +4449,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       )}
 
       <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
-        {filaPillsCliente}
+        {filaPills}
       </div>
 
       {verNotas && (
@@ -5400,7 +5382,7 @@ function VincularEntidadAHiloForm({ core, setCore, vinculadasKeys, onVincular, o
   };
 
   return (
-    <Modal title="Vincular al hilo" onClose={onClose}>
+    <Modal title="Vincular persona, empresa u obra" onClose={onClose}>
       {agregadas.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mb-3">
           {agregadas.map((e) => (
@@ -5518,6 +5500,7 @@ function VinculosDeHilo({ hilo, hiloId, core, setCore, onOpen, agregarPersona, s
 
   return (
     <div>
+      <TituloSeccion core={core}>Personas, empresas y obras</TituloSeccion>
       {grupos.length === 0 ? (
         <p className="text-sm text-[#A69C88] mb-1.5">Sin vínculos cargados.</p>
       ) : (
