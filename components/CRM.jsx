@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.41.1";
+const APP_VERSION = "2.42.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -839,6 +839,38 @@ const inputCls = "w-full bg-white border border-[#D8D2C4] rounded-sm px-3 py-2 t
 // primer toque siguiente no llega al botón de guardar del formulario.
 const AVISO_DEFAULT = { activo: false, cantidad: 30, unidad: "minutos" };
 
+// Fila "Avisar N minutos/horas/días antes" reutilizada por cualquier selector que programe
+// una hora (SelectorFechaHora y SelectorHoraAviso).
+function AvisoFields({ aviso, onAviso }) {
+  if (!onAviso) return null;
+  const avisoActual = aviso || AVISO_DEFAULT;
+  return (
+    <div className="mt-2 flex items-center gap-2 flex-wrap">
+      <label className="flex items-center gap-1.5 text-sm font-bold text-[#2A2118] shrink-0">
+        <input type="checkbox" checked={avisoActual.activo} onChange={(e) => onAviso({ ...avisoActual, activo: e.target.checked })} /> Avisar
+      </label>
+      <input
+        type="number"
+        min={1}
+        disabled={!avisoActual.activo}
+        className="w-16 bg-white border border-[#D8D2C4] rounded-sm px-2 py-2 text-sm text-[#2A2118] text-center focus:outline-none focus:ring-2 focus:ring-[var(--tema-acento)] focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+        value={avisoActual.cantidad}
+        onChange={(e) => onAviso({ ...avisoActual, cantidad: e.target.value })}
+      />
+      <select
+        disabled={!avisoActual.activo}
+        className="flex-1 bg-white border border-[#D8D2C4] rounded-sm px-2 py-2 text-sm text-[#2A2118] focus:outline-none focus:ring-2 focus:ring-[var(--tema-acento)] focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+        value={avisoActual.unidad}
+        onChange={(e) => onAviso({ ...avisoActual, unidad: e.target.value })}
+      >
+        <option value="minutos">minutos antes</option>
+        <option value="horas">horas antes</option>
+        <option value="dias">días antes</option>
+      </select>
+    </div>
+  );
+}
+
 function SelectorFechaHora({ fecha, hora, onFecha, onHora, aviso, onAviso, labelFecha = "Fecha" }) {
   const horaRef = useRef(null);
   const avisoActual = aviso || AVISO_DEFAULT;
@@ -868,31 +900,26 @@ function SelectorFechaHora({ fecha, hora, onFecha, onHora, aviso, onAviso, label
         </div>
       </Field>
 
-      {onAviso && (
-        <div className="mt-2 flex items-center gap-2 flex-wrap">
-          <label className="flex items-center gap-1.5 text-sm font-bold text-[#2A2118] shrink-0">
-            <input type="checkbox" checked={avisoActual.activo} onChange={(e) => onAviso({ ...avisoActual, activo: e.target.checked })} /> Avisar
-          </label>
-          <input
-            type="number"
-            min={1}
-            disabled={!avisoActual.activo}
-            className="w-16 bg-white border border-[#D8D2C4] rounded-sm px-2 py-2 text-sm text-[#2A2118] text-center focus:outline-none focus:ring-2 focus:ring-[var(--tema-acento)] focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
-            value={avisoActual.cantidad}
-            onChange={(e) => onAviso({ ...avisoActual, cantidad: e.target.value })}
-          />
-          <select
-            disabled={!avisoActual.activo}
-            className="flex-1 bg-white border border-[#D8D2C4] rounded-sm px-2 py-2 text-sm text-[#2A2118] focus:outline-none focus:ring-2 focus:ring-[var(--tema-acento)] focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
-            value={avisoActual.unidad}
-            onChange={(e) => onAviso({ ...avisoActual, unidad: e.target.value })}
-          >
-            <option value="minutos">minutos antes</option>
-            <option value="horas">horas antes</option>
-            <option value="dias">días antes</option>
-          </select>
+      <AvisoFields aviso={aviso} onAviso={onAviso} />
+    </div>
+  );
+}
+
+// Igual que SelectorFechaHora, pero sin el campo de fecha — para cuando la fecha ya está
+// resuelta de otra forma (ej: "dentro de un período") y solo falta la hora y el aviso.
+function SelectorHoraAviso({ hora, onHora, aviso, onAviso }) {
+  const avisoActual = aviso || AVISO_DEFAULT;
+  const quitarHora = () => { onHora(""); onAviso?.({ ...avisoActual, activo: false }); };
+  return (
+    <div className="mb-3">
+      <Field label="Hora (opcional)">
+        <div className="flex gap-2 items-center">
+          <input type="time" className={`${inputCls} flex-1 basis-0`} value={hora || ""} onChange={(e) => onHora(e.target.value)} />
+          {hora && <IconBtn label="Quitar hora" danger onClick={quitarHora}><X size={14} /></IconBtn>}
         </div>
-      )}
+      </Field>
+
+      <AvisoFields aviso={aviso} onAviso={onAviso} />
     </div>
   );
 }
@@ -2269,8 +2296,8 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
     const nuevas = [{ id: idPrimera, hiloId, tipoAccionId: tipoAccionId1, estado: "Realizada", fechaRealizada: hoy, fechaProgramada: "", horaProgramada: "", prioridad: "", notaPlanificada: "", notaHecho: notas1, origenId: null, destinoId: null, numero: siguienteNumero++, recurrente: false, repiteCadaN: null, repiteUnidad: null, fechaCreacion: hoy, secuencia: Date.now() }];
     if (programarProxima) {
       const fecha = modoFecha === "periodo" ? (preview || hoy) : (fechaEspecifica || hoy);
-      const hora = modoFecha === "especifica" ? horaEspecifica : "";
-      const aviso = modoFecha === "especifica" && hora && avisoEspecifica.activo ? avisoEspecifica : null;
+      const hora = horaEspecifica;
+      const aviso = hora && avisoEspecifica.activo ? avisoEspecifica : null;
       const idNueva = uid("A");
       nuevas.push({ id: idNueva, hiloId, tipoAccionId: tipoAccionId2, estado: "Pendiente", fechaRealizada: "", fechaProgramada: fecha, horaProgramada: hora, prioridad, notaPlanificada: notas2, notaHecho: "", origenId: idPrimera, destinoId: null, numero: siguienteNumero++, recurrente, repiteCadaN: recurrente ? Number(repiteCadaN) : null, repiteUnidad: recurrente ? repiteUnidad : null, fechaCreacion: hoy, secuencia: Date.now(), aviso, avisoEnviado: false, avisoVistoEnApp: false });
       nuevas[0] = { ...nuevas[0], destinoId: idNueva };
@@ -2568,6 +2595,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
                       Fecha sugerida: <span className="font-bold">{fmtDate(preview)}</span> (ajustada para no caer en día no hábil ni en un día muy cargado)
                     </p>
                   )}
+                  <SelectorHoraAviso hora={horaEspecifica} onHora={setHoraEspecifica} aviso={avisoEspecifica} onAviso={setAvisoEspecifica} />
                 </>
               ) : (
                 <>
@@ -4311,8 +4339,6 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
           </button>
         )}
       </div>
-
-      {filaPillsCliente}
     </>
   );
 
@@ -4453,6 +4479,8 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
           </div>
         </>
       )}
+
+      {filaPillsCliente}
     </>
   );
 
@@ -6013,8 +6041,8 @@ function AvanzarHiloForm({ hilo, pendienteActual, core, setCore, acciones, setAc
   const guardar = () => {
     const hoy = todayISO();
     const fecha = modoFecha === "periodo" ? (preview || hoy) : (fechaEspecifica || hoy);
-    const hora = modoFecha === "especifica" ? horaEspecifica : "";
-    const aviso = modoFecha === "especifica" && hora && avisoEspecifica.activo ? avisoEspecifica : null;
+    const hora = horaEspecifica;
+    const aviso = hora && avisoEspecifica.activo ? avisoEspecifica : null;
     setAcciones((prev) => {
       let siguienteNumero = Math.max(0, ...prev.map((a) => a.numero || 0)) + 1;
       let next = prev;
@@ -6127,6 +6155,7 @@ function AvanzarHiloForm({ hilo, pendienteActual, core, setCore, acciones, setAc
                     Fecha sugerida: <span className="font-bold">{fmtDate(preview)}</span> (ajustada para no caer en día no hábil ni en un día muy cargado)
                   </p>
                 )}
+                <SelectorHoraAviso hora={horaEspecifica} onHora={setHoraEspecifica} aviso={avisoEspecifica} onAviso={setAvisoEspecifica} />
               </>
             ) : (
               <>
