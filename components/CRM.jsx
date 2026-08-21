@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.41.0";
+const APP_VERSION = "2.41.1";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -3927,7 +3927,6 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
     [verVinculos, setVerVinculos],
     [verRelaciones, setVerRelaciones],
     [verAdjuntos, setVerAdjuntos],
-    [verTareasVinculadas, setVerTareasVinculadas],
     ...(primary ? [[verContextoPrimary, setVerContextoPrimary], [verResumen, setVerResumen]] : []),
     ...(primary && historial.length > 0 ? [[verDetalle, setVerDetalle]] : []),
   ];
@@ -3943,7 +3942,6 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       <PillToggle activo={verVinculos} marcado={entidadesDelHilo.length > 0} onClick={() => setVerVinculos((v) => !v)}>Vínculos</PillToggle>
       <PillToggle activo={verRelaciones} marcado={relacionesDelHilo.length > 0} onClick={() => setVerRelaciones((v) => !v)}>Relaciones</PillToggle>
       <PillToggle activo={verAdjuntos} marcado={(hilo.adjuntos || []).length > 0} onClick={() => setVerAdjuntos((v) => !v)}>Adjuntos</PillToggle>
-      <PillToggle activo={verTareasVinculadas} marcado={tareasVinculadas.length > 0} onClick={() => setVerTareasVinculadas((v) => !v)}>Tareas vinculadas</PillToggle>
       {primary && <PillToggle activo={verContextoPrimary} marcado={!!origenPrimary} onClick={() => setVerContextoPrimary((v) => !v)}>Contexto</PillToggle>}
       {primary && <PillToggle activo={verResumen} marcado={historial.length > 0} onClick={() => { setVerResumen((v) => !v); setVerDetalle(false); }}>Resumen</PillToggle>}
       {primary && verResumen && historial.length > 0 && <PillToggle activo={verDetalle} onClick={() => setVerDetalle((v) => !v)}>Detallado</PillToggle>}
@@ -4377,6 +4375,18 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       )}
 
       <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-dashed border-[#E4DECF] flex-nowrap">
+        <div className="shrink-0 flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setVerTareasVinculadas((v) => !v)}
+            className="inline-flex items-center gap-1 text-[11px] font-bold text-[#6B6352] bg-[#F7F5F0] border border-[#E4DECF] rounded-sm px-2 py-1"
+          >
+            <ListChecks size={11} /> {tareasVinculadas.length} tarea{tareasVinculadas.length === 1 ? "" : "s"}
+          </button>
+          <button type="button" onClick={() => setShowAgregarTarea(true)} aria-label="Agregar tarea" className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center">
+            <Plus size={13} />
+          </button>
+        </div>
         <div className="flex items-center gap-1.5 ml-auto min-w-0">
           {personasDelHilo.length > 1 && (
             <span className="shrink-0 flex items-center">
