@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.43.0";
+const APP_VERSION = "2.43.1";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -4449,16 +4449,6 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
           {contenidoNotas}
         </div>
       )}
-      {verVinculos && (
-        <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
-          {contenidoVinculos}
-        </div>
-      )}
-      {verRelaciones && (
-        <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
-          {contenidoRelaciones}
-        </div>
-      )}
       {verAdjuntos && (
         <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
           <AdjuntosDeHilo hilo={hilo} hiloId={id} core={core} setCore={setCore} setConfirmar={setConfirmar} />
@@ -4467,6 +4457,16 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       {verResumen && (
         <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
           {contenidoResumenLista(false)}
+        </div>
+      )}
+      {verVinculos && (
+        <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
+          {contenidoVinculos}
+        </div>
+      )}
+      {verRelaciones && (
+        <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
+          {contenidoRelaciones}
         </div>
       )}
     </>
