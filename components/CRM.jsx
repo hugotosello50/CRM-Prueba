@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.40.0";
+const APP_VERSION = "2.40.1";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -3765,7 +3765,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
           <IconBtn label="Editar nota" onClick={() => setEditandoNota(true)}><Pencil size={13} /></IconBtn>
         </div>
       ) : (
-        <button onClick={() => setEditandoNota(true)} className="text-xs font-bold text-[var(--tema-vinculo)]">+ Agregar nota</button>
+        <button onClick={() => setEditandoNota(true)} className="text-xs font-bold text-[var(--tema-vinculo)]">+ Nota</button>
       )}
     </div>
   );
@@ -3891,6 +3891,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
     [verVinculos, setVerVinculos],
     [verRelaciones, setVerRelaciones],
     [verAdjuntos, setVerAdjuntos],
+    [verTareasVinculadas, setVerTareasVinculadas],
     ...(primary ? [[verContextoPrimary, setVerContextoPrimary], [verResumen, setVerResumen]] : []),
     ...(primary && historial.length > 0 ? [[verDetalle, setVerDetalle]] : []),
   ];
@@ -3900,12 +3901,13 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
     togglesDesplegables.forEach(([, set]) => set(nuevoValor));
   };
   const filaPillsCliente = (
-    <div className="mt-1.5 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+    <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
       <PillToggle activo={todoDesplegado} onClick={toggleTodosDesplegables}>Todo</PillToggle>
       <PillToggle activo={verNotas} marcado={!!hilo.notas} onClick={() => setVerNotas((v) => !v)}>Notas</PillToggle>
       <PillToggle activo={verVinculos} marcado={entidadesDelHilo.length > 0} onClick={() => setVerVinculos((v) => !v)}>Vínculos</PillToggle>
       <PillToggle activo={verRelaciones} marcado={relacionesDelHilo.length > 0} onClick={() => setVerRelaciones((v) => !v)}>Relaciones</PillToggle>
       <PillToggle activo={verAdjuntos} marcado={(hilo.adjuntos || []).length > 0} onClick={() => setVerAdjuntos((v) => !v)}>Adjuntos</PillToggle>
+      <PillToggle activo={verTareasVinculadas} marcado={tareasVinculadas.length > 0} onClick={() => setVerTareasVinculadas((v) => !v)}>Tareas vinculadas</PillToggle>
       {primary && <PillToggle activo={verContextoPrimary} marcado={!!origenPrimary} onClick={() => setVerContextoPrimary((v) => !v)}>Contexto</PillToggle>}
       {primary && <PillToggle activo={verResumen} marcado={historial.length > 0} onClick={() => { setVerResumen((v) => !v); setVerDetalle(false); }}>Resumen</PillToggle>}
       {primary && verResumen && historial.length > 0 && <PillToggle activo={verDetalle} onClick={() => setVerDetalle((v) => !v)}>Detallado</PillToggle>}
@@ -3944,7 +3946,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
           <IconBtn label="Eliminar subtarea" danger onClick={() => setDeletingSubtareaId(s.id)}><Trash2 size={11} /></IconBtn>
         </div>
       ))}
-      <button type="button" onClick={() => setShowNuevaSubtarea(true)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] mt-1">+ Agregar subtarea</button>
+      <button type="button" onClick={() => setShowNuevaSubtarea(true)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] mt-1">+ Subtarea</button>
     </div>
   );
 
@@ -4325,28 +4327,18 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
         </div>
       )}
 
-      <div className="mt-1.5">
-        {contenidoContexto}
-        {contenidoResumenLista(false)}
-      </div>
+      {(verContextoPrimary || verResumen) && (
+        <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
+          {contenidoContexto}
+          {contenidoResumenLista(false)}
+        </div>
+      )}
 
       {bucket.length > 1 && (
         <p className="text-[10px] text-[var(--tema-peligro)] font-bold tracking-wide mt-1.5">⚠ Este hilo tiene {bucket.length} acciones pendientes a la vez — revisalo, no debería pasar.</p>
       )}
 
       <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-dashed border-[#E4DECF] flex-nowrap">
-        <div className="shrink-0 flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => setVerTareasVinculadas((v) => !v)}
-            className="inline-flex items-center gap-1 text-[11px] font-bold text-[#6B6352] bg-[#F7F5F0] border border-[#E4DECF] rounded-sm px-2 py-1"
-          >
-            <ListChecks size={11} /> {tareasVinculadas.length} tarea{tareasVinculadas.length === 1 ? "" : "s"}
-          </button>
-          <button type="button" onClick={() => setShowAgregarTarea(true)} aria-label="Agregar tarea" className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] flex items-center">
-            <Plus size={13} />
-          </button>
-        </div>
         <div className="flex items-center gap-1.5 ml-auto min-w-0">
           {personasDelHilo.length > 1 && (
             <span className="shrink-0 flex items-center">
@@ -4383,18 +4375,25 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
         </div>
       </div>
 
-      {verTareasVinculadas && tareasVinculadas.length > 0 && (
-        <div className="mt-1.5 space-y-1">
-          {tareasVinculadas.map((tv) => (
-            <div key={tv.id} className="flex items-center justify-between gap-2 text-sm bg-[#F7F5F0] border border-[#E4DECF] rounded-sm px-2 py-1.5">
-              <button onClick={() => onOpen("hilo", tv.id)} className="text-left flex-1 min-w-0 flex items-center gap-1.5">
-                <span className={tv.estado === "Cerrado" ? "line-through text-[#A69C88]" : "text-[#2A2118] font-semibold"}>{tv.titulo}</span>
-                {tv.estado === "Cerrado" && <Chip tone="estadoCerradoInactivo">Cerrada</Chip>}
-              </button>
-              <IconBtn label="Desvincular" danger onClick={() => setConfirmar({ texto: "¿Desvincular esta tarea del hilo?", onConfirm: () => desvincularTarea(tv.id) })}><X size={14} /></IconBtn>
+      {verTareasVinculadas && (
+        <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
+          <p className="text-[10px] font-bold tracking-wide text-[#A69C88] mb-1.5">Tareas vinculadas ({tareasVinculadas.length})</p>
+          {tareasVinculadas.length === 0 ? (
+            <p className="text-sm text-[#A69C88] mb-1.5">Sin tareas vinculadas.</p>
+          ) : (
+            <div className="space-y-1 mb-1.5">
+              {tareasVinculadas.map((tv) => (
+                <div key={tv.id} className="flex items-center justify-between gap-2 text-sm bg-[#F7F5F0] border border-[#E4DECF] rounded-sm px-2 py-1.5">
+                  <button onClick={() => onOpen("hilo", tv.id)} className="text-left flex-1 min-w-0 flex items-center gap-1.5">
+                    <span className={tv.estado === "Cerrado" ? "line-through text-[#A69C88]" : "text-[#2A2118] font-semibold"}>{tv.titulo}</span>
+                    {tv.estado === "Cerrado" && <Chip tone="estadoCerradoInactivo">Cerrada</Chip>}
+                  </button>
+                  <IconBtn label="Desvincular" danger onClick={() => setConfirmar({ texto: "¿Desvincular esta tarea del hilo?", onConfirm: () => desvincularTarea(tv.id) })}><X size={14} /></IconBtn>
+                </div>
+              ))}
             </div>
-          ))}
-          <button onClick={() => setShowAgregarTarea(true)} className="text-xs font-bold text-[var(--tema-vinculo)]">+ Agregar tarea</button>
+          )}
+          <button onClick={() => setShowAgregarTarea(true)} className="text-xs font-bold text-[var(--tema-vinculo)]">+ Tarea</button>
         </div>
       )}
 
@@ -5094,7 +5093,7 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
                   {tareasDeLaPersona.map((t) => <HiloAgendaCard key={t.id} hilo={t} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onOpen={onOpen} />)}
                 </div>
               )}
-              <button onClick={() => setShowAgregarTareaEntidad(true)} className="text-xs font-bold text-[var(--tema-vinculo)] flex items-center gap-1 mt-3"><Plus size={12} /> Agregar tarea</button>
+              <button onClick={() => setShowAgregarTareaEntidad(true)} className="text-xs font-bold text-[var(--tema-vinculo)] flex items-center gap-1 mt-3"><Plus size={12} /> Tarea</button>
             </div>
           )}
         </div>
@@ -5427,11 +5426,8 @@ function VinculosDeHilo({ hilo, hiloId, core, setCore, onOpen, agregarPersona, s
 
   return (
     <div>
-      <div className="flex justify-end mb-1.5">
-        <button onClick={() => setShowVincular(true)} className="text-xs font-bold text-[var(--tema-vinculo)]">+ Vincular</button>
-      </div>
       {grupos.length === 0 ? (
-        <p className="text-sm text-[#A69C88]">Sin vínculos cargados.</p>
+        <p className="text-sm text-[#A69C88] mb-1.5">Sin vínculos cargados.</p>
       ) : (
         <div className="space-y-2.5">
           {grupos.map(({ def, items }) => (
@@ -5463,6 +5459,7 @@ function VinculosDeHilo({ hilo, hiloId, core, setCore, onOpen, agregarPersona, s
           ))}
         </div>
       )}
+      <button onClick={() => setShowVincular(true)} className="text-xs font-bold text-[var(--tema-vinculo)] mt-1.5">+ Vincular</button>
       {participantesInactivos.length > 0 && (
         <div className="mt-2">
           <PillToggle activo={verHistorialPersonas} marcado onClick={() => setVerHistorialPersonas((v) => !v)}>Historial de interlocutores ({participantesInactivos.length})</PillToggle>
@@ -5549,21 +5546,7 @@ function AdjuntosDeHilo({ hilo, hiloId, setCore, setConfirmar }) {
 
   return (
     <div>
-      <div className="flex items-center justify-between gap-2 mb-1.5">
-        <p className="text-[10px] font-bold tracking-wide text-[#A69C88] shrink-0">{adjuntos.length} adjunto{adjuntos.length === 1 ? "" : "s"}</p>
-        <div className="flex items-center gap-2">
-          <button type="button" onClick={() => setAgregandoLink((v) => !v)} className="text-xs font-bold text-[var(--tema-vinculo)]">+Link</button>
-          <button type="button" onClick={() => inputRef.current?.click()} disabled={subiendo} className="text-xs font-bold text-[var(--tema-vinculo)] disabled:opacity-50">
-            {subiendo ? "Subiendo…" : "+Archivo"}
-          </button>
-        </div>
-        <input
-          ref={inputRef}
-          type="file"
-          className="hidden"
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) subirArchivo(f); e.target.value = ""; }}
-        />
-      </div>
+      <p className="text-[10px] font-bold tracking-wide text-[#A69C88] mb-1.5">Adjuntos ({adjuntos.length})</p>
       {agregandoLink && (
         <div className="bg-[#F7F5F0] border border-[#E4DECF] rounded-sm p-2.5 mb-2 space-y-1.5">
           <input className={inputCls} value={linkNombre} onChange={(e) => setLinkNombre(e.target.value)} placeholder="Nombre (opcional)" />
@@ -5576,9 +5559,9 @@ function AdjuntosDeHilo({ hilo, hiloId, setCore, setConfirmar }) {
       )}
       {error && <p className="text-xs text-[var(--tema-peligro)] mb-1.5">{error}</p>}
       {adjuntos.length === 0 ? (
-        <p className="text-sm text-[#A69C88]">Sin adjuntos.</p>
+        <p className="text-sm text-[#A69C88] mb-1.5">Sin adjuntos.</p>
       ) : (
-        <div className="space-y-1">
+        <div className="space-y-1 mb-1.5">
           {adjuntos.map((a) => (
             <div key={a.id} className="flex items-center justify-between gap-2 text-sm">
               <button onClick={() => abrirAdjunto(a)} className="text-left flex-1 min-w-0 flex items-center gap-1.5">
@@ -5591,6 +5574,18 @@ function AdjuntosDeHilo({ hilo, hiloId, setCore, setConfirmar }) {
           ))}
         </div>
       )}
+      <div className="flex items-center gap-3">
+        <button type="button" onClick={() => setAgregandoLink((v) => !v)} className="text-xs font-bold text-[var(--tema-vinculo)]">+ Link</button>
+        <button type="button" onClick={() => inputRef.current?.click()} disabled={subiendo} className="text-xs font-bold text-[var(--tema-vinculo)] disabled:opacity-50">
+          {subiendo ? "Subiendo…" : "+ Archivo"}
+        </button>
+      </div>
+      <input
+        ref={inputRef}
+        type="file"
+        className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) subirArchivo(f); e.target.value = ""; }}
+      />
     </div>
   );
 }
@@ -6759,7 +6754,7 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
                   {tareasDeLaEmpresa.map((t) => <HiloAgendaCard key={t.id} hilo={t} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onOpen={onOpen} />)}
                 </div>
               )}
-              <button onClick={() => setShowAgregarTareaEntidad(true)} className="text-xs font-bold text-[var(--tema-vinculo)] flex items-center gap-1 mt-3"><Plus size={12} /> Agregar tarea</button>
+              <button onClick={() => setShowAgregarTareaEntidad(true)} className="text-xs font-bold text-[var(--tema-vinculo)] flex items-center gap-1 mt-3"><Plus size={12} /> Tarea</button>
             </div>
           )}
         </div>
@@ -7085,7 +7080,7 @@ function ObraDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
                   {tareasDeLaObra.map((t) => <HiloAgendaCard key={t.id} hilo={t} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onOpen={onOpen} />)}
                 </div>
               )}
-              <button onClick={() => setShowAgregarTareaEntidad(true)} className="text-xs font-bold text-[var(--tema-vinculo)] flex items-center gap-1 mt-3"><Plus size={12} /> Agregar tarea</button>
+              <button onClick={() => setShowAgregarTareaEntidad(true)} className="text-xs font-bold text-[var(--tema-vinculo)] flex items-center gap-1 mt-3"><Plus size={12} /> Tarea</button>
             </div>
           )}
         </div>
