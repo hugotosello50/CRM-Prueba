@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.43.1";
+const APP_VERSION = "2.44.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -210,7 +210,7 @@ const seedCore = () => ({
     { id: uid("et"), etiquetaId: "ET03", entidadTipo: "Empresa", entidadId: "E001" },
     { id: uid("et"), etiquetaId: "ET02", entidadTipo: "Obra", entidadId: "O001" },
   ],
-  parametros: { umbralDiaLleno: 8, diasHabiles: [1, 2, 3, 4, 5], fechasNoHabiles: [], diasUrgente: 3, diasProximos: 7, googleContactsLabel: "CRM", tituloApp: "Seguimiento comercial", nombreSinColumnaSeguimientos: "Sin columna", nombreSinColumnaTareas: "Sin columna", formatoHora: "24", tituloSeccionTamano: "Chico", tituloSeccionNegrita: true },
+  parametros: { umbralDiaLleno: 8, diasHabiles: [1, 2, 3, 4, 5], fechasNoHabiles: [], diasUrgente: 3, diasProximos: 7, googleContactsLabel: "CRM", tituloApp: "Seguimiento comercial", nombreSinColumnaSeguimientos: "Sin columna", nombreSinColumnaTareas: "Sin columna", formatoHora: "24", tituloSeccionTamano: "Chico", tituloSeccionNegrita: true, avisoDefaultSeguimientos: { activo: false, cantidad: 30, unidad: "minutos" }, avisoDefaultTareas: { activo: false, cantidad: 30, unidad: "minutos" } },
   tema: { ...TEMA_DEFAULT },
   kanbanColumnas: [
     { id: "K1", nombre: "Por hacer", orden: 0 },
@@ -323,7 +323,7 @@ function normalizeCore(c) {
   if (!Array.isArray(out.vinculos)) out.vinculos = [];
   // Unifica todo al sistema de vínculos (migra las tablas viejas si todavía están).
   migrarAVinculos(out);
-  out.parametros = { umbralDiaLleno: 8, diasHabiles: [1, 2, 3, 4, 5], fechasNoHabiles: [], diasUrgente: 3, diasProximos: 7, googleContactsLabel: "CRM", tituloApp: "Seguimiento comercial", nombreSinColumnaSeguimientos: "Sin columna", nombreSinColumnaTareas: "Sin columna", formatoHora: "24", tituloSeccionTamano: "Chico", tituloSeccionNegrita: true, ...(out.parametros || {}) };
+  out.parametros = { umbralDiaLleno: 8, diasHabiles: [1, 2, 3, 4, 5], fechasNoHabiles: [], diasUrgente: 3, diasProximos: 7, googleContactsLabel: "CRM", tituloApp: "Seguimiento comercial", nombreSinColumnaSeguimientos: "Sin columna", nombreSinColumnaTareas: "Sin columna", formatoHora: "24", tituloSeccionTamano: "Chico", tituloSeccionNegrita: true, avisoDefaultSeguimientos: { activo: false, cantidad: 30, unidad: "minutos" }, avisoDefaultTareas: { activo: false, cantidad: 30, unidad: "minutos" }, ...(out.parametros || {}) };
   out.tema = { ...TEMA_DEFAULT, ...(out.tema || {}) };
   if (!Array.isArray(out.kanbanColumnas)) out.kanbanColumnas = seed.kanbanColumnas;
   if (!Array.isArray(out.kanbanColumnasTareas)) out.kanbanColumnasTareas = seed.kanbanColumnasTareas;
@@ -2209,10 +2209,10 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
   const [notas2, setNotas2] = useState("");
   const [modoFecha, setModoFecha] = useState("periodo");
   const [cantidad, setCantidad] = useState(1);
-  const [unidad, setUnidad] = useState("semanas");
+  const [unidad, setUnidad] = useState("dias");
   const [fechaEspecifica, setFechaEspecifica] = useState(todayISO());
   const [horaEspecifica, setHoraEspecifica] = useState("");
-  const [avisoEspecifica, setAvisoEspecifica] = useState(AVISO_DEFAULT);
+  const [avisoEspecifica, setAvisoEspecifica] = useState(core.parametros.avisoDefaultSeguimientos);
   const [confirmarEspecifica, setConfirmarEspecifica] = useState(false);
   const [prioridad, setPrioridad] = useState("Media");
   const [recurrente, setRecurrente] = useState(false);
@@ -2663,7 +2663,7 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
   const [mostrarFecha, setMostrarFecha] = useState(false);
   const [fechaNueva, setFechaNueva] = useState("");
   const [horaNueva, setHoraNueva] = useState("");
-  const [avisoNuevo, setAvisoNuevo] = useState(AVISO_DEFAULT);
+  const [avisoNuevo, setAvisoNuevo] = useState(core.parametros.avisoDefaultTareas);
   const [verCerradas, setVerCerradas] = useState(false);
   const tabsRef = useRef(null);
   const hoverRef = useRef(undefined);
@@ -2740,7 +2740,7 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
     setTituloNuevo("");
     setFechaNueva("");
     setHoraNueva("");
-    setAvisoNuevo(AVISO_DEFAULT);
+    setAvisoNuevo(core.parametros.avisoDefaultTareas);
     setMostrarFecha(false);
   };
 
@@ -2862,7 +2862,7 @@ function EditarTareaForm({ hilo, core, setCore, onClose }) {
   const [notas, setNotas] = useState(hilo.notas || "");
   const [fecha, setFecha] = useState(hilo.fecha || "");
   const [hora, setHora] = useState(hilo.hora || "");
-  const [aviso, setAviso] = useState(hilo.aviso || AVISO_DEFAULT);
+  const [aviso, setAviso] = useState(hilo.aviso || core.parametros.avisoDefaultTareas);
 
   const guardar = () => {
     if (!titulo.trim()) return;
@@ -2876,7 +2876,7 @@ function EditarTareaForm({ hilo, core, setCore, onClose }) {
     onClose();
   };
 
-  const quitarFecha = () => { setFecha(""); setHora(""); setAviso(AVISO_DEFAULT); };
+  const quitarFecha = () => { setFecha(""); setHora(""); setAviso(core.parametros.avisoDefaultTareas); };
 
   return (
     <div>
@@ -2891,11 +2891,11 @@ function EditarTareaForm({ hilo, core, setCore, onClose }) {
   );
 }
 
-function SubtareaForm({ initial, onSave, onSaveYNueva, onClose }) {
+function SubtareaForm({ initial, core, onSave, onSaveYNueva, onClose }) {
   const [texto, setTexto] = useState(initial?.texto || "");
   const [fecha, setFecha] = useState(initial?.fecha || "");
   const [hora, setHora] = useState(initial?.hora || "");
-  const [aviso, setAviso] = useState(initial?.aviso || AVISO_DEFAULT);
+  const [aviso, setAviso] = useState(initial?.aviso || core.parametros.avisoDefaultTareas);
   const [nota, setNota] = useState(initial?.nota || "");
   const textoRef = useRef(null);
 
@@ -2915,7 +2915,7 @@ function SubtareaForm({ initial, onSave, onSaveYNueva, onClose }) {
   const guardarYNueva = () => {
     if (!texto.trim()) return;
     onSaveYNueva(datosActuales());
-    setTexto(""); setFecha(""); setHora(""); setAviso(AVISO_DEFAULT); setNota("");
+    setTexto(""); setFecha(""); setHora(""); setAviso(core.parametros.avisoDefaultTareas); setNota("");
     textoRef.current?.focus();
   };
 
@@ -4022,10 +4022,10 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       )}
 
       {showNuevaSubtarea && (
-        <SubtareaForm onSave={(datos) => { agregarSubtarea(datos); setShowNuevaSubtarea(false); }} onSaveYNueva={agregarSubtarea} onClose={() => setShowNuevaSubtarea(false)} />
+        <SubtareaForm core={core} onSave={(datos) => { agregarSubtarea(datos); setShowNuevaSubtarea(false); }} onSaveYNueva={agregarSubtarea} onClose={() => setShowNuevaSubtarea(false)} />
       )}
       {editingSubtarea && (
-        <SubtareaForm initial={editingSubtarea} onSave={(datos) => { editarSubtarea(editingSubtarea.id, datos); setEditingSubtarea(null); }} onClose={() => setEditingSubtarea(null)} />
+        <SubtareaForm initial={editingSubtarea} core={core} onSave={(datos) => { editarSubtarea(editingSubtarea.id, datos); setEditingSubtarea(null); }} onClose={() => setEditingSubtarea(null)} />
       )}
       {deletingSubtareaId && (
         <ConfirmDeleteModal
@@ -4090,6 +4090,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       {editingAccion && (
         <EditAccionForm
           accion={editingAccion}
+          esTarea={esTarea}
           core={core}
           setCore={setCore}
           otrasAccionesDelHilo={accionesDelHilo.filter((a) => a.id !== editingAccion.id)}
@@ -5822,7 +5823,7 @@ function AgregarTareaAlHiloForm({ core, hiloClienteId, personasDelHilo, onVincul
   const [columnaId, setColumnaId] = useState("");
   const [fecha, setFecha] = useState("");
   const [hora, setHora] = useState("");
-  const [aviso, setAviso] = useState(AVISO_DEFAULT);
+  const [aviso, setAviso] = useState(core.parametros.avisoDefaultTareas);
   const columnas = core.kanbanColumnasTareas || [];
 
   const disponibles = useMemo(() => {
@@ -5848,7 +5849,7 @@ function AgregarTareaAlHiloForm({ core, hiloClienteId, personasDelHilo, onVincul
       columnaTareaId: columnaId || null, hiloRelacionadoId: hiloClienteId, notaCierre: "",
     };
     onCrear(nuevoHilo);
-    setTitulo(""); setNotas(""); setColumnaId(""); setFecha(""); setHora(""); setAviso(AVISO_DEFAULT);
+    setTitulo(""); setNotas(""); setColumnaId(""); setFecha(""); setHora(""); setAviso(core.parametros.avisoDefaultTareas);
     setModo("existente");
   };
 
@@ -5918,7 +5919,7 @@ function AgregarTareaAEntidadForm({ core, tareasExcluidas, onVincular, onCrear, 
   const [columnaId, setColumnaId] = useState("");
   const [fecha, setFecha] = useState("");
   const [hora, setHora] = useState("");
-  const [aviso, setAviso] = useState(AVISO_DEFAULT);
+  const [aviso, setAviso] = useState(core.parametros.avisoDefaultTareas);
   const columnas = core.kanbanColumnasTareas || [];
 
   const disponibles = useMemo(() => {
@@ -5937,7 +5938,7 @@ function AgregarTareaAEntidadForm({ core, tareasExcluidas, onVincular, onCrear, 
       columnaTareaId: columnaId || null, hiloRelacionadoId: null, notaCierre: "",
     };
     onCrear(nuevoHilo);
-    setTitulo(""); setNotas(""); setColumnaId(""); setFecha(""); setHora(""); setAviso(AVISO_DEFAULT);
+    setTitulo(""); setNotas(""); setColumnaId(""); setFecha(""); setHora(""); setAviso(core.parametros.avisoDefaultTareas);
     setModo("existente");
   };
 
@@ -6008,10 +6009,10 @@ function AvanzarHiloForm({ hilo, pendienteActual, core, setCore, acciones, setAc
   const [notas2, setNotas2] = useState("");
   const [modoFecha, setModoFecha] = useState("periodo"); // 'periodo' | 'especifica'
   const [cantidad, setCantidad] = useState(1);
-  const [unidad, setUnidad] = useState("semanas");
+  const [unidad, setUnidad] = useState(esTarea ? "semanas" : "dias");
   const [fechaEspecifica, setFechaEspecifica] = useState(todayISO());
   const [horaEspecifica, setHoraEspecifica] = useState("");
-  const [avisoEspecifica, setAvisoEspecifica] = useState(AVISO_DEFAULT);
+  const [avisoEspecifica, setAvisoEspecifica] = useState(esTarea ? core.parametros.avisoDefaultTareas : core.parametros.avisoDefaultSeguimientos);
   const [confirmarEspecifica, setConfirmarEspecifica] = useState(false);
   const [prioridad, setPrioridad] = useState("Media");
   const [recurrente, setRecurrente] = useState(false);
@@ -6194,13 +6195,13 @@ function AvanzarHiloForm({ hilo, pendienteActual, core, setCore, acciones, setAc
 }
 
 // Editar una acción puntual del hilo (ya no necesita empresa/obra: las hereda del hilo)
-function EditAccionForm({ accion, core, setCore, otrasAccionesDelHilo = [], onClose, onSave }) {
+function EditAccionForm({ accion, esTarea, core, setCore, otrasAccionesDelHilo = [], onClose, onSave }) {
   const [tipoAccionId, setTipoAccionId] = useState(accion.tipoAccionId);
   const [estado, setEstado] = useState(accion.estado);
   const [fechaRealizada, setFechaRealizada] = useState(accion.fechaRealizada || todayISO());
   const [fechaProgramada, setFechaProgramada] = useState(accion.fechaProgramada || todayISO());
   const [horaProgramada, setHoraProgramada] = useState(accion.horaProgramada || "");
-  const [aviso, setAviso] = useState(accion.aviso || AVISO_DEFAULT);
+  const [aviso, setAviso] = useState(accion.aviso || (esTarea ? core.parametros.avisoDefaultTareas : core.parametros.avisoDefaultSeguimientos));
   const [prioridad, setPrioridad] = useState(accion.prioridad || "Media");
   const [notaPlanificada, setNotaPlanificada] = useState(accion.notaPlanificada || "");
   const [notaHecho, setNotaHecho] = useState(accion.notaHecho || "");
@@ -8137,6 +8138,7 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
   const setGoogleContactsLabel = (v) => setCore((prev) => ({ ...prev, parametros: { ...prev.parametros, googleContactsLabel: v } }));
   const setTituloApp = (v) => setCore((prev) => ({ ...prev, parametros: { ...prev.parametros, tituloApp: v } }));
   const setFormatoHora = (v) => setCore((prev) => ({ ...prev, parametros: { ...prev.parametros, formatoHora: v } }));
+  const setAvisoDefault = (clave, valor) => setCore((prev) => ({ ...prev, parametros: { ...prev.parametros, [clave]: valor } }));
 
   const setTemaColor = (clave, valor) => setCore((prev) => ({ ...prev, tema: { ...prev.tema, [clave]: valor } }));
   const restablecerTema = () => setCore((prev) => ({ ...prev, tema: { ...TEMA_DEFAULT } }));
@@ -8221,6 +8223,19 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
               >12 hs (2:30 pm)</button>
             </div>
             <p className="text-xs text-[#8A8272] mt-2">Se aplica a cómo se muestra la hora en toda la app. El campo para cargarla al editar sigue el formato del dispositivo, eso no lo controla la app.</p>
+          </div>
+
+          <div className="bg-white border border-[#E4DECF] rounded-sm p-4">
+            <p className="text-[11px] font-bold tracking-wide text-[#6B6352] mb-1">Avisos por defecto</p>
+            <p className="text-xs text-[#A69C88] mb-2">Con qué valores arranca precargado el aviso al programar una fecha y hora, según sea de un seguimiento o de una tarea — se puede cambiar igual en cada caso puntual.</p>
+            <div>
+              <p className="text-sm font-bold text-[#2A2118] mb-1">Seguimientos</p>
+              <AvisoFields aviso={core.parametros.avisoDefaultSeguimientos} onAviso={(v) => setAvisoDefault("avisoDefaultSeguimientos", v)} />
+            </div>
+            <div className="border-t border-[#E4DECF] mt-3 pt-3">
+              <p className="text-sm font-bold text-[#2A2118] mb-1">Tareas</p>
+              <AvisoFields aviso={core.parametros.avisoDefaultTareas} onAviso={(v) => setAvisoDefault("avisoDefaultTareas", v)} />
+            </div>
           </div>
 
           <div className="bg-white border border-[#E4DECF] rounded-sm p-4">
