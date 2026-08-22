@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.46.0";
+const APP_VERSION = "2.46.1";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -3969,12 +3969,9 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
             <p className={`text-xs ${s.hecha ? "line-through text-[#A69C88]" : "text-[#2A2118]"}`}>{s.texto}</p>
             {(s.fecha || s.hora || s.nota) && (
               <p className="text-[10px] text-[#8A8272] mt-0.5 flex items-center flex-wrap gap-1">
-                <span>
-                  {s.fecha ? fmtDateHora(s.fecha, s.hora, core.parametros.formatoHora) : fmtHora(s.hora, core.parametros.formatoHora)}
-                  {(s.fecha || s.hora) && s.nota && " · "}
-                  {s.nota}
-                </span>
+                {(s.fecha || s.hora) && <span>{s.fecha ? fmtDateHora(s.fecha, s.hora, core.parametros.formatoHora) : fmtHora(s.hora, core.parametros.formatoHora)}</span>}
                 {s.aviso?.activo && <Bell size={10} className="shrink-0 text-[var(--tema-vinculo)]" aria-label="Tiene aviso programado" />}
+                {s.nota && <span>{(s.fecha || s.hora) && "· "}{s.nota}</span>}
               </p>
             )}
           </div>
@@ -4155,8 +4152,6 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
             </button>
           )}
         </div>
-
-        {filaPills}
       </>
     );
 
@@ -4220,6 +4215,10 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
             </button>
           </div>
         )}
+
+        <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
+          {filaPills}
+        </div>
 
         {verNotas && (
           <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
