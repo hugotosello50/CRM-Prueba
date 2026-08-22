@@ -43,6 +43,33 @@ preguntar:
 No aplica a cambios que no toquen código de la app (por ejemplo, editar este
 mismo archivo).
 
+## Regla fija: mantener al asistente de IA al día
+
+El asistente de IA (`lib/acciones.js` + `lib/asistenteIA.js` + el prompt que
+arma `app/api/asistente/route.js`) no descubre funcionalidad sola: solo sabe
+hacer lo que está explícitamente cargado en su catálogo de acciones. Cada vez
+que se ejecuta una mejora o arreglo que agrega o modifica algo que el usuario
+puede **hacer** en la app (crear, editar, eliminar, cambiar estado, mover,
+vincular, etc. sobre personas, empresas, obras, hilos, tareas, acciones,
+vínculos, etiquetas, notas, subtareas, o lo que sea que se sume a futuro), hay
+que sumar o actualizar la acción correspondiente en ese catálogo — como un
+paso más de esa misma ejecución, sin que haga falta que el usuario lo pida
+aparte cada vez. Sigue el mismo patrón ya usado para las acciones existentes:
+función pura en `lib/acciones.js`, forma de parámetros + resolvedor de
+nombres-a-ids en `lib/asistenteIA.js`, entrada en la lista numerada de
+`PROMPT_SISTEMA`, y caso en `resumenLegible`.
+
+No aplica a:
+- Cambios puramente visuales o de layout (no agregan ninguna capacidad nueva).
+- Configuración/Apariencia (fuera de alcance del asistente, según lo acordado).
+- Adjuntos (no se pueden cargar archivos por texto/voz).
+
+Si sumar la acción es grande o su diseño no es obvio (por ejemplo, hace falta
+decidir cómo identificar un registro que no tiene nombre propio, como una
+acción del historial), se puede tratar como una etapa aparte dentro de la
+misma ejecución — pero sigue siendo parte del trabajo, no algo opcional a
+mencionar y dejar pendiente.
+
 # Fundamentos de la App
 
 ## Criterio general: app navegable y consistente
