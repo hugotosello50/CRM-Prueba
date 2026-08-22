@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.47.4";
+const APP_VERSION = "2.47.5";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -3962,7 +3962,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   // Checklist de subtareas (solo tareas) — se muestra adentro de "Ver/Ocultar detalles".
   const bloqueSubtareas = esTarea && (
     <div>
-      <TituloSeccion core={core}>Subtareas</TituloSeccion>
+      <TituloSeccion core={core}>Subtareas ({subtareas.length})</TituloSeccion>
       {subtareas.map((s) => (
         <div key={s.id} className="flex items-start gap-1.5 py-1">
           <button
