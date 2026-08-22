@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.48.1";
+const APP_VERSION = "2.48.2";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -398,8 +398,8 @@ function fmtDate(iso) {
   const [y, m, d] = iso.split("-");
   return `${d}/${m}/${y}`;
 }
-// formato: "24" (por defecto, "14:30 hs") o "12" ("2:30 pm").
-function fmtHora(hora, formato) {
+// formato: "24" (por defecto, "14:30 hs") o "12" ("2:30 pm"). corto=true omite el sufijo " hs".
+function fmtHora(hora, formato, corto) {
   if (!hora) return "";
   if (formato === "12") {
     const [hStr, m] = hora.split(":");
@@ -408,10 +408,11 @@ function fmtHora(hora, formato) {
     h = h % 12 || 12;
     return `${h}:${m} ${ampm}`;
   }
-  return `${hora} hs`;
+  return corto ? hora : `${hora} hs`;
 }
-function fmtDateHora(iso, hora, formato) {
-  return fmtDate(iso) + (hora ? ` · ${fmtHora(hora, formato)}` : "");
+// corto=true: sin " · " entre fecha y hora ni " hs" (para espacios chicos, ej. el badge de fecha de la tarjeta).
+function fmtDateHora(iso, hora, formato, corto) {
+  return fmtDate(iso) + (hora ? `${corto ? " " : " · "}${fmtHora(hora, formato, corto)}` : "");
 }
 // Ordena acciones realizadas de más reciente a más antigua. Si dos comparten fecha,
 // desempata por el número de secuencia asignado al crearlas (orden real en que ocurrieron).
@@ -4224,8 +4225,8 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
           <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-dashed border-[#E4DECF] flex-nowrap">
             <div className="flex items-center gap-1.5 ml-auto min-w-0">
               {tipoPrimary && <span className="min-w-0 flex-1 truncate text-right text-xs font-mono font-bold text-black" title={tipoPrimary.nombre}>{tipoPrimary.nombre}</span>}
-              <span className="shrink-0 text-[11px] font-bold font-mono px-2 py-1 rounded-sm bg-[#F1DFB9] text-[#5C3F18]">
-                {fmtDateHora(masUrgente.fechaProgramada, masUrgente.horaProgramada, core.parametros.formatoHora)}
+              <span className="shrink-0 text-[10px] font-bold font-mono px-2 py-1 rounded-sm bg-[#F1DFB9] text-[#5C3F18]">
+                {fmtDateHora(masUrgente.fechaProgramada, masUrgente.horaProgramada, core.parametros.formatoHora, true)}
               </span>
               {primary.aviso?.activo && <Bell size={13} className="shrink-0 text-[var(--tema-vinculo)]" aria-label="Tiene aviso programado" />}
               <span className="shrink-0"><IconBtn label="Reprogramar" onClick={() => setShowReprogramar(true)}><Pencil size={13} /></IconBtn></span>
@@ -4428,8 +4429,8 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
 
           {primary && tipoPrimary && <span className="min-w-0 flex-1 truncate text-right text-xs font-mono font-bold text-black" title={tipoPrimary.nombre}>{tipoPrimary.nombre}</span>}
           {primary && (
-            <span className="shrink-0 text-[11px] font-bold font-mono px-2 py-1 rounded-sm bg-[#F1DFB9] text-[#5C3F18]">
-              {fmtDateHora(masUrgente.fechaProgramada, masUrgente.horaProgramada, core.parametros.formatoHora)}
+            <span className="shrink-0 text-[10px] font-bold font-mono px-2 py-1 rounded-sm bg-[#F1DFB9] text-[#5C3F18]">
+              {fmtDateHora(masUrgente.fechaProgramada, masUrgente.horaProgramada, core.parametros.formatoHora, true)}
             </span>
           )}
           {primary?.aviso?.activo && <Bell size={13} className="shrink-0 text-[var(--tema-vinculo)]" aria-label="Tiene aviso programado" />}
