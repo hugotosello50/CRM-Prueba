@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.47.2";
+const APP_VERSION = "2.47.3";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -4313,17 +4313,19 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
         </div>
         {persona && <WhatsAppLink persona={persona} size={15} />}
         {hilo.estado === "Cerrado" && <Chip tone="estadoCerradoInactivo">{hilo.estado}</Chip>}
-        {onIniciarDrag && (
+        {(onIniciarDrag || (titulosTruncados && !verEntidadesCompleto)) && (
           <div className="shrink-0 flex flex-col items-center">
-            <button
-              onPointerDown={(e) => { e.preventDefault(); onIniciarDrag(); }}
-              onTouchStart={(e) => { e.preventDefault(); onIniciarDrag(); }}
-              aria-label="Arrastrar a otra columna"
-              style={{ touchAction: "none" }}
-              className="text-[#8A8272] cursor-grab active:cursor-grabbing p-1 -mr-1"
-            >
-              <GripVertical size={16} />
-            </button>
+            {onIniciarDrag && (
+              <button
+                onPointerDown={(e) => { e.preventDefault(); onIniciarDrag(); }}
+                onTouchStart={(e) => { e.preventDefault(); onIniciarDrag(); }}
+                aria-label="Arrastrar a otra columna"
+                style={{ touchAction: "none" }}
+                className="text-[#8A8272] cursor-grab active:cursor-grabbing p-1 -mr-1"
+              >
+                <GripVertical size={16} />
+              </button>
+            )}
             {titulosTruncados && !verEntidadesCompleto && (
               <button
                 type="button"
