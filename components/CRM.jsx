@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.47.1";
+const APP_VERSION = "2.47.2";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -4187,18 +4187,16 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
           <p className="text-[10px] text-[var(--tema-peligro)] font-bold tracking-wide mt-1.5">⚠ Este hilo tiene {bucket.length} acciones pendientes a la vez — revisalo, no debería pasar.</p>
         )}
 
-        <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-dashed border-[#E4DECF] flex-nowrap">
-          <div className="flex items-center gap-1.5 ml-auto min-w-0">
-            {primary && tipoPrimary && <span className="min-w-0 flex-1 truncate text-right text-xs font-mono font-bold text-black" title={tipoPrimary.nombre}>{tipoPrimary.nombre}</span>}
-            {primary && (
+        {primary && (
+          <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-dashed border-[#E4DECF] flex-nowrap">
+            <div className="flex items-center gap-1.5 ml-auto min-w-0">
+              {tipoPrimary && <span className="min-w-0 flex-1 truncate text-right text-xs font-mono font-bold text-black" title={tipoPrimary.nombre}>{tipoPrimary.nombre}</span>}
               <span className="shrink-0 text-[11px] font-bold font-mono px-2 py-1 rounded-sm bg-[#F1DFB9] text-[#5C3F18]">
                 {fmtDate(masUrgente.fechaProgramada)}
               </span>
-            )}
-            {primary?.aviso?.activo && <Bell size={13} className="shrink-0 text-[var(--tema-vinculo)]" aria-label="Tiene aviso programado" />}
-            {primary && <span className="shrink-0"><IconBtn label="Reprogramar" onClick={() => setShowReprogramar(true)}><Pencil size={13} /></IconBtn></span>}
-            {primary?.recurrente && <Repeat size={12} className="shrink-0 text-[#8A8272]" />}
-            {primary && (
+              {primary.aviso?.activo && <Bell size={13} className="shrink-0 text-[var(--tema-vinculo)]" aria-label="Tiene aviso programado" />}
+              <span className="shrink-0"><IconBtn label="Reprogramar" onClick={() => setShowReprogramar(true)}><Pencil size={13} /></IconBtn></span>
+              {primary.recurrente && <Repeat size={12} className="shrink-0 text-[#8A8272]" />}
               <button
                 type="button"
                 onClick={() => setShowAvanzar(true)}
@@ -4207,9 +4205,9 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
               >
                 <ChevronRight size={12} /> Hilo
               </button>
-            )}
+            </div>
           </div>
-        </div>
+        )}
 
         {!primary && mostrarSinAccion && (
           <div className="flex items-center justify-between gap-2 mt-2">
