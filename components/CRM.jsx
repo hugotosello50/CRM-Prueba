@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.47.5";
+const APP_VERSION = "2.48.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -158,9 +158,9 @@ const vinc = (origenTipo, origenId, destinoTipo, destinoId, tipoRelacionId, prin
 
 const seedCore = () => ({
   personas: [
-    { id: "P001", nombre: "Juan Pérez", whatsapp: "0351 15-555-1234", direccion: "Av. Colón 1234", ciudad: "Córdoba", notas: "Prefiere contacto por la tarde" },
-    { id: "P002", nombre: "María Gómez", whatsapp: "0351 15-666-4321", direccion: "Bv. San Juan 550", ciudad: "Córdoba", notas: "" },
-    { id: "P003", nombre: "Roberto Díaz", whatsapp: "011 15-777-8899", direccion: "Av. Rivadavia 900", ciudad: "CABA", notas: "Dueño, muy ocupado, mejor mail primero" },
+    { id: "P001", nombre: "Juan Pérez", whatsapp: "0351 15-555-1234", direccion: "Av. Colón 1234", ciudad: "Córdoba", notas: [{ id: uid("NT"), texto: "Prefiere contacto por la tarde", fecha: todayISO() }] },
+    { id: "P002", nombre: "María Gómez", whatsapp: "0351 15-666-4321", direccion: "Bv. San Juan 550", ciudad: "Córdoba", notas: [] },
+    { id: "P003", nombre: "Roberto Díaz", whatsapp: "011 15-777-8899", direccion: "Av. Rivadavia 900", ciudad: "CABA", notas: [{ id: uid("NT"), texto: "Dueño, muy ocupado, mejor mail primero", fecha: todayISO() }] },
   ],
   empresas: [
     { id: "E001", denominacion: "Constructora del Sur S.A.", cuit: "", direccion: "Ruta 20 Km 8", ciudad: "Córdoba" },
@@ -223,11 +223,11 @@ const seedCore = () => ({
     { id: "T3", nombre: "Hecho", orden: 2 },
   ],
   hilos: [
-    { id: "H001", titulo: "Presupuesto cables solares", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -15), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "", notas: "" },
-    { id: "H002", titulo: "Avance obra Anatonia Village", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -20), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "", notas: "" },
-    { id: "H003", titulo: "Datos de facturación", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -6), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "", notas: "" },
-    { id: "H004", titulo: "Propuesta anual", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -10), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "", notas: "" },
-    { id: "H005", titulo: "Comprar resma de hojas", estado: "Activo", fechaCreacion: todayISO(), tipo: "tarea", columnaTareaId: "T1", hiloRelacionadoId: null, notaCierre: "", notas: "" },
+    { id: "H001", titulo: "Presupuesto cables solares", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -15), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "", notas: [] },
+    { id: "H002", titulo: "Avance obra Anatonia Village", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -20), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "", notas: [] },
+    { id: "H003", titulo: "Datos de facturación", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -6), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "", notas: [] },
+    { id: "H004", titulo: "Propuesta anual", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -10), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "", notas: [] },
+    { id: "H005", titulo: "Comprar resma de hojas", estado: "Activo", fechaCreacion: todayISO(), tipo: "tarea", columnaTareaId: "T1", hiloRelacionadoId: null, notaCierre: "", notas: [] },
   ],
 });
 
@@ -318,7 +318,10 @@ function normalizeCore(c) {
     return { ...rest, categoriaId: match ? match.id : out.categorias[0].id };
   });
   if (!Array.isArray(out.hilos)) out.hilos = [];
-  out.hilos = out.hilos.map((h) => ({ tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "", notas: "", ...h }));
+  out.hilos = out.hilos.map((h) => ({ tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "", notas: [], ...h }));
+  // Notas: pasó de campo de texto único a lista de notas — migra lo viejo a la lista.
+  out.hilos = out.hilos.map((h) => ({ ...h, notas: Array.isArray(h.notas) ? h.notas : (h.notas ? [{ id: uid("NT"), texto: h.notas, fecha: h.fechaCreacion || todayISO() }] : []) }));
+  out.personas = (out.personas || []).map((p) => ({ ...p, notas: Array.isArray(p.notas) ? p.notas : (p.notas ? [{ id: uid("NT"), texto: p.notas, fecha: todayISO() }] : []) }));
   if (!Array.isArray(out.tiposRelacion)) out.tiposRelacion = [];
   if (!Array.isArray(out.vinculos)) out.vinculos = [];
   // Unifica todo al sistema de vínculos (migra las tablas viejas si todavía están).
@@ -788,10 +791,10 @@ function TituloSeccion({ core, children }) {
 
 // Editor chico para el campo suelto "Notas" de un hilo (seguimiento o tarea) — solo el texto
 // de la nota, sin abrir el formulario completo de edición del hilo.
-function EditorNotaModal({ core, valorInicial, onGuardar, onClose }) {
+function EditorNotaModal({ core, titulo, valorInicial, onGuardar, onClose }) {
   const [valor, setValor] = useState(valorInicial || "");
   return (
-    <Modal title="Editar nota" onClose={onClose}>
+    <Modal title={titulo || "Editar nota"} onClose={onClose}>
       <Field label="Nota">
         <CampoConMenciones core={core} multiline rows={4} value={valor} onChange={setValor} autoFocus />
       </Field>
@@ -1666,7 +1669,7 @@ export default function CRM({ userId, onLogout }) {
           hilos: c.hilos.map((h) => {
             if (h.tipo !== "tarea" || typeof h.fecha !== "undefined") return h;
             const pendiente = a.find((acc) => acc.hiloId === h.id && acc.estado === "Pendiente");
-            return { ...h, notas: h.notas || "", fecha: pendiente?.fechaProgramada || "", hora: pendiente?.horaProgramada || "" };
+            return { ...h, notas: h.notas || [], fecha: pendiente?.fechaProgramada || "", hora: pendiente?.horaProgramada || "" };
           }),
         };
         const ts = new Date().toISOString();
@@ -2019,8 +2022,8 @@ function ResumenHoyModal({ core, acciones, onOpen, onClose }) {
           className="w-full text-left bg-white border border-[#E4DECF] rounded-sm p-2.5 mb-1.5"
         >
           <p className="text-sm font-semibold text-[#2A2118] truncate">{textoPlanoDeMenciones(hilo.titulo)}</p>
-          {(hilo.hora || hilo.notas) && (
-            <p className="text-xs text-[#6B6352] truncate">{textoPlanoDeMenciones([hilo.hora, hilo.notas].filter(Boolean).join(" · "))}</p>
+          {(hilo.hora || (hilo.notas || []).length > 0) && (
+            <p className="text-xs text-[#6B6352] truncate">{textoPlanoDeMenciones([hilo.hora, (hilo.notas || []).at(-1)?.texto].filter(Boolean).join(" · "))}</p>
           )}
         </button>
       );
@@ -2290,7 +2293,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
     if (!titulo.trim() || faltaVinculo) return;
     const hoy = todayISO();
     const personaIdFinal = personaFija ? personaFija.id : personaId;
-    const nuevoHilo = { id: uid("H"), titulo: titulo.trim(), estado: "Activo", fechaCreacion: hoy, tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "", notas: "" };
+    const nuevoHilo = { id: uid("H"), titulo: titulo.trim(), estado: "Activo", fechaCreacion: hoy, tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "", notas: [] };
     const nuevosVinculos = [
       ...(personaIdFinal ? [vinc("Persona", personaIdFinal, "Hilo", nuevoHilo.id, null, true, hoy)] : []),
       ...empresaIds.map((eid) => vinc("Hilo", nuevoHilo.id, "Empresa", eid, null, false, hoy)),
@@ -2312,7 +2315,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
   const crearMultiple = () => {
     if (!titulo.trim() || personaIdsMultiple.length === 0) return;
     const hoy = todayISO();
-    const nuevosHilos = personaIdsMultiple.map(() => ({ id: uid("H"), titulo: titulo.trim(), estado: "Activo", fechaCreacion: hoy, tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "", notas: "" }));
+    const nuevosHilos = personaIdsMultiple.map(() => ({ id: uid("H"), titulo: titulo.trim(), estado: "Activo", fechaCreacion: hoy, tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "", notas: [] }));
     const nuevosVinculos = personaIdsMultiple.map((pid, i) => vinc("Persona", pid, "Hilo", nuevosHilos[i].id, null, true, hoy));
     setCore((prev) => ({ ...prev, hilos: [...nuevosHilos, ...prev.hilos], vinculos: [...(prev.vinculos || []), ...nuevosVinculos] }));
 
@@ -2735,7 +2738,7 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
     if (!tituloNuevo.trim()) return;
     const hoy = todayISO();
     const aviso = horaNueva && avisoNuevo.activo ? avisoNuevo : null;
-    const nuevoHilo = { id: uid("H"), titulo: tituloNuevo.trim(), notas: "", fecha: fechaNueva, hora: horaNueva, aviso, avisoEnviado: false, avisoVistoEnApp: false, estado: "Activo", fechaCreacion: hoy, tipo: "tarea", columnaTareaId: columnaActiva, hiloRelacionadoId: null, notaCierre: "" };
+    const nuevoHilo = { id: uid("H"), titulo: tituloNuevo.trim(), notas: [], fecha: fechaNueva, hora: horaNueva, aviso, avisoEnviado: false, avisoVistoEnApp: false, estado: "Activo", fechaCreacion: hoy, tipo: "tarea", columnaTareaId: columnaActiva, hiloRelacionadoId: null, notaCierre: "" };
     setCore((prev) => ({ ...prev, hilos: [nuevoHilo, ...prev.hilos] }));
     setTituloNuevo("");
     setFechaNueva("");
@@ -2859,7 +2862,6 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
 // edición consistente con creación en toda la app (ver EditarHiloPrincipalForm).
 function EditarTareaForm({ hilo, core, setCore, onClose }) {
   const [titulo, setTitulo] = useState(hilo.titulo);
-  const [notas, setNotas] = useState(hilo.notas || "");
   const [fecha, setFecha] = useState(hilo.fecha || "");
   const [hora, setHora] = useState(hilo.hora || "");
   const [aviso, setAviso] = useState(hilo.aviso || core.parametros.avisoDefaultTareas);
@@ -2871,7 +2873,7 @@ function EditarTareaForm({ hilo, core, setCore, onClose }) {
     const avisoCambio = fecha !== (hilo.fecha || "") || hora !== (hilo.hora || "") || JSON.stringify(avisoFinal) !== JSON.stringify(hilo.aviso || null);
     setCore((prev) => ({
       ...prev,
-      hilos: prev.hilos.map((h) => (h.id === hilo.id ? { ...h, titulo: tituloFinal, notas: notas.trim(), fecha, hora, aviso: avisoFinal, avisoEnviado: avisoCambio ? false : !!h.avisoEnviado, avisoVistoEnApp: avisoCambio ? false : !!h.avisoVistoEnApp } : h)),
+      hilos: prev.hilos.map((h) => (h.id === hilo.id ? { ...h, titulo: tituloFinal, fecha, hora, aviso: avisoFinal, avisoEnviado: avisoCambio ? false : !!h.avisoEnviado, avisoVistoEnApp: avisoCambio ? false : !!h.avisoVistoEnApp } : h)),
     }));
     onClose();
   };
@@ -2881,7 +2883,6 @@ function EditarTareaForm({ hilo, core, setCore, onClose }) {
   return (
     <div>
       <Field label="Título"><CampoConMenciones core={core} value={titulo} onChange={setTitulo} /></Field>
-      <Field label="Notas (opcional)"><CampoConMenciones core={core} multiline rows={2} value={notas} onChange={setNotas} /></Field>
       <SelectorFechaHora fecha={fecha} hora={hora} aviso={aviso} onAviso={setAviso} onFecha={setFecha} onHora={setHora} labelFecha="Fecha (opcional)" />
       <PrimaryBtn full disabled={!titulo.trim()} onClick={guardar}>Guardar</PrimaryBtn>
       {(fecha || hora) && (
@@ -3631,7 +3632,9 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   const [editingAccion, setEditingAccion] = useState(null);
   const [deletingAccionId, setDeletingAccionId] = useState(null);
   const [verNotas, setVerNotas] = useState(false);
-  const [editandoNota, setEditandoNota] = useState(false);
+  const [showNuevaNota, setShowNuevaNota] = useState(false);
+  const [editingNota, setEditingNota] = useState(null);
+  const [deletingNotaId, setDeletingNotaId] = useState(null);
   const [verVinculos, setVerVinculos] = useState(false);
   const [verRelaciones, setVerRelaciones] = useState(false);
   const [verTareasVinculadas, setVerTareasVinculadas] = useState(false);
@@ -3708,9 +3711,17 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
     ...prev,
     hilos: prev.hilos.map((h) => (h.id === tareaId ? { ...h, hiloRelacionadoId: null } : h)),
   }));
-  const guardarNota = (nuevaNota) => setCore((prev) => ({
+  const agregarNota = (texto) => setCore((prev) => ({
     ...prev,
-    hilos: prev.hilos.map((h) => (h.id === id ? { ...h, notas: nuevaNota } : h)),
+    hilos: prev.hilos.map((h) => (h.id === id ? { ...h, notas: [...(h.notas || []), { id: uid("NT"), texto, fecha: todayISO() }] } : h)),
+  }));
+  const editarNota = (notaId, texto) => setCore((prev) => ({
+    ...prev,
+    hilos: prev.hilos.map((h) => (h.id === id ? { ...h, notas: (h.notas || []).map((n) => (n.id === notaId ? { ...n, texto } : n)) } : h)),
+  }));
+  const eliminarNota = (notaId) => setCore((prev) => ({
+    ...prev,
+    hilos: prev.hilos.map((h) => (h.id === id ? { ...h, notas: (h.notas || []).filter((n) => n.id !== notaId) } : h)),
   }));
   // Agrega la persona al hilo y, si tiene empresas vinculadas, arrastra también esas
   // empresas y las obras de esas empresas (además de las obras vinculadas directamente
@@ -3813,15 +3824,26 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   // "filaPillsCliente" más abajo controlando estos mismos estados).
   const contenidoNotas = verNotas && (
     <div className="mt-2.5">
-      <TituloSeccion core={core}>Notas</TituloSeccion>
-      {hilo.notas ? (
-        <div className="flex items-start justify-between gap-2">
-          <p className="text-sm text-[#2A2118] flex-1 min-w-0"><TextoConMenciones texto={hilo.notas} onOpen={onOpen} /></p>
-          <IconBtn label="Editar nota" onClick={() => setEditandoNota(true)}><Pencil size={13} /></IconBtn>
-        </div>
+      <TituloSeccion core={core}>Notas ({(hilo.notas || []).length})</TituloSeccion>
+      {(hilo.notas || []).length === 0 ? (
+        <p className="text-sm text-[#A69C88] mb-1.5">Sin notas cargadas.</p>
       ) : (
-        <button onClick={() => setEditandoNota(true)} className="text-xs font-bold text-[var(--tema-vinculo)]">+ Nota</button>
+        <div className="space-y-2">
+          {hilo.notas.map((n) => (
+            <div key={n.id} className="flex items-start justify-between gap-2">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-[#2A2118]"><TextoConMenciones texto={n.texto} onOpen={onOpen} /></p>
+                <p className="text-[10px] text-[#A69C88] mt-0.5">{fmtDate(n.fecha)}</p>
+              </div>
+              <div className="flex items-center gap-0.5 shrink-0">
+                <IconBtn label="Editar nota" onClick={() => setEditingNota(n)}><Pencil size={13} /></IconBtn>
+                <IconBtn label="Eliminar nota" danger onClick={() => setDeletingNotaId(n.id)}><Trash2 size={13} /></IconBtn>
+              </div>
+            </div>
+          ))}
+        </div>
       )}
+      <button onClick={() => setShowNuevaNota(true)} className="text-xs font-bold text-[var(--tema-vinculo)] mt-1.5">+ Nota</button>
     </div>
   );
 
@@ -3927,7 +3949,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   // (standalone=true, al abrir la tarjeta) siempre se ven todas, tengan o no contenido: es el
   // lugar para cargar cosas.
   const pillsContenido = [
-    { key: "notas", label: "Notas", activo: verNotas, setActivo: setVerNotas, marcado: !!hilo.notas },
+    { key: "notas", label: "Notas", activo: verNotas, setActivo: setVerNotas, marcado: (hilo.notas || []).length > 0 },
     ...(esTarea ? [{ key: "subtareas", label: "Subtareas", activo: verSubtareas, setActivo: setVerSubtareas, marcado: subtareas.length > 0 }] : []),
     { key: "vinculos", label: "Vínculos", activo: verVinculos, setActivo: setVerVinculos, marcado: entidadesDelHilo.length > 0 || !!hiloRelacionado },
     { key: "relaciones", label: "Relaciones", activo: verRelaciones, setActivo: setVerRelaciones, marcado: relacionesDelHilo.length > 0 },
@@ -3995,8 +4017,19 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   // Todos los modales/confirmaciones de la tarjeta — iguales para hilo de cliente y tarea.
   const modales = (
     <>
-      {editandoNota && (
-        <EditorNotaModal core={core} valorInicial={hilo.notas} onGuardar={guardarNota} onClose={() => setEditandoNota(false)} />
+      {showNuevaNota && (
+        <EditorNotaModal core={core} titulo="Nueva nota" onGuardar={(texto) => { if (texto) agregarNota(texto); }} onClose={() => setShowNuevaNota(false)} />
+      )}
+      {editingNota && (
+        <EditorNotaModal core={core} titulo="Editar nota" valorInicial={editingNota.texto} onGuardar={(texto) => editarNota(editingNota.id, texto)} onClose={() => setEditingNota(null)} />
+      )}
+      {deletingNotaId && (
+        <ConfirmDeleteModal
+          title="Eliminar nota"
+          texto="¿Eliminar esta nota? No se puede deshacer."
+          onCancel={() => setDeletingNotaId(null)}
+          onConfirm={() => { eliminarNota(deletingNotaId); setDeletingNotaId(null); }}
+        />
       )}
       {showReprogramar && primary && (
         <ReprogramarModal
@@ -4752,7 +4785,6 @@ function PersonaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
   const [whatsapp, setWhatsapp] = useState(initial.whatsapp || "");
   const [direccion, setDireccion] = useState(initial.direccion || "");
   const [ciudad, setCiudad] = useState(initial.ciudad || "");
-  const [notas, setNotas] = useState(initial.notas || "");
   const [confirmarEliminar, setConfirmarEliminar] = useState(false);
 
   const [empresaIds, setEmpresaIds] = useState([]);
@@ -4795,7 +4827,7 @@ function PersonaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
         return { ...prev, vinculos: [...(prev.vinculos || []), ...nuevos] };
       });
     }
-    onSave({ id: personaId, nombre: nombre.trim(), whatsapp, direccion, ciudad, notas });
+    onSave({ id: personaId, nombre: nombre.trim(), whatsapp, direccion, ciudad, notas: initial.notas || [] });
   };
 
   return (
@@ -4804,7 +4836,6 @@ function PersonaForm({ initial, core, setCore, onSave, onDelete, onClose }) {
       <Field label="WhatsApp"><input className={inputCls} placeholder="0351 15-555-1234" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} /></Field>
       <Field label="Dirección"><input className={inputCls} value={direccion} onChange={(e) => setDireccion(e.target.value)} /></Field>
       <Field label="Ciudad"><input className={inputCls} value={ciudad} onChange={(e) => setCiudad(e.target.value)} /></Field>
-      <Field label="Notas generales"><textarea className={inputCls} rows={2} value={notas} onChange={(e) => setNotas(e.target.value)} /></Field>
 
       <div className="border-t border-dashed border-[#E4DECF] mt-1 mb-3 pt-3">
         <Field label="Empresa(s)">
@@ -5112,8 +5143,25 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
   const [verCerrados, setVerCerrados] = useState(false);
   const [verTareas, setVerTareas] = useState(false);
   const [showAgregarTareaEntidad, setShowAgregarTareaEntidad] = useState(false);
+  const [verNotas, setVerNotas] = useState(false);
+  const [showNuevaNota, setShowNuevaNota] = useState(false);
+  const [editingNota, setEditingNota] = useState(null);
+  const [deletingNotaId, setDeletingNotaId] = useState(null);
 
   if (!persona) return <div><BackHeader onClose={onClose} /><p className="text-sm text-[#8A8272]">Esta persona ya no existe.</p></div>;
+
+  const agregarNota = (texto) => setCore((prev) => ({
+    ...prev,
+    personas: prev.personas.map((p) => (p.id === id ? { ...p, notas: [...(p.notas || []), { id: uid("NT"), texto, fecha: todayISO() }] } : p)),
+  }));
+  const editarNota = (notaId, texto) => setCore((prev) => ({
+    ...prev,
+    personas: prev.personas.map((p) => (p.id === id ? { ...p, notas: (p.notas || []).map((n) => (n.id === notaId ? { ...n, texto } : n)) } : p)),
+  }));
+  const eliminarNota = (notaId) => setCore((prev) => ({
+    ...prev,
+    personas: prev.personas.map((p) => (p.id === id ? { ...p, notas: (p.notas || []).filter((n) => n.id !== notaId) } : p)),
+  }));
 
   const hilosDeLaPersona = hilosDePersona(core, id).filter((h) => h.tipo === "cliente");
   const hilosActivos = hilosDeLaPersona.filter((h) => h.estado === "Activo");
@@ -5136,9 +5184,35 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
             <p className="text-xs text-[#8A8272]">{persona.ciudad}{persona.direccion ? ` · ${persona.direccion}` : ""}</p>
           </div>
         </div>
-        {persona.notas && <p className="text-sm text-[#6B6352] mt-2 italic">"{persona.notas}"</p>}
         <TagsSection core={core} setCore={setCore} entidadTipo="Persona" entidadId={id} />
         <VinculosDeFicha core={core} setCore={setCore} entidadTipo="Persona" entidadId={id} onOpen={onOpen} />
+
+        <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
+          <PillToggle activo={verNotas} marcado={(persona.notas || []).length > 0} onClick={() => setVerNotas((v) => !v)}>Notas ({(persona.notas || []).length})</PillToggle>
+          {verNotas && (
+            <div className="mt-2.5">
+              {(persona.notas || []).length === 0 ? (
+                <p className="text-sm text-[#A69C88] mb-1.5">Sin notas cargadas.</p>
+              ) : (
+                <div className="space-y-2">
+                  {persona.notas.map((n) => (
+                    <div key={n.id} className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-[#2A2118]"><TextoConMenciones texto={n.texto} onOpen={onOpen} /></p>
+                        <p className="text-[10px] text-[#A69C88] mt-0.5">{fmtDate(n.fecha)}</p>
+                      </div>
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        <IconBtn label="Editar nota" onClick={() => setEditingNota(n)}><Pencil size={13} /></IconBtn>
+                        <IconBtn label="Eliminar nota" danger onClick={() => setDeletingNotaId(n.id)}><Trash2 size={13} /></IconBtn>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <button onClick={() => setShowNuevaNota(true)} className="text-xs font-bold text-[var(--tema-vinculo)] mt-1.5">+ Nota</button>
+            </div>
+          )}
+        </div>
 
         <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
           <PillToggle activo={verHilos} marcado={hilosActivos.length > 0 || hilosCerrados.length > 0} onClick={() => setVerHilos((v) => !v)}>Hilos de seguimiento</PillToggle>
@@ -5184,6 +5258,21 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
           )}
         </div>
       </div>
+
+      {showNuevaNota && (
+        <EditorNotaModal core={core} titulo="Nueva nota" onGuardar={(texto) => { if (texto) agregarNota(texto); }} onClose={() => setShowNuevaNota(false)} />
+      )}
+      {editingNota && (
+        <EditorNotaModal core={core} titulo="Editar nota" valorInicial={editingNota.texto} onGuardar={(texto) => editarNota(editingNota.id, texto)} onClose={() => setEditingNota(null)} />
+      )}
+      {deletingNotaId && (
+        <ConfirmDeleteModal
+          title="Eliminar nota"
+          texto="¿Eliminar esta nota? No se puede deshacer."
+          onCancel={() => setDeletingNotaId(null)}
+          onConfirm={() => { eliminarNota(deletingNotaId); setDeletingNotaId(null); }}
+        />
+      )}
 
       {showNuevoHilo && (
         <Modal title={`Nuevo hilo — ${persona.nombre}`} onClose={() => setShowNuevoHilo(false)}>
@@ -5863,7 +5952,7 @@ function AgregarTareaAlHiloForm({ core, hiloClienteId, personasDelHilo, onVincul
   const crear = () => {
     if (!titulo.trim()) return;
     const nuevoHilo = {
-      id: uid("H"), titulo: titulo.trim(), notas: notas.trim(), fecha, hora,
+      id: uid("H"), titulo: titulo.trim(), notas: notas.trim() ? [{ id: uid("NT"), texto: notas.trim(), fecha: todayISO() }] : [], fecha, hora,
       aviso: hora && aviso.activo ? aviso : null, avisoEnviado: false, avisoVistoEnApp: false,
       estado: "Activo", fechaCreacion: todayISO(), tipo: "tarea",
       columnaTareaId: columnaId || null, hiloRelacionadoId: hiloClienteId, notaCierre: "",
@@ -5935,7 +6024,6 @@ function AgregarTareaAEntidadForm({ core, tareasExcluidas, onVincular, onCrear, 
   const [modo, setModo] = useState("existente"); // 'existente' | 'nueva'
   const [q, setQ] = useState("");
   const [titulo, setTitulo] = useState("");
-  const [notas, setNotas] = useState("");
   const [columnaId, setColumnaId] = useState("");
   const [fecha, setFecha] = useState("");
   const [hora, setHora] = useState("");
@@ -5952,13 +6040,13 @@ function AgregarTareaAEntidadForm({ core, tareasExcluidas, onVincular, onCrear, 
   const crear = () => {
     if (!titulo.trim()) return;
     const nuevoHilo = {
-      id: uid("H"), titulo: titulo.trim(), notas: notas.trim(), fecha, hora,
+      id: uid("H"), titulo: titulo.trim(), notas: [], fecha, hora,
       aviso: hora && aviso.activo ? aviso : null, avisoEnviado: false, avisoVistoEnApp: false,
       estado: "Activo", fechaCreacion: todayISO(), tipo: "tarea",
       columnaTareaId: columnaId || null, hiloRelacionadoId: null, notaCierre: "",
     };
     onCrear(nuevoHilo);
-    setTitulo(""); setNotas(""); setColumnaId(""); setFecha(""); setHora(""); setAviso(core.parametros.avisoDefaultTareas);
+    setTitulo(""); setColumnaId(""); setFecha(""); setHora(""); setAviso(core.parametros.avisoDefaultTareas);
     setModo("existente");
   };
 
@@ -8076,7 +8164,7 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
       for (let i = 1; i <= 3; i++) {
         const nombrePersona = `Persona Prueba ${i}`;
         let persona = personas.find((p) => p.nombre === nombrePersona);
-        if (!persona) { persona = { id: uid("P"), nombre: nombrePersona, whatsapp: "", direccion: "", ciudad: "", notas: "" }; personas = [persona, ...personas]; }
+        if (!persona) { persona = { id: uid("P"), nombre: nombrePersona, whatsapp: "", direccion: "", ciudad: "", notas: [] }; personas = [persona, ...personas]; }
 
         const nombreEmpresa = `Empresa Prueba ${i}`;
         let empresa = empresas.find((e) => e.denominacion === nombreEmpresa);
