@@ -107,6 +107,6 @@ export async function POST(request) {
     ok: true,
     accion: resultado.accion,
     parametros: resultado.parametros,
-    resumen: resumenLegible(core, resultado.accion, resultado.parametros),
+    resumen: resumenLegible(core, acciones, resultado.accion, resultado.parametros),
   });
 }
