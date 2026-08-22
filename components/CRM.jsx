@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.47.0";
+const APP_VERSION = "2.47.1";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -210,7 +210,7 @@ const seedCore = () => ({
     { id: uid("et"), etiquetaId: "ET03", entidadTipo: "Empresa", entidadId: "E001" },
     { id: uid("et"), etiquetaId: "ET02", entidadTipo: "Obra", entidadId: "O001" },
   ],
-  parametros: { umbralDiaLleno: 8, diasHabiles: [1, 2, 3, 4, 5], fechasNoHabiles: [], diasUrgente: 3, diasProximos: 7, googleContactsLabel: "CRM", tituloApp: "Seguimiento comercial", nombreSinColumnaSeguimientos: "Sin columna", nombreSinColumnaTareas: "Sin columna", formatoHora: "24", tituloSeccionTamano: "Chico", tituloSeccionNegrita: true, avisoDefaultSeguimientos: { activo: false, cantidad: 30, unidad: "minutos" }, avisoDefaultTareas: { activo: false, cantidad: 30, unidad: "minutos" }, pillsModoSeguimientos: "todas", pillsModoTareas: "todas" },
+  parametros: { umbralDiaLleno: 8, diasHabiles: [1, 2, 3, 4, 5], fechasNoHabiles: [], diasUrgente: 3, diasProximos: 7, googleContactsLabel: "CRM", tituloApp: "Seguimiento comercial", nombreSinColumnaSeguimientos: "Sin columna", nombreSinColumnaTareas: "Sin columna", formatoHora: "24", tituloSeccionTamano: "Chico", tituloSeccionNegrita: true, avisoDefaultSeguimientos: { activo: false, cantidad: 30, unidad: "minutos" }, avisoDefaultTareas: { activo: false, cantidad: 30, unidad: "minutos" } },
   tema: { ...TEMA_DEFAULT },
   kanbanColumnas: [
     { id: "K1", nombre: "Por hacer", orden: 0 },
@@ -323,7 +323,7 @@ function normalizeCore(c) {
   if (!Array.isArray(out.vinculos)) out.vinculos = [];
   // Unifica todo al sistema de vínculos (migra las tablas viejas si todavía están).
   migrarAVinculos(out);
-  out.parametros = { umbralDiaLleno: 8, diasHabiles: [1, 2, 3, 4, 5], fechasNoHabiles: [], diasUrgente: 3, diasProximos: 7, googleContactsLabel: "CRM", tituloApp: "Seguimiento comercial", nombreSinColumnaSeguimientos: "Sin columna", nombreSinColumnaTareas: "Sin columna", formatoHora: "24", tituloSeccionTamano: "Chico", tituloSeccionNegrita: true, avisoDefaultSeguimientos: { activo: false, cantidad: 30, unidad: "minutos" }, avisoDefaultTareas: { activo: false, cantidad: 30, unidad: "minutos" }, pillsModoSeguimientos: "todas", pillsModoTareas: "todas", ...(out.parametros || {}) };
+  out.parametros = { umbralDiaLleno: 8, diasHabiles: [1, 2, 3, 4, 5], fechasNoHabiles: [], diasUrgente: 3, diasProximos: 7, googleContactsLabel: "CRM", tituloApp: "Seguimiento comercial", nombreSinColumnaSeguimientos: "Sin columna", nombreSinColumnaTareas: "Sin columna", formatoHora: "24", tituloSeccionTamano: "Chico", tituloSeccionNegrita: true, avisoDefaultSeguimientos: { activo: false, cantidad: 30, unidad: "minutos" }, avisoDefaultTareas: { activo: false, cantidad: 30, unidad: "minutos" }, ...(out.parametros || {}) };
   out.tema = { ...TEMA_DEFAULT, ...(out.tema || {}) };
   if (!Array.isArray(out.kanbanColumnas)) out.kanbanColumnas = seed.kanbanColumnas;
   if (!Array.isArray(out.kanbanColumnasTareas)) out.kanbanColumnasTareas = seed.kanbanColumnasTareas;
@@ -3638,7 +3638,6 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   const [verContextoPrimary, setVerContextoPrimary] = useState(false);
   const [verResumen, setVerResumen] = useState(false);
   const [verDetalle, setVerDetalle] = useState(false);
-  const [verSinAccion, setVerSinAccion] = useState(false);
   const [verSubtareas, setVerSubtareas] = useState(false);
   const [verAdjuntos, setVerAdjuntos] = useState(false);
   const [showNuevaSubtarea, setShowNuevaSubtarea] = useState(false);
@@ -3922,13 +3921,11 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   // efectivamente disponibles (contexto/resumen requieren una acción pendiente; resumen
   // detallado requiere además que haya historial).
   //
-  // Modo "Todas"/"Solo con contenido" (Configuración > Parámetros, por separado para
-  // seguimientos y tareas): en "solo con contenido", si ningún pill tiene datos cargados
-  // (nada subrayado) se oculta toda la fila; si alguno tiene, solo se muestran "Todo" + los
-  // que tienen contenido. "Sin acciones programadas" entra a este mismo juego como un pill
-  // más ("Avanzar") cuando no hay próxima acción, para poder volver a mostrarlo sin salir de
-  // la tarjeta.
-  const pillsModo = (esTarea ? core.parametros.pillsModoTareas : core.parametros.pillsModoSeguimientos) || "todas";
+  // En la lista (standalone=false) la fila de pills (y la leyenda de "sin acción programada")
+  // se ocultan por completo si ninguna pill tiene contenido, para no ensuciar visualmente una
+  // tarjeta simple. Alcanza con que una tenga contenido para mostrarlas todas. En el detalle
+  // (standalone=true, al abrir la tarjeta) siempre se ven todas, tengan o no contenido: es el
+  // lugar para cargar cosas.
   const pillsContenido = [
     { key: "notas", label: "Notas", activo: verNotas, setActivo: setVerNotas, marcado: !!hilo.notas },
     ...(esTarea ? [{ key: "subtareas", label: "Subtareas", activo: verSubtareas, setActivo: setVerSubtareas, marcado: subtareas.length > 0 }] : []),
@@ -3939,7 +3936,6 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       { key: "contexto", label: "Contexto", activo: verContextoPrimary, setActivo: setVerContextoPrimary, marcado: !!origenPrimary },
       { key: "resumen", label: "Resumen", activo: verResumen, setActivo: (v) => { setVerResumen(v); if (!v) setVerDetalle(false); }, marcado: historial.length > 0 },
     ] : []),
-    ...(!primary && pillsModo === "compacto" ? [{ key: "avanzar", label: "Avanzar", activo: verSinAccion, setActivo: setVerSinAccion, marcado: true }] : []),
   ];
   const detalladoAplica = primary && historial.length > 0;
   const todosLosToggles = [...pillsContenido.map((p) => [p.activo, p.setActivo]), ...(detalladoAplica ? [[verDetalle, setVerDetalle]] : [])];
@@ -3949,14 +3945,14 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
     todosLosToggles.forEach(([, set]) => set(nuevoValor));
   };
   const algunaMarcada = pillsContenido.some((p) => p.marcado);
-  const pillsVisibles = pillsModo === "compacto" ? pillsContenido.filter((p) => p.marcado) : pillsContenido;
-  const mostrarFilaPills = pillsModo !== "compacto" || algunaMarcada;
+  const mostrarSinAccion = standalone || algunaMarcada;
+  const mostrarFilaPills = standalone || algunaMarcada;
   // Fila de pills única, misma lógica para hilo cliente y tarea — "Subtareas" solo aparece
   // para tareas.
   const filaPills = mostrarFilaPills && (
     <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
       <PillToggle activo={todoDesplegado} onClick={toggleTodosDesplegables}>Todo</PillToggle>
-      {pillsVisibles.map((p) => (
+      {pillsContenido.map((p) => (
         <PillToggle key={p.key} activo={p.activo} marcado={p.marcado} onClick={() => p.setActivo(!p.activo)}>{p.label}</PillToggle>
       ))}
       {detalladoAplica && verResumen && <PillToggle activo={verDetalle} onClick={() => setVerDetalle((v) => !v)}>Detallado</PillToggle>}
@@ -4215,7 +4211,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
           </div>
         </div>
 
-        {!primary && (pillsModo !== "compacto" || verSinAccion) && (
+        {!primary && mostrarSinAccion && (
           <div className="flex items-center justify-between gap-2 mt-2">
             <p className="text-xs text-[#A69C88]">Sin acciones programadas.</p>
             <button
@@ -4229,9 +4225,11 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
           </div>
         )}
 
-        <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
-          {filaPills}
-        </div>
+        {filaPills && (
+          <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
+            {filaPills}
+          </div>
+        )}
 
         {verNotas && (
           <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
@@ -4451,7 +4449,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
         </div>
       )}
 
-      {!primary && (pillsModo !== "compacto" || verSinAccion) && (
+      {!primary && mostrarSinAccion && (
         <>
           <p className="text-xs text-[#A69C88] mt-2">Sin próxima acción programada.</p>
           <div className="flex items-center gap-2 mt-2 flex-wrap">
@@ -4460,9 +4458,11 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
         </>
       )}
 
-      <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
-        {filaPills}
-      </div>
+      {filaPills && (
+        <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
+          {filaPills}
+        </div>
+      )}
 
       {verNotas && (
         <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
@@ -8255,45 +8255,6 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
             <div className="border-t border-[#E4DECF] mt-3 pt-3">
               <p className="text-sm font-bold text-[#2A2118] mb-1">Tareas</p>
               <AvisoFields aviso={core.parametros.avisoDefaultTareas} onAviso={(v) => setAvisoDefault("avisoDefaultTareas", v)} />
-            </div>
-          </div>
-
-          <div className="bg-white border border-[#E4DECF] rounded-sm p-4">
-            <p className="text-[11px] font-bold tracking-wide text-[#6B6352] mb-1">Pills de las tarjetas</p>
-            <p className="text-xs text-[#A69C88] mb-2">Cuando ninguna pill tiene contenido (y no hay próxima acción programada), se ocultan. Con contenido, elegí si se muestran todas o solo las que tienen algo cargado.</p>
-            <div>
-              <p className="text-sm font-bold text-[#2A2118] mb-1">Seguimientos</p>
-              <div className="flex gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setAvisoDefault("pillsModoSeguimientos", "todas")}
-                  style={(core.parametros.pillsModoSeguimientos ?? "todas") === "todas" ? { backgroundColor: "#2A2F36", color: "#FFFFFF" } : { backgroundColor: "#E7E2D8", color: "#6B6352" }}
-                  className="flex-1 py-2 rounded-sm text-xs font-bold"
-                >Mostrar todas</button>
-                <button
-                  type="button"
-                  onClick={() => setAvisoDefault("pillsModoSeguimientos", "compacto")}
-                  style={core.parametros.pillsModoSeguimientos === "compacto" ? { backgroundColor: "#2A2F36", color: "#FFFFFF" } : { backgroundColor: "#E7E2D8", color: "#6B6352" }}
-                  className="flex-1 py-2 rounded-sm text-xs font-bold"
-                >Mostrar solo con contenido</button>
-              </div>
-            </div>
-            <div className="border-t border-[#E4DECF] mt-3 pt-3">
-              <p className="text-sm font-bold text-[#2A2118] mb-1">Tareas</p>
-              <div className="flex gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setAvisoDefault("pillsModoTareas", "todas")}
-                  style={(core.parametros.pillsModoTareas ?? "todas") === "todas" ? { backgroundColor: "#2A2F36", color: "#FFFFFF" } : { backgroundColor: "#E7E2D8", color: "#6B6352" }}
-                  className="flex-1 py-2 rounded-sm text-xs font-bold"
-                >Mostrar todas</button>
-                <button
-                  type="button"
-                  onClick={() => setAvisoDefault("pillsModoTareas", "compacto")}
-                  style={core.parametros.pillsModoTareas === "compacto" ? { backgroundColor: "#2A2F36", color: "#FFFFFF" } : { backgroundColor: "#E7E2D8", color: "#6B6352" }}
-                  className="flex-1 py-2 rounded-sm text-xs font-bold"
-                >Mostrar solo con contenido</button>
-              </div>
             </div>
           </div>
 
