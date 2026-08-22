@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.47.3";
+const APP_VERSION = "2.47.4";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -3747,7 +3747,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       {personasDelHilo.map((p, i) => (
         <span key={p.id}>
           {i > 0 && ", "}
-          <button onClick={() => onOpen("persona", p.id)} className="hover:underline underline-offset-2">{p.nombre}</button>
+          <button onClick={() => onOpen("persona", p.id)} className="hover:underline underline-offset-2 text-left">{p.nombre}</button>
         </span>
       ))}
     </p>
@@ -3758,14 +3758,14 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       {empresas.map((e, i) => (
         <span key={e.id}>
           {i > 0 && ", "}
-          <button onClick={() => onOpen("empresa", e.id)} className="hover:underline underline-offset-2">{e.denominacion}</button>
+          <button onClick={() => onOpen("empresa", e.id)} className="hover:underline underline-offset-2 text-left">{e.denominacion}</button>
         </span>
       ))}
       {empresas.length > 0 && obras.length > 0 && <span className="text-[#8A8272]"> · </span>}
       {obras.map((o, i) => (
         <span key={o.id}>
           {i > 0 && ", "}
-          <button onClick={() => onOpen("obra", o.id)} className="hover:underline underline-offset-2">{o.nombre}</button>
+          <button onClick={() => onOpen("obra", o.id)} className="hover:underline underline-offset-2 text-left">{o.nombre}</button>
         </span>
       ))}
     </p>
@@ -3784,14 +3784,14 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       {empresasSubtitulo.map((e, i) => (
         <span key={e.id}>
           {i > 0 && ", "}
-          <button onClick={() => onOpen("empresa", e.id)} className="font-bold text-[#2A2118] hover:underline underline-offset-2">{e.denominacion}</button>
+          <button onClick={() => onOpen("empresa", e.id)} className="font-bold text-[#2A2118] hover:underline underline-offset-2 text-left">{e.denominacion}</button>
         </span>
       ))}
       {empresasSubtitulo.length > 0 && obrasSubtitulo.length > 0 && <span className="text-[#8A8272]"> · </span>}
       {obrasSubtitulo.map((o, i) => (
         <span key={o.id}>
           {i > 0 && ", "}
-          <button onClick={() => onOpen("obra", o.id)} className="text-[#6B6352] hover:underline underline-offset-2">{o.nombre}</button>
+          <button onClick={() => onOpen("obra", o.id)} className="text-[#6B6352] hover:underline underline-offset-2 text-left">{o.nombre}</button>
         </span>
       ))}
     </p>
