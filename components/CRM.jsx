@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.48.0";
+const APP_VERSION = "2.48.1";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -4225,7 +4225,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
             <div className="flex items-center gap-1.5 ml-auto min-w-0">
               {tipoPrimary && <span className="min-w-0 flex-1 truncate text-right text-xs font-mono font-bold text-black" title={tipoPrimary.nombre}>{tipoPrimary.nombre}</span>}
               <span className="shrink-0 text-[11px] font-bold font-mono px-2 py-1 rounded-sm bg-[#F1DFB9] text-[#5C3F18]">
-                {fmtDate(masUrgente.fechaProgramada)}
+                {fmtDateHora(masUrgente.fechaProgramada, masUrgente.horaProgramada, core.parametros.formatoHora)}
               </span>
               {primary.aviso?.activo && <Bell size={13} className="shrink-0 text-[var(--tema-vinculo)]" aria-label="Tiene aviso programado" />}
               <span className="shrink-0"><IconBtn label="Reprogramar" onClick={() => setShowReprogramar(true)}><Pencil size={13} /></IconBtn></span>
@@ -4425,23 +4425,11 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
           </button>
         </div>
         <div className="flex items-center gap-1.5 ml-auto min-w-0">
-          {personasDelHilo.length > 1 && (
-            <span className="shrink-0 flex items-center">
-              {personasDelHilo.map((p) => (
-                <span
-                  key={p.id}
-                  className="w-5 h-5 rounded-full bg-[#F1DFB9] text-[#5C3F18] text-[9px] font-extrabold flex items-center justify-center border-2 -ml-1.5 first:ml-0"
-                  style={{ borderColor: core.tema.tarjeta }}
-                >
-                  {getIniciales(p.nombre)}
-                </span>
-              ))}
-            </span>
-          )}
+
           {primary && tipoPrimary && <span className="min-w-0 flex-1 truncate text-right text-xs font-mono font-bold text-black" title={tipoPrimary.nombre}>{tipoPrimary.nombre}</span>}
           {primary && (
             <span className="shrink-0 text-[11px] font-bold font-mono px-2 py-1 rounded-sm bg-[#F1DFB9] text-[#5C3F18]">
-              {fmtDate(masUrgente.fechaProgramada)}
+              {fmtDateHora(masUrgente.fechaProgramada, masUrgente.horaProgramada, core.parametros.formatoHora)}
             </span>
           )}
           {primary?.aviso?.activo && <Bell size={13} className="shrink-0 text-[var(--tema-vinculo)]" aria-label="Tiene aviso programado" />}
