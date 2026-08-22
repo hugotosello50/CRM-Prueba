@@ -3,7 +3,7 @@ import { GoogleGenAI } from '@google/genai';
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { getUserFromRequest } from '../../../lib/googleAuth';
 import { CATALOGO_ACCIONES } from '../../../lib/acciones';
-import { ESQUEMA_RESPUESTA_IA, PROMPT_SISTEMA, resolverPedido } from '../../../lib/asistenteIA';
+import { ESQUEMA_RESPUESTA_IA, PROMPT_SISTEMA, resolverPedido, promptTiposAccionReales, resumenLegible } from '../../../lib/asistenteIA';
 
 // Frente de IA (Fase 2 del plan — ver conversación donde se armó).
 //
@@ -29,11 +29,6 @@ function todayISO() {
 function textoAmbiguedad(resultado) {
   const nombres = (resultado.opciones || []).map((o) => o.nombre).join(', ');
   return `${resultado.detalle} Opciones: ${nombres}.`;
-}
-
-function textoResumen(accion, parametros) {
-  const entrada = CATALOGO_ACCIONES.find((a) => a.nombre === accion);
-  return `Acción: ${entrada?.descripcion || accion}. Parámetros: ${JSON.stringify(parametros)}`;
 }
 
 export async function POST(request) {
@@ -82,7 +77,7 @@ export async function POST(request) {
       model: 'gemini-3.6-flash',
       contents: texto,
       config: {
-        systemInstruction: `${PROMPT_SISTEMA}\n\nHoy es ${todayISO()}.`,
+        systemInstruction: `${PROMPT_SISTEMA}\n\nHoy es ${todayISO()}.\n\n${promptTiposAccionReales(core)}`,
         responseMimeType: 'application/json',
         responseJsonSchema: ESQUEMA_RESPUESTA_IA,
       },
@@ -112,6 +107,6 @@ export async function POST(request) {
     ok: true,
     accion: resultado.accion,
     parametros: resultado.parametros,
-    resumen: textoResumen(resultado.accion, resultado.parametros),
+    resumen: resumenLegible(core, resultado.accion, resultado.parametros),
   });
 }
