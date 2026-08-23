@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.54.0";
+const APP_VERSION = "2.55.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -227,7 +227,7 @@ const seedCore = () => ({
     { id: "H002", titulo: "Avance obra Anatonia Village", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -20), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "", notas: [] },
     { id: "H003", titulo: "Datos de facturación", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -6), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "", notas: [] },
     { id: "H004", titulo: "Propuesta anual", estado: "Activo", fechaCreacion: addDaysISO(todayISO(), -10), tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "", notas: [] },
-    { id: "H005", titulo: "Comprar resma de hojas", estado: "Activo", fechaCreacion: todayISO(), tipo: "tarea", columnaTareaId: "T1", hiloRelacionadoId: null, notaCierre: "", notas: [] },
+    { id: "H005", titulo: "Comprar resma de hojas", estado: "Activo", fechaCreacion: todayISO(), tipo: "tarea", columnaTareaId: "T1", hiloRelacionadoId: null, notaCierre: "", notas: [], recurrente: false, repiteCadaN: null, repiteUnidad: null },
   ],
 });
 
@@ -318,7 +318,7 @@ function normalizeCore(c) {
     return { ...rest, categoriaId: match ? match.id : out.categorias[0].id };
   });
   if (!Array.isArray(out.hilos)) out.hilos = [];
-  out.hilos = out.hilos.map((h) => ({ tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "", notas: [], ...h }));
+  out.hilos = out.hilos.map((h) => ({ tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "", notas: [], recurrente: false, repiteCadaN: null, repiteUnidad: null, ...h }));
   // Notas: pasó de campo de texto único a lista de notas — migra lo viejo a la lista.
   out.hilos = out.hilos.map((h) => ({ ...h, notas: Array.isArray(h.notas) ? h.notas : (h.notas ? [{ id: uid("NT"), texto: h.notas, fecha: h.fechaCreacion || todayISO() }] : []) }));
   out.personas = (out.personas || []).map((p) => ({ ...p, notas: Array.isArray(p.notas) ? p.notas : (p.notas ? [{ id: uid("NT"), texto: p.notas, fecha: todayISO() }] : []) }));
@@ -906,6 +906,126 @@ function SelectorFechaHora({ fecha, hora, onFecha, onHora, aviso, onAviso, label
 
       <AvisoFields aviso={aviso} onAviso={onAviso} />
     </div>
+  );
+}
+
+// Valor inicial del bloque de programación de una fecha (próxima acción de un hilo, o fecha
+// propia de una tarea): por período (ej. "en 3 días") o específica, con aviso y, opcionalmente,
+// marcada como repetitiva. No incluye prioridad — es un campo aparte que cada formulario agrega
+// donde corresponde (solo tiene sentido en acciones).
+function programacionInicial({ modoFecha = "periodo", unidad = "dias", fecha = todayISO(), aviso } = {}) {
+  return {
+    modoFecha, cantidad: 1, unidad,
+    fecha, hora: "",
+    aviso: aviso || { ...AVISO_DEFAULT },
+    confirmar: false,
+    recurrente: false, repiteCadaN: 1, repiteUnidad: "meses",
+  };
+}
+
+// Resuelve el valor final del bloque (fecha concreta, aviso final, si cae en día no hábil) —
+// se usa tanto para guardar como para el chequeo de confirmación.
+function resolverProgramacion(v, acciones, parametros) {
+  const hoy = todayISO();
+  const fecha = v.modoFecha === "periodo"
+    ? computeSmartDate(addPeriod(hoy, Number(v.cantidad) || 1, v.unidad), acciones, parametros)
+    : (v.fecha || hoy);
+  const hora = v.hora;
+  const aviso = hora && v.aviso.activo ? v.aviso : null;
+  return {
+    fecha, hora, aviso,
+    recurrente: v.recurrente,
+    repiteCadaN: v.recurrente ? Number(v.repiteCadaN) : null,
+    repiteUnidad: v.recurrente ? v.repiteUnidad : null,
+    inhabil: v.modoFecha === "especifica" && esFechaInhabil(v.fecha, parametros),
+  };
+}
+
+// Bloque reusable para programar una fecha: por período o específica, con aviso y marca de
+// repetitiva. No incluye prioridad (queda afuera, la agrega cada llamador si corresponde) — así
+// se puede usar tanto para la próxima acción de un hilo como para la fecha propia de una tarea.
+function SelectorProgramacion({ value, onChange, acciones, parametros, labelRecurrente = "Es una acción repetitiva" }) {
+  const [preview, setPreview] = useState(null);
+  useEffect(() => {
+    if (value.modoFecha === "periodo") {
+      setPreview(computeSmartDate(addPeriod(todayISO(), Number(value.cantidad) || 1, value.unidad), acciones, parametros));
+    }
+  }, [value.modoFecha, value.cantidad, value.unidad]); // eslint-disable-line
+
+  const set = (patch) => onChange({ ...value, ...patch });
+  const inhabil = value.modoFecha === "especifica" && esFechaInhabil(value.fecha, parametros);
+
+  return (
+    <>
+      <div className="flex gap-2 mb-2">
+        <button
+          type="button"
+          onClick={() => set({ modoFecha: "periodo" })}
+          style={{ backgroundColor: value.modoFecha === "periodo" ? "#2A2F36" : "#E7E2D8", color: value.modoFecha === "periodo" ? "#FFFFFF" : "#6B6352" }}
+          className="flex-1 py-1.5 rounded-sm text-xs font-bold"
+        >Dentro de un período</button>
+        <button
+          type="button"
+          onClick={() => set({ modoFecha: "especifica" })}
+          style={{ backgroundColor: value.modoFecha === "especifica" ? "#2A2F36" : "#E7E2D8", color: value.modoFecha === "especifica" ? "#FFFFFF" : "#6B6352" }}
+          className="flex-1 py-1.5 rounded-sm text-xs font-bold"
+        >Fecha específica</button>
+      </div>
+
+      {value.modoFecha === "periodo" ? (
+        <>
+          <Field label="¿Dentro de cuánto? (hora opcional)">
+            <div className="flex gap-2">
+              <input type="number" min={1} className={inputCls} value={value.cantidad} onChange={(e) => set({ cantidad: e.target.value })} />
+              <select className={inputCls} value={value.unidad} onChange={(e) => set({ unidad: e.target.value })}>
+                <option value="dias">días</option>
+                <option value="semanas">semanas</option>
+                <option value="meses">meses</option>
+              </select>
+              <input type="time" className={inputCls} value={value.hora || ""} onChange={(e) => set({ hora: e.target.value })} />
+            </div>
+          </Field>
+          {preview && (
+            <p className="text-xs text-[#6B6352] mb-3 -mt-2 bg-[#EFEBE0] rounded-sm px-2.5 py-1.5">
+              Fecha sugerida: <span className="font-bold">{fmtDate(preview)}</span> (ajustada para no caer en día no hábil ni en un día muy cargado)
+            </p>
+          )}
+          <div className="mb-3"><AvisoFields aviso={value.aviso} onAviso={(a) => set({ aviso: a })} /></div>
+        </>
+      ) : (
+        <>
+          <SelectorFechaHora
+            fecha={value.fecha}
+            hora={value.hora}
+            aviso={value.aviso}
+            onAviso={(a) => set({ aviso: a })}
+            onFecha={(v) => set({ fecha: v, confirmar: false })}
+            onHora={(h) => set({ hora: h })}
+          />
+          {inhabil && (
+            <div className="bg-[#FBEEE7] border border-[var(--tema-acento)] rounded-sm p-2.5 mb-3">
+              <p className="text-xs text-[#2A2118]">Ese día está marcado como no hábil. Si guardás de nuevo, se confirma igual.</p>
+            </div>
+          )}
+        </>
+      )}
+
+      <label className="flex items-center gap-2 mb-2 text-sm text-[#2A2118]">
+        <input type="checkbox" checked={value.recurrente} onChange={(e) => set({ recurrente: e.target.checked })} /> {labelRecurrente}
+      </label>
+      {value.recurrente && (
+        <Field label="Repetir cada">
+          <div className="flex gap-2">
+            <input type="number" min={1} className={inputCls} value={value.repiteCadaN} onChange={(e) => set({ repiteCadaN: e.target.value })} />
+            <select className={inputCls} value={value.repiteUnidad} onChange={(e) => set({ repiteUnidad: e.target.value })}>
+              <option value="dias">días</option>
+              <option value="semanas">semanas</option>
+              <option value="meses">meses</option>
+            </select>
+          </div>
+        </Field>
+      )}
+    </>
   );
 }
 
@@ -2211,18 +2331,8 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
   const [programarProxima, setProgramarProxima] = useState(true);
   const [tipoAccionId2, setTipoAccionId2] = useState(tipoDefaultId(core));
   const [notas2, setNotas2] = useState("");
-  const [modoFecha, setModoFecha] = useState("periodo");
-  const [cantidad, setCantidad] = useState(1);
-  const [unidad, setUnidad] = useState("dias");
-  const [fechaEspecifica, setFechaEspecifica] = useState(todayISO());
-  const [horaEspecifica, setHoraEspecifica] = useState("");
-  const [avisoEspecifica, setAvisoEspecifica] = useState(core.parametros.avisoDefaultSeguimientos);
-  const [confirmarEspecifica, setConfirmarEspecifica] = useState(false);
+  const [prog, setProg] = useState(() => programacionInicial({ aviso: core.parametros.avisoDefaultSeguimientos }));
   const [prioridad, setPrioridad] = useState("Media");
-  const [recurrente, setRecurrente] = useState(false);
-  const [repiteCadaN, setRepiteCadaN] = useState(1);
-  const [repiteUnidad, setRepiteUnidad] = useState("meses");
-  const [preview, setPreview] = useState(null);
 
   const empresasDeLaPersona = useMemo(() => {
     if (!personaFija) return [];
@@ -2261,14 +2371,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
     if (obrasDirectas.length + obrasDeEsasEmpresas.length > 0) setObraIds((ids) => [...new Set([...ids, ...obrasDirectas, ...obrasDeEsasEmpresas])]);
   };
 
-  useEffect(() => {
-    if (showPrimerContacto && programarProxima && modoFecha === "periodo") {
-      const base = addPeriod(todayISO(), Number(cantidad) || 1, unidad);
-      setPreview(computeSmartDate(base, acciones, core.parametros));
-    }
-  }, [showPrimerContacto, programarProxima, modoFecha, cantidad, unidad]); // eslint-disable-line
-
-  const especificaInhabil = showPrimerContacto && programarProxima && modoFecha === "especifica" && esFechaInhabil(fechaEspecifica, core.parametros);
+  const especificaInhabil = showPrimerContacto && programarProxima && prog.modoFecha === "especifica" && esFechaInhabil(prog.fecha, core.parametros);
   const faltaVinculo = seleccionMultiple
     ? personaIdsMultiple.length === 0
     : !personaFija && !empresaFijaId && !obraFijaId && !personaId && empresaIds.length === 0 && obraIds.length === 0;
@@ -2280,11 +2383,9 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
     const idPrimera = uid("A");
     const nuevas = [{ id: idPrimera, hiloId, tipoAccionId: tipoAccionId1, estado: "Realizada", fechaRealizada: hoy, fechaProgramada: "", horaProgramada: "", prioridad: "", notaPlanificada: "", notaHecho: notas1, origenId: null, destinoId: null, numero: siguienteNumero++, recurrente: false, repiteCadaN: null, repiteUnidad: null, fechaCreacion: hoy, secuencia: Date.now() }];
     if (programarProxima) {
-      const fecha = modoFecha === "periodo" ? (preview || hoy) : (fechaEspecifica || hoy);
-      const hora = horaEspecifica;
-      const aviso = hora && avisoEspecifica.activo ? avisoEspecifica : null;
+      const r = resolverProgramacion(prog, acciones, core.parametros);
       const idNueva = uid("A");
-      nuevas.push({ id: idNueva, hiloId, tipoAccionId: tipoAccionId2, estado: "Pendiente", fechaRealizada: "", fechaProgramada: fecha, horaProgramada: hora, prioridad, notaPlanificada: notas2, notaHecho: "", origenId: idPrimera, destinoId: null, numero: siguienteNumero++, recurrente, repiteCadaN: recurrente ? Number(repiteCadaN) : null, repiteUnidad: recurrente ? repiteUnidad : null, fechaCreacion: hoy, secuencia: Date.now(), aviso, avisoEnviado: false, avisoVistoEnApp: false });
+      nuevas.push({ id: idNueva, hiloId, tipoAccionId: tipoAccionId2, estado: "Pendiente", fechaRealizada: "", fechaProgramada: r.fecha, horaProgramada: r.hora, prioridad, notaPlanificada: notas2, notaHecho: "", origenId: idPrimera, destinoId: null, numero: siguienteNumero++, recurrente: r.recurrente, repiteCadaN: r.repiteCadaN, repiteUnidad: r.repiteUnidad, fechaCreacion: hoy, secuencia: Date.now(), aviso: r.aviso, avisoEnviado: false, avisoVistoEnApp: false });
       nuevas[0] = { ...nuevas[0], destinoId: idNueva };
     }
     return { nuevas, siguienteNumero };
@@ -2337,7 +2438,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
   };
 
   const submit = () => {
-    if (showPrimerContacto && programarProxima && especificaInhabil && !confirmarEspecifica) { setConfirmarEspecifica(true); return; }
+    if (showPrimerContacto && programarProxima && especificaInhabil && !prog.confirmar) { setProg((p) => ({ ...p, confirmar: true })); return; }
     if (seleccionMultiple) crearMultiple(); else crear();
   };
 
@@ -2548,77 +2649,10 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
                 <CampoConMenciones core={core} multiline rows={2} value={notas2} onChange={setNotas2} placeholder="Ej: confirmar si aceptaron la propuesta, próximos pasos a seguir..." />
               </Field>
 
-              <div className="flex gap-2 mb-2">
-                <button
-                  type="button"
-                  onClick={() => setModoFecha("periodo")}
-                  style={{ backgroundColor: modoFecha === "periodo" ? "#2A2F36" : "#E7E2D8", color: modoFecha === "periodo" ? "#FFFFFF" : "#6B6352" }}
-                  className="flex-1 py-1.5 rounded-sm text-xs font-bold"
-                >Dentro de un período</button>
-                <button
-                  type="button"
-                  onClick={() => setModoFecha("especifica")}
-                  style={{ backgroundColor: modoFecha === "especifica" ? "#2A2F36" : "#E7E2D8", color: modoFecha === "especifica" ? "#FFFFFF" : "#6B6352" }}
-                  className="flex-1 py-1.5 rounded-sm text-xs font-bold"
-                >Fecha específica</button>
-              </div>
-
-              {modoFecha === "periodo" ? (
-                <>
-                  <Field label="¿Dentro de cuánto? (hora opcional)">
-                    <div className="flex gap-2">
-                      <input type="number" min={1} className={inputCls} value={cantidad} onChange={(e) => setCantidad(e.target.value)} />
-                      <select className={inputCls} value={unidad} onChange={(e) => setUnidad(e.target.value)}>
-                        <option value="dias">días</option>
-                        <option value="semanas">semanas</option>
-                        <option value="meses">meses</option>
-                      </select>
-                      <input type="time" className={inputCls} value={horaEspecifica || ""} onChange={(e) => setHoraEspecifica(e.target.value)} />
-                    </div>
-                  </Field>
-                  {preview && (
-                    <p className="text-xs text-[#6B6352] mb-3 -mt-2 bg-[#EFEBE0] rounded-sm px-2.5 py-1.5">
-                      Fecha sugerida: <span className="font-bold">{fmtDate(preview)}</span> (ajustada para no caer en día no hábil ni en un día muy cargado)
-                    </p>
-                  )}
-                  <div className="mb-3"><AvisoFields aviso={avisoEspecifica} onAviso={setAvisoEspecifica} /></div>
-                </>
-              ) : (
-                <>
-                  <SelectorFechaHora
-                    fecha={fechaEspecifica}
-                    hora={horaEspecifica}
-                    aviso={avisoEspecifica}
-                    onAviso={setAvisoEspecifica}
-                    onFecha={(v) => { setFechaEspecifica(v); setConfirmarEspecifica(false); }}
-                    onHora={setHoraEspecifica}
-                  />
-                  {especificaInhabil && (
-                    <div className="bg-[#FBEEE7] border border-[var(--tema-acento)] rounded-sm p-2.5 mb-3">
-                      <p className="text-xs text-[#2A2118]">Ese día está marcado como no hábil. Si guardás de nuevo, se confirma igual.</p>
-                    </div>
-                  )}
-                </>
-              )}
-
+              <SelectorProgramacion value={prog} onChange={setProg} acciones={acciones} parametros={core.parametros} />
               <Field label="Prioridad">
                 <SelectorPrioridad value={prioridad} onChange={setPrioridad} />
               </Field>
-              <label className="flex items-center gap-2 mb-2 text-sm text-[#2A2118]">
-                <input type="checkbox" checked={recurrente} onChange={(e) => setRecurrente(e.target.checked)} /> Es una acción repetitiva
-              </label>
-              {recurrente && (
-                <Field label="Repetir cada">
-                  <div className="flex gap-2">
-                    <input type="number" min={1} className={inputCls} value={repiteCadaN} onChange={(e) => setRepiteCadaN(e.target.value)} />
-                    <select className={inputCls} value={repiteUnidad} onChange={(e) => setRepiteUnidad(e.target.value)}>
-                      <option value="dias">días</option>
-                      <option value="semanas">semanas</option>
-                      <option value="meses">meses</option>
-                    </select>
-                  </div>
-                </Field>
-              )}
             </>
           )}
         </div>
@@ -2739,7 +2773,7 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
     if (!tituloNuevo.trim()) return;
     const hoy = todayISO();
     const aviso = horaNueva && avisoNuevo.activo ? avisoNuevo : null;
-    const nuevoHilo = { id: uid("H"), titulo: tituloNuevo.trim(), notas: [], fecha: fechaNueva, hora: horaNueva, aviso, avisoEnviado: false, avisoVistoEnApp: false, estado: "Activo", fechaCreacion: hoy, tipo: "tarea", columnaTareaId: columnaActiva, hiloRelacionadoId: null, notaCierre: "" };
+    const nuevoHilo = { id: uid("H"), titulo: tituloNuevo.trim(), notas: [], fecha: fechaNueva, hora: horaNueva, aviso, avisoEnviado: false, avisoVistoEnApp: false, estado: "Activo", fechaCreacion: hoy, tipo: "tarea", columnaTareaId: columnaActiva, hiloRelacionadoId: null, notaCierre: "", recurrente: false, repiteCadaN: null, repiteUnidad: null };
     setCore((prev) => ({ ...prev, hilos: [nuevoHilo, ...prev.hilos] }));
     setTituloNuevo("");
     setFechaNueva("");
@@ -2861,34 +2895,48 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
 // Edita una tarea: título y fecha/hora de su próxima acción, en un solo formulario — mismos
 // campos que al crearla (ver crearTareaRapida en TareasView), para mantener la lógica de
 // edición consistente con creación en toda la app (ver EditarHiloPrincipalForm).
-function EditarTareaForm({ hilo, core, setCore, onClose }) {
+function EditarTareaForm({ hilo, core, setCore, acciones = [], onClose }) {
   const [titulo, setTitulo] = useState(hilo.titulo);
-  const [fecha, setFecha] = useState(hilo.fecha || "");
-  const [hora, setHora] = useState(hilo.hora || "");
-  const [aviso, setAviso] = useState(hilo.aviso || core.parametros.avisoDefaultTareas);
+  const [conFecha, setConFecha] = useState(!!(hilo.fecha || hilo.hora));
+  const [prog, setProg] = useState(() => ({
+    ...programacionInicial({ modoFecha: "especifica", fecha: hilo.fecha || todayISO(), aviso: hilo.aviso || core.parametros.avisoDefaultTareas }),
+    hora: hilo.hora || "",
+    recurrente: !!hilo.recurrente,
+    repiteCadaN: hilo.repiteCadaN || 1,
+    repiteUnidad: hilo.repiteUnidad || "meses",
+  }));
 
   const guardar = () => {
     if (!titulo.trim()) return;
     const tituloFinal = titulo.trim();
-    const avisoFinal = hora && aviso.activo ? aviso : null;
-    const avisoCambio = fecha !== (hilo.fecha || "") || hora !== (hilo.hora || "") || JSON.stringify(avisoFinal) !== JSON.stringify(hilo.aviso || null);
+    if (!conFecha) {
+      const cambioFecha = !!(hilo.fecha || hilo.hora);
+      setCore((prev) => ({
+        ...prev,
+        hilos: prev.hilos.map((h) => (h.id === hilo.id ? { ...h, titulo: tituloFinal, fecha: "", hora: "", aviso: null, avisoEnviado: cambioFecha ? false : !!h.avisoEnviado, avisoVistoEnApp: cambioFecha ? false : !!h.avisoVistoEnApp, recurrente: false, repiteCadaN: null, repiteUnidad: null } : h)),
+      }));
+      onClose();
+      return;
+    }
+    const r = resolverProgramacion(prog, acciones, core.parametros);
+    const avisoCambio = r.fecha !== (hilo.fecha || "") || r.hora !== (hilo.hora || "") || JSON.stringify(r.aviso) !== JSON.stringify(hilo.aviso || null);
     setCore((prev) => ({
       ...prev,
-      hilos: prev.hilos.map((h) => (h.id === hilo.id ? { ...h, titulo: tituloFinal, fecha, hora, aviso: avisoFinal, avisoEnviado: avisoCambio ? false : !!h.avisoEnviado, avisoVistoEnApp: avisoCambio ? false : !!h.avisoVistoEnApp } : h)),
+      hilos: prev.hilos.map((h) => (h.id === hilo.id ? { ...h, titulo: tituloFinal, fecha: r.fecha, hora: r.hora, aviso: r.aviso, avisoEnviado: avisoCambio ? false : !!h.avisoEnviado, avisoVistoEnApp: avisoCambio ? false : !!h.avisoVistoEnApp, recurrente: r.recurrente, repiteCadaN: r.repiteCadaN, repiteUnidad: r.repiteUnidad } : h)),
     }));
     onClose();
   };
 
-  const quitarFecha = () => { setFecha(""); setHora(""); setAviso(core.parametros.avisoDefaultTareas); };
-
   return (
     <div>
       <Field label="Título"><CampoConMenciones core={core} value={titulo} onChange={setTitulo} /></Field>
-      <SelectorFechaHora fecha={fecha} hora={hora} aviso={aviso} onAviso={setAviso} onFecha={setFecha} onHora={setHora} labelFecha="Fecha (opcional)" />
-      <PrimaryBtn full disabled={!titulo.trim()} onClick={guardar}>Guardar</PrimaryBtn>
-      {(fecha || hora) && (
-        <button onClick={quitarFecha} className="w-full text-center text-xs font-bold text-[var(--tema-peligro)] mt-2">Quitar fecha (la tarea queda sin programar)</button>
+      <label className="flex items-center gap-2 mb-3 text-sm font-bold text-[#2A2118]">
+        <input type="checkbox" checked={conFecha} onChange={(e) => setConFecha(e.target.checked)} /> Con fecha programada
+      </label>
+      {conFecha && (
+        <SelectorProgramacion value={prog} onChange={setProg} acciones={acciones} parametros={core.parametros} labelRecurrente="Es una tarea repetitiva" />
       )}
+      <PrimaryBtn full disabled={!titulo.trim()} onClick={guardar}>Guardar</PrimaryBtn>
     </div>
   );
 }
@@ -4071,7 +4119,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       {showEditarTitulo && (
         esTarea ? (
           <Modal title="Editar tarea" onClose={() => setShowEditarTitulo(false)}>
-            <EditarTareaForm hilo={hilo} core={core} setCore={setCore} onClose={() => setShowEditarTitulo(false)} />
+            <EditarTareaForm hilo={hilo} core={core} setCore={setCore} acciones={acciones} onClose={() => setShowEditarTitulo(false)} />
           </Modal>
         ) : (
           <Modal title="Editar hilo" onClose={() => setShowEditarTitulo(false)}>
@@ -4178,6 +4226,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
               <p className="text-[10px] text-[#8A8272] mt-0.5 flex items-center gap-1">
                 {hilo.fecha ? fmtDateHora(hilo.fecha, hilo.hora, core.parametros.formatoHora) : fmtHora(hilo.hora, core.parametros.formatoHora)}
                 {hilo.aviso?.activo && <Bell size={10} className="shrink-0 text-[var(--tema-vinculo)]" aria-label="Tiene aviso programado" />}
+                {hilo.recurrente && <Repeat size={10} className="shrink-0 text-[#8A8272]" aria-label="Tarea repetitiva" />}
               </p>
             )}
           </div>
@@ -5945,6 +5994,7 @@ function AgregarTareaAlHiloForm({ core, hiloClienteId, personasDelHilo, onVincul
       aviso: hora && aviso.activo ? aviso : null, avisoEnviado: false, avisoVistoEnApp: false,
       estado: "Activo", fechaCreacion: todayISO(), tipo: "tarea",
       columnaTareaId: columnaId || null, hiloRelacionadoId: hiloClienteId, notaCierre: "",
+      recurrente: false, repiteCadaN: null, repiteUnidad: null,
     };
     onCrear(nuevoHilo);
     setTitulo(""); setNotas(""); setColumnaId(""); setFecha(""); setHora(""); setAviso(core.parametros.avisoDefaultTareas);
@@ -6033,6 +6083,7 @@ function AgregarTareaAEntidadForm({ core, tareasExcluidas, onVincular, onCrear, 
       aviso: hora && aviso.activo ? aviso : null, avisoEnviado: false, avisoVistoEnApp: false,
       estado: "Activo", fechaCreacion: todayISO(), tipo: "tarea",
       columnaTareaId: columnaId || null, hiloRelacionadoId: null, notaCierre: "",
+      recurrente: false, repiteCadaN: null, repiteUnidad: null,
     };
     onCrear(nuevoHilo);
     setTitulo(""); setColumnaId(""); setFecha(""); setHora(""); setAviso(core.parametros.avisoDefaultTareas);
@@ -6104,33 +6155,18 @@ function AvanzarHiloForm({ hilo, pendienteActual, core, setCore, acciones, setAc
   const [programarProxima, setProgramarProxima] = useState(true);
   const [tipoAccionId2, setTipoAccionId2] = useState(esTarea ? "" : tipoDefaultId(core));
   const [notas2, setNotas2] = useState("");
-  const [modoFecha, setModoFecha] = useState("periodo"); // 'periodo' | 'especifica'
-  const [cantidad, setCantidad] = useState(1);
-  const [unidad, setUnidad] = useState(esTarea ? "semanas" : "dias");
-  const [fechaEspecifica, setFechaEspecifica] = useState(todayISO());
-  const [horaEspecifica, setHoraEspecifica] = useState("");
-  const [avisoEspecifica, setAvisoEspecifica] = useState(esTarea ? core.parametros.avisoDefaultTareas : core.parametros.avisoDefaultSeguimientos);
-  const [confirmarEspecifica, setConfirmarEspecifica] = useState(false);
+  const [prog, setProg] = useState(() => programacionInicial({
+    unidad: esTarea ? "semanas" : "dias",
+    aviso: esTarea ? core.parametros.avisoDefaultTareas : core.parametros.avisoDefaultSeguimientos,
+  }));
   const [prioridad, setPrioridad] = useState("Media");
-  const [recurrente, setRecurrente] = useState(false);
-  const [repiteCadaN, setRepiteCadaN] = useState(1);
-  const [repiteUnidad, setRepiteUnidad] = useState("meses");
-  const [preview, setPreview] = useState(null);
 
-  useEffect(() => {
-    if (programarProxima && modoFecha === "periodo") {
-      const base = addPeriod(todayISO(), Number(cantidad) || 1, unidad);
-      setPreview(computeSmartDate(base, acciones, core.parametros));
-    }
-  }, [programarProxima, modoFecha, cantidad, unidad]); // eslint-disable-line
-
-  const especificaInhabil = modoFecha === "especifica" && esFechaInhabil(fechaEspecifica, core.parametros);
+  const especificaInhabil = prog.modoFecha === "especifica" && esFechaInhabil(prog.fecha, core.parametros);
 
   const guardar = () => {
     const hoy = todayISO();
-    const fecha = modoFecha === "periodo" ? (preview || hoy) : (fechaEspecifica || hoy);
-    const hora = horaEspecifica;
-    const aviso = hora && avisoEspecifica.activo ? avisoEspecifica : null;
+    const r = resolverProgramacion(prog, acciones, core.parametros);
+    const { fecha, hora, aviso } = r;
     setAcciones((prev) => {
       let siguienteNumero = Math.max(0, ...prev.map((a) => a.numero || 0)) + 1;
       let next = prev;
@@ -6149,7 +6185,7 @@ function AvanzarHiloForm({ hilo, pendienteActual, core, setCore, acciones, setAc
         const idNueva = uid("A");
         // Hereda la columna del Kanban de la acción que se acaba de completar, para que el
         // hilo no se vaya a "Sin columna" al continuarlo (ver AvanzarHiloForm).
-        next = [{ id: idNueva, hiloId: hilo.id, tipoAccionId: tipoAccionId2, estado: "Pendiente", fechaRealizada: "", fechaProgramada: fecha, horaProgramada: hora, prioridad, notaPlanificada: notas2, notaHecho: "", origenId: idCompletada, destinoId: null, numero: siguienteNumero++, recurrente, repiteCadaN: recurrente ? Number(repiteCadaN) : null, repiteUnidad: recurrente ? repiteUnidad : null, fechaCreacion: hoy, secuencia: Date.now() + 1, columnaId: pendienteActual?.columnaId ?? null, aviso, avisoEnviado: false, avisoVistoEnApp: false }, ...next];
+        next = [{ id: idNueva, hiloId: hilo.id, tipoAccionId: tipoAccionId2, estado: "Pendiente", fechaRealizada: "", fechaProgramada: fecha, horaProgramada: hora, prioridad, notaPlanificada: notas2, notaHecho: "", origenId: idCompletada, destinoId: null, numero: siguienteNumero++, recurrente: r.recurrente, repiteCadaN: r.repiteCadaN, repiteUnidad: r.repiteUnidad, fechaCreacion: hoy, secuencia: Date.now() + 1, columnaId: pendienteActual?.columnaId ?? null, aviso, avisoEnviado: false, avisoVistoEnApp: false }, ...next];
         next = next.map((a) => (a.id === idCompletada ? { ...a, destinoId: idNueva } : a));
       }
       return next;
@@ -6158,7 +6194,7 @@ function AvanzarHiloForm({ hilo, pendienteActual, core, setCore, acciones, setAc
   };
 
   const submit = () => {
-    if (programarProxima && especificaInhabil && !confirmarEspecifica) { setConfirmarEspecifica(true); return; }
+    if (programarProxima && especificaInhabil && !prog.confirmar) { setProg((p) => ({ ...p, confirmar: true })); return; }
     guardar();
   };
 
@@ -6211,82 +6247,15 @@ function AvanzarHiloForm({ hilo, pendienteActual, core, setCore, acciones, setAc
               <CampoConMenciones core={core} multiline rows={2} value={notas2} onChange={setNotas2} placeholder="Ej: confirmar si aceptaron la propuesta, próximos pasos a seguir..." />
             </Field>
 
-            <div className="flex gap-2 mb-2">
-              <button
-                type="button"
-                onClick={() => setModoFecha("periodo")}
-                style={{ backgroundColor: modoFecha === "periodo" ? "#2A2F36" : "#E7E2D8", color: modoFecha === "periodo" ? "#FFFFFF" : "#6B6352" }}
-                className="flex-1 py-1.5 rounded-sm text-xs font-bold"
-              >Dentro de un período</button>
-              <button
-                type="button"
-                onClick={() => setModoFecha("especifica")}
-                style={{ backgroundColor: modoFecha === "especifica" ? "#2A2F36" : "#E7E2D8", color: modoFecha === "especifica" ? "#FFFFFF" : "#6B6352" }}
-                className="flex-1 py-1.5 rounded-sm text-xs font-bold"
-              >Fecha específica</button>
-            </div>
-
-            {modoFecha === "periodo" ? (
-              <>
-                <Field label="¿Dentro de cuánto? (hora opcional)">
-                  <div className="flex gap-2">
-                    <input type="number" min={1} className={inputCls} value={cantidad} onChange={(e) => setCantidad(e.target.value)} />
-                    <select className={inputCls} value={unidad} onChange={(e) => setUnidad(e.target.value)}>
-                      <option value="dias">días</option>
-                      <option value="semanas">semanas</option>
-                      <option value="meses">meses</option>
-                    </select>
-                    <input type="time" className={inputCls} value={horaEspecifica || ""} onChange={(e) => setHoraEspecifica(e.target.value)} />
-                  </div>
-                </Field>
-                {preview && (
-                  <p className="text-xs text-[#6B6352] mb-3 -mt-2 bg-[#EFEBE0] rounded-sm px-2.5 py-1.5">
-                    Fecha sugerida: <span className="font-bold">{fmtDate(preview)}</span> (ajustada para no caer en día no hábil ni en un día muy cargado)
-                  </p>
-                )}
-                <div className="mb-3"><AvisoFields aviso={avisoEspecifica} onAviso={setAvisoEspecifica} /></div>
-              </>
-            ) : (
-              <>
-                <SelectorFechaHora
-                  fecha={fechaEspecifica}
-                  hora={horaEspecifica}
-                  aviso={avisoEspecifica}
-                  onAviso={setAvisoEspecifica}
-                  onFecha={(v) => { setFechaEspecifica(v); setConfirmarEspecifica(false); }}
-                  onHora={setHoraEspecifica}
-                />
-                {especificaInhabil && (
-                  <div className="bg-[#FBEEE7] border border-[var(--tema-acento)] rounded-sm p-2.5 mb-3">
-                    <p className="text-xs text-[#2A2118]">Ese día está marcado como no hábil. Si guardás de nuevo, se confirma igual.</p>
-                  </div>
-                )}
-              </>
-            )}
-
+            <SelectorProgramacion value={prog} onChange={setProg} acciones={acciones} parametros={core.parametros} />
             <Field label="Prioridad">
               <SelectorPrioridad value={prioridad} onChange={setPrioridad} />
             </Field>
-            <label className="flex items-center gap-2 mb-2 text-sm text-[#2A2118]">
-              <input type="checkbox" checked={recurrente} onChange={(e) => setRecurrente(e.target.checked)} /> Es una acción repetitiva
-            </label>
-            {recurrente && (
-              <Field label="Repetir cada">
-                <div className="flex gap-2">
-                  <input type="number" min={1} className={inputCls} value={repiteCadaN} onChange={(e) => setRepiteCadaN(e.target.value)} />
-                  <select className={inputCls} value={repiteUnidad} onChange={(e) => setRepiteUnidad(e.target.value)}>
-                    <option value="dias">días</option>
-                    <option value="semanas">semanas</option>
-                    <option value="meses">meses</option>
-                  </select>
-                </div>
-              </Field>
-            )}
           </>
         )}
       </div>
 
-      <PrimaryBtn full onClick={submit}>{especificaInhabil && confirmarEspecifica ? "Sí, guardar igual" : "Guardar y continuar"}</PrimaryBtn>
+      <PrimaryBtn full onClick={submit}>{especificaInhabil && prog.confirmar ? "Sí, guardar igual" : "Guardar y continuar"}</PrimaryBtn>
     </Modal>
   );
 }
