@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.55.0";
+const APP_VERSION = "2.56.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -4156,6 +4156,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
         <Modal title="Agregar tarea" onClose={() => setShowAgregarTarea(false)}>
           <AgregarTareaAlHiloForm
             core={core}
+            acciones={acciones}
             hiloClienteId={id}
             personasDelHilo={personasDelHilo}
             onVincular={(tareaId) => {
@@ -5330,6 +5331,7 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
         <Modal title="Agregar tarea" onClose={() => setShowAgregarTareaEntidad(false)}>
           <AgregarTareaAEntidadForm
             core={core}
+            acciones={acciones}
             tareasExcluidas={tareasDeLaPersona.map((t) => t.id)}
             onVincular={(tareaId) => {
               setCore((prev) => ({ ...prev, vinculos: [...(prev.vinculos || []), vinc("Persona", id, "Hilo", tareaId, null, false, todayISO())] }));
@@ -5962,15 +5964,14 @@ function EditarHiloPrincipalForm({ hilo, core, setCore, onClose }) {
 // Agrega una tarea a un hilo de cliente: buscando entre las tareas sueltas (sin vincular
 // todavía a ningún hilo de cliente) — priorizando las que comparten alguna persona con este
 // hilo — o creando una nueva si no la encuentra.
-function AgregarTareaAlHiloForm({ core, hiloClienteId, personasDelHilo, onVincular, onCrear, onClose }) {
+function AgregarTareaAlHiloForm({ core, acciones = [], hiloClienteId, personasDelHilo, onVincular, onCrear, onClose }) {
   const [modo, setModo] = useState("existente"); // 'existente' | 'nueva'
   const [q, setQ] = useState("");
   const [titulo, setTitulo] = useState("");
   const [notas, setNotas] = useState("");
   const [columnaId, setColumnaId] = useState("");
-  const [fecha, setFecha] = useState("");
-  const [hora, setHora] = useState("");
-  const [aviso, setAviso] = useState(core.parametros.avisoDefaultTareas);
+  const [conFecha, setConFecha] = useState(false);
+  const [prog, setProg] = useState(() => programacionInicial({ modoFecha: "especifica", aviso: core.parametros.avisoDefaultTareas }));
   const columnas = core.kanbanColumnasTareas || [];
 
   const disponibles = useMemo(() => {
@@ -5989,15 +5990,17 @@ function AgregarTareaAlHiloForm({ core, hiloClienteId, personasDelHilo, onVincul
 
   const crear = () => {
     if (!titulo.trim()) return;
+    const r = conFecha ? resolverProgramacion(prog, acciones, core.parametros) : null;
     const nuevoHilo = {
-      id: uid("H"), titulo: titulo.trim(), notas: notas.trim() ? [{ id: uid("NT"), texto: notas.trim(), fecha: todayISO() }] : [], fecha, hora,
-      aviso: hora && aviso.activo ? aviso : null, avisoEnviado: false, avisoVistoEnApp: false,
+      id: uid("H"), titulo: titulo.trim(), notas: notas.trim() ? [{ id: uid("NT"), texto: notas.trim(), fecha: todayISO() }] : [],
+      fecha: r?.fecha || "", hora: r?.hora || "", aviso: r?.aviso || null, avisoEnviado: false, avisoVistoEnApp: false,
       estado: "Activo", fechaCreacion: todayISO(), tipo: "tarea",
       columnaTareaId: columnaId || null, hiloRelacionadoId: hiloClienteId, notaCierre: "",
-      recurrente: false, repiteCadaN: null, repiteUnidad: null,
+      recurrente: r?.recurrente || false, repiteCadaN: r?.repiteCadaN || null, repiteUnidad: r?.repiteUnidad || null,
     };
     onCrear(nuevoHilo);
-    setTitulo(""); setNotas(""); setColumnaId(""); setFecha(""); setHora(""); setAviso(core.parametros.avisoDefaultTareas);
+    setTitulo(""); setNotas(""); setColumnaId(""); setConFecha(false);
+    setProg(programacionInicial({ modoFecha: "especifica", aviso: core.parametros.avisoDefaultTareas }));
     setModo("existente");
   };
 
@@ -6048,7 +6051,12 @@ function AgregarTareaAlHiloForm({ core, hiloClienteId, personasDelHilo, onVincul
               {columnas.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
             </select>
           </Field>
-          <SelectorFechaHora fecha={fecha} hora={hora} aviso={aviso} onAviso={setAviso} onFecha={setFecha} onHora={setHora} labelFecha="Fecha (opcional)" />
+          <label className="flex items-center gap-2 mb-3 text-sm font-bold text-[#2A2118]">
+            <input type="checkbox" checked={conFecha} onChange={(e) => setConFecha(e.target.checked)} /> Con fecha programada
+          </label>
+          {conFecha && (
+            <SelectorProgramacion value={prog} onChange={setProg} acciones={acciones} parametros={core.parametros} labelRecurrente="Es una tarea repetitiva" />
+          )}
           <PrimaryBtn full onClick={crear}>Crear tarea</PrimaryBtn>
         </>
       )}
@@ -6059,14 +6067,13 @@ function AgregarTareaAlHiloForm({ core, hiloClienteId, personasDelHilo, onVincul
 
 // Igual que AgregarTareaAlHiloForm, pero vincula la tarea directamente a una Persona/
 // Empresa/Obra (vínculo genérico) en vez de a un hilo de cliente puntual.
-function AgregarTareaAEntidadForm({ core, tareasExcluidas, onVincular, onCrear, onClose }) {
+function AgregarTareaAEntidadForm({ core, acciones = [], tareasExcluidas, onVincular, onCrear, onClose }) {
   const [modo, setModo] = useState("existente"); // 'existente' | 'nueva'
   const [q, setQ] = useState("");
   const [titulo, setTitulo] = useState("");
   const [columnaId, setColumnaId] = useState("");
-  const [fecha, setFecha] = useState("");
-  const [hora, setHora] = useState("");
-  const [aviso, setAviso] = useState(core.parametros.avisoDefaultTareas);
+  const [conFecha, setConFecha] = useState(false);
+  const [prog, setProg] = useState(() => programacionInicial({ modoFecha: "especifica", aviso: core.parametros.avisoDefaultTareas }));
   const columnas = core.kanbanColumnasTareas || [];
 
   const disponibles = useMemo(() => {
@@ -6078,15 +6085,17 @@ function AgregarTareaAEntidadForm({ core, tareasExcluidas, onVincular, onCrear, 
 
   const crear = () => {
     if (!titulo.trim()) return;
+    const r = conFecha ? resolverProgramacion(prog, acciones, core.parametros) : null;
     const nuevoHilo = {
-      id: uid("H"), titulo: titulo.trim(), notas: [], fecha, hora,
-      aviso: hora && aviso.activo ? aviso : null, avisoEnviado: false, avisoVistoEnApp: false,
+      id: uid("H"), titulo: titulo.trim(), notas: [],
+      fecha: r?.fecha || "", hora: r?.hora || "", aviso: r?.aviso || null, avisoEnviado: false, avisoVistoEnApp: false,
       estado: "Activo", fechaCreacion: todayISO(), tipo: "tarea",
       columnaTareaId: columnaId || null, hiloRelacionadoId: null, notaCierre: "",
-      recurrente: false, repiteCadaN: null, repiteUnidad: null,
+      recurrente: r?.recurrente || false, repiteCadaN: r?.repiteCadaN || null, repiteUnidad: r?.repiteUnidad || null,
     };
     onCrear(nuevoHilo);
-    setTitulo(""); setColumnaId(""); setFecha(""); setHora(""); setAviso(core.parametros.avisoDefaultTareas);
+    setTitulo(""); setColumnaId(""); setConFecha(false);
+    setProg(programacionInicial({ modoFecha: "especifica", aviso: core.parametros.avisoDefaultTareas }));
     setModo("existente");
   };
 
@@ -6136,7 +6145,12 @@ function AgregarTareaAEntidadForm({ core, tareasExcluidas, onVincular, onCrear, 
               {columnas.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
             </select>
           </Field>
-          <SelectorFechaHora fecha={fecha} hora={hora} aviso={aviso} onAviso={setAviso} onFecha={setFecha} onHora={setHora} labelFecha="Fecha (opcional)" />
+          <label className="flex items-center gap-2 mb-3 text-sm font-bold text-[#2A2118]">
+            <input type="checkbox" checked={conFecha} onChange={(e) => setConFecha(e.target.checked)} /> Con fecha programada
+          </label>
+          {conFecha && (
+            <SelectorProgramacion value={prog} onChange={setProg} acciones={acciones} parametros={core.parametros} labelRecurrente="Es una tarea repetitiva" />
+          )}
           <p className="text-xs text-[#A69C88] mb-3">Si cargás fecha, se crea con esa acción pendiente. Si no, la tarea queda sin fecha hasta que la avances.</p>
           <PrimaryBtn full onClick={crear}>Crear tarea</PrimaryBtn>
         </>
@@ -6346,9 +6360,6 @@ function EditAccionForm({ accion, esTarea, core, setCore, otrasAccionesDelHilo =
               <p className="text-xs text-[#2A2118]">Ese día está marcado como no hábil. Si guardás de nuevo, se confirma igual.</p>
             </div>
           )}
-          <Field label="Prioridad">
-            <SelectorPrioridad value={prioridad} onChange={setPrioridad} />
-          </Field>
           <label className="flex items-center gap-2 mb-2 text-sm text-[#2A2118]">
             <input type="checkbox" checked={recurrente} onChange={(e) => setRecurrente(e.target.checked)} /> Es una acción repetitiva
           </label>
@@ -6364,6 +6375,9 @@ function EditAccionForm({ accion, esTarea, core, setCore, otrasAccionesDelHilo =
               </div>
             </Field>
           )}
+          <Field label="Prioridad">
+            <SelectorPrioridad value={prioridad} onChange={setPrioridad} />
+          </Field>
         </>
       )}
 
@@ -6926,6 +6940,7 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
         <Modal title="Agregar tarea" onClose={() => setShowAgregarTareaEntidad(false)}>
           <AgregarTareaAEntidadForm
             core={core}
+            acciones={acciones}
             tareasExcluidas={tareasDeLaEmpresa.map((t) => t.id)}
             onVincular={(tareaId) => {
               setCore((prev) => ({ ...prev, vinculos: [...(prev.vinculos || []), vinc("Empresa", id, "Hilo", tareaId, null, false, todayISO())] }));
@@ -7238,6 +7253,7 @@ function ObraDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
         <Modal title="Agregar tarea" onClose={() => setShowAgregarTareaEntidad(false)}>
           <AgregarTareaAEntidadForm
             core={core}
+            acciones={acciones}
             tareasExcluidas={tareasDeLaObra.map((t) => t.id)}
             onVincular={(tareaId) => {
               setCore((prev) => ({ ...prev, vinculos: [...(prev.vinculos || []), vinc("Obra", id, "Hilo", tareaId, null, false, todayISO())] }));
