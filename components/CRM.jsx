@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.62.0";
+const APP_VERSION = "2.63.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -2882,8 +2882,6 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
 // ---------------------------------------------------------------------------
 function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
   const [columnaActiva, setColumnaActiva] = useState(null); // null = "Sin columna"
-  const [dragging, setDragging] = useState(null); // { hiloId }
-  const [hoverColumnaId, setHoverColumnaId] = useState(undefined);
   const [tituloNuevo, setTituloNuevo] = useState("");
   const [mostrarFecha, setMostrarFecha] = useState(false);
   const [fechaNueva, setFechaNueva] = useState("");
@@ -2891,7 +2889,6 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
   const [avisoNuevo, setAvisoNuevo] = useState(core.parametros.avisoDefaultTareas);
   const [verCerradas, setVerCerradas] = useState(false);
   const tabsRef = useRef(null);
-  const hoverRef = useRef(undefined);
 
   const columnas = core.kanbanColumnasTareas || [];
   const tareas = core.hilos.filter((h) => h.tipo === "tarea" && h.estado === "Activo");
@@ -2913,47 +2910,23 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
       });
   }, [tareas, columnaActiva]);
 
-  useEffect(() => { hoverRef.current = hoverColumnaId; }, [hoverColumnaId]);
-
   const moverTarea = (hiloId, colId) => {
     setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === hiloId ? { ...h, columnaTareaId: colId } : h)) }));
   };
 
-  useEffect(() => {
-    if (!dragging) return;
-    const onMove = (e) => {
-      const p = e.touches ? e.touches[0] : e;
-      let found;
-      tabsRef.current?.querySelectorAll("[data-tab-id]").forEach((el) => {
-        const r = el.getBoundingClientRect();
-        if (p.clientX >= r.left && p.clientX <= r.right && p.clientY >= r.top && p.clientY <= r.bottom) {
-          found = el.getAttribute("data-tab-id");
-        }
-      });
-      setHoverColumnaId(found);
-    };
-    const onUp = () => {
-      const target = hoverRef.current;
-      if (target !== undefined) moverTarea(dragging.hiloId, target === "null" ? null : target);
-      setDragging(null);
-      setHoverColumnaId(undefined);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    window.addEventListener("touchmove", onMove, { passive: false });
-    window.addEventListener("touchend", onUp);
-    return () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("touchmove", onMove);
-      window.removeEventListener("touchend", onUp);
-    };
-  }, [dragging]); // eslint-disable-line
+  const { dragging, hoverColumnaId, pointerPos, iniciarDrag } = useArrastreEntreColumnas({ tabsRef, onSoltar: moverTarea });
+  const tituloArrastrando = dragging ? core.hilos.find((h) => h.id === dragging.hiloId)?.titulo || "" : "";
 
   const eliminarColumna = (colId) => {
     if (contarColumna(colId) > 0) return;
     setCore((prev) => ({ ...prev, kanbanColumnasTareas: (prev.kanbanColumnasTareas || []).filter((c) => c.id !== colId) }));
     if (columnaActiva === colId) setColumnaActiva(null);
+  };
+  const reordenarColumnas = (idsEnOrden) => {
+    setCore((prev) => ({
+      ...prev,
+      kanbanColumnasTareas: idsEnOrden.map((id) => (prev.kanbanColumnasTareas || []).find((c) => c.id === id)).filter(Boolean),
+    }));
   };
 
   const crearTareaRapida = () => {
@@ -3032,11 +3005,13 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
         onRename={(id, nombre) => setCore((prev) => ({ ...prev, kanbanColumnasTareas: (prev.kanbanColumnasTareas || []).map((c) => (c.id === id ? { ...c, nombre } : c)) }))}
         onRenameSinColumna={(nombre) => setCore((prev) => ({ ...prev, parametros: { ...prev.parametros, nombreSinColumnaTareas: nombre } }))}
         onDelete={eliminarColumna}
+        onReorder={reordenarColumnas}
         contarTab={contarColumna}
         tabsRef={tabsRef}
         hoverId={hoverColumnaId}
         dragging={dragging}
       />
+      <TarjetaFlotante pos={pointerPos} titulo={tituloArrastrando} core={core} />
     </div>
 
       <div className="mt-3">
@@ -3054,7 +3029,7 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
                   acciones={acciones}
                   setAcciones={setAcciones}
                   onOpen={onOpen}
-                  onIniciarDrag={() => setDragging({ hiloId: h.id })}
+                  onIniciarDrag={() => iniciarDrag(h.id)}
                   arrastrando={dragging?.hiloId === h.id}
                 />
               </Fragment>
@@ -3474,12 +3449,167 @@ function TextoCierreForm({ onConfirmar, onCancelar }) {
   );
 }
 
-function ExcelTabsBar({ core, tabs, activeId, incluirSinTab, sinColumnaNombre, onSelect, onCreate, onRename, onRenameSinColumna, onDelete, contarTab, tabsRef, hoverId, dragging }) {
+// Arrastre de una tarjeta (hilo) entre pestañas de un Kanban — antes solo bajaba la opacidad
+// de la tarjeta en su lugar, sin nada que siguiera al dedo/mouse, así que no quedaba claro que
+// se estaba moviendo hasta soltarla. Ahora expone la posición del puntero para dibujar una
+// vista chica de la tarjeta pegada a él, y desplaza sola la barra de pestañas (tabsRef) si el
+// puntero se acerca a un borde con pestañas fuera de vista.
+function useArrastreEntreColumnas({ tabsRef, onSoltar }) {
+  const [dragging, setDragging] = useState(null); // { hiloId } | null
+  const [hoverColumnaId, setHoverColumnaId] = useState(undefined); // undefined = nada, "null" = Sin columna, o id
+  const [pointerPos, setPointerPos] = useState(null);
+  const hoverRef = useRef(undefined);
+  const scrollDirRef = useRef(0);
+
+  useEffect(() => { hoverRef.current = hoverColumnaId; }, [hoverColumnaId]);
+
+  const iniciarDrag = (hiloId) => setDragging({ hiloId });
+
+  useEffect(() => {
+    if (!dragging) return;
+    const BORDE = 44;
+    const onMove = (e) => {
+      const p = e.touches ? e.touches[0] : e;
+      setPointerPos({ x: p.clientX, y: p.clientY });
+      let found;
+      const tabsEl = tabsRef.current;
+      if (tabsEl) {
+        const rect = tabsEl.getBoundingClientRect();
+        if (p.clientX < rect.left + BORDE) scrollDirRef.current = -1;
+        else if (p.clientX > rect.right - BORDE) scrollDirRef.current = 1;
+        else scrollDirRef.current = 0;
+        tabsEl.querySelectorAll("[data-tab-id]").forEach((el) => {
+          const r = el.getBoundingClientRect();
+          if (p.clientX >= r.left && p.clientX <= r.right && p.clientY >= r.top && p.clientY <= r.bottom) {
+            found = el.getAttribute("data-tab-id");
+          }
+        });
+      }
+      setHoverColumnaId(found);
+    };
+    const onUp = () => {
+      const target = hoverRef.current;
+      if (target !== undefined) onSoltar(dragging.hiloId, target === "null" ? null : target);
+      setDragging(null);
+      setHoverColumnaId(undefined);
+      setPointerPos(null);
+      scrollDirRef.current = 0;
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("touchmove", onMove, { passive: false });
+    window.addEventListener("touchend", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("touchmove", onMove);
+      window.removeEventListener("touchend", onUp);
+    };
+  }, [dragging]); // eslint-disable-line
+
+  useEffect(() => {
+    if (!dragging) return;
+    let raf;
+    const step = () => {
+      if (scrollDirRef.current !== 0 && tabsRef.current) tabsRef.current.scrollLeft += scrollDirRef.current * 14;
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [dragging]); // eslint-disable-line
+
+  return { dragging, hoverColumnaId, pointerPos, iniciarDrag };
+}
+
+// Vista chica de la tarjeta que se está arrastrando, pegada al puntero — position fixed y sin
+// eventos de puntero propios, para no interferir con la detección de sobre qué pestaña está.
+function TarjetaFlotante({ pos, titulo, core }) {
+  if (!pos) return null;
+  return (
+    <div
+      className="fixed z-50 pointer-events-none bg-white border rounded-sm shadow-lg px-3 py-2 max-w-[220px]"
+      style={{ left: pos.x, top: pos.y, transform: "translate(-50%, -130%)", borderColor: core.tema.linea }}
+    >
+      <p className="text-xs font-bold text-[#2A2118] truncate">{textoPlanoDeMenciones(titulo)}</p>
+    </div>
+  );
+}
+
+function ExcelTabsBar({ core, tabs, activeId, incluirSinTab, sinColumnaNombre, onSelect, onCreate, onRename, onRenameSinColumna, onDelete, onReorder, contarTab, tabsRef, hoverId, dragging }) {
   const [creando, setCreando] = useState(false);
   const [nombreNuevo, setNombreNuevo] = useState("");
   const [editandoId, setEditandoId] = useState(undefined); // undefined = nadie editando, null = "Sin columna", id = esa pestaña
   const [eliminandoId, setEliminandoId] = useState(null); // pestaña con confirmación de borrado abierta
   const [avisoNoVaciaId, setAvisoNoVaciaId] = useState(null); // pestaña con aviso de "vaciala primero" abierto
+  // Reordenar pestañas: se activa con presión larga (para no confundirlo con el scroll
+  // horizontal de la barra ni con el tap de seleccionar) — solo aplica a columnas reales, la
+  // pestaña "Sin columna" queda siempre fija primero.
+  const [dragTab, setDragTab] = useState(null); // { id, fromIndex } | null
+  const [hoverTabIndex, setHoverTabIndex] = useState(null);
+  const dragTabRef = useRef(null);
+  const hoverTabIndexRef = useRef(null);
+  const pressTimerRef = useRef(null);
+  const pressStartRef = useRef(null);
+
+  useEffect(() => { dragTabRef.current = dragTab; }, [dragTab]);
+  useEffect(() => { hoverTabIndexRef.current = hoverTabIndex; }, [hoverTabIndex]);
+
+  const cancelarPresion = () => {
+    if (pressTimerRef.current) clearTimeout(pressTimerRef.current);
+    pressTimerRef.current = null;
+  };
+  const iniciarPresionTab = (id, e) => {
+    if (!onReorder) return;
+    const p = e.touches ? e.touches[0] : e;
+    pressStartRef.current = { x: p.clientX, y: p.clientY };
+    cancelarPresion();
+    pressTimerRef.current = setTimeout(() => {
+      const fromIndex = tabs.findIndex((t) => t.id === id);
+      if (fromIndex >= 0) setDragTab({ id, fromIndex });
+    }, 400);
+  };
+  const moverPresionTab = (e) => {
+    if (!pressStartRef.current || dragTabRef.current) return;
+    const p = e.touches ? e.touches[0] : e;
+    if (Math.abs(p.clientX - pressStartRef.current.x) > 8 || Math.abs(p.clientY - pressStartRef.current.y) > 8) cancelarPresion();
+  };
+  const soltarPresionTab = () => { cancelarPresion(); pressStartRef.current = null; };
+
+  useEffect(() => {
+    if (!dragTab) return;
+    const onMove = (e) => {
+      const p = e.touches ? e.touches[0] : e;
+      let found = null;
+      tabsRef.current?.querySelectorAll("[data-tab-reorder-index]").forEach((el) => {
+        const r = el.getBoundingClientRect();
+        if (p.clientX >= r.left && p.clientX <= r.right) found = Number(el.getAttribute("data-tab-reorder-index"));
+      });
+      setHoverTabIndex(found);
+    };
+    const onUp = () => {
+      const toIndex = hoverTabIndexRef.current;
+      const from = dragTabRef.current.fromIndex;
+      if (toIndex !== null && toIndex !== from) {
+        const reordenadas = [...tabs];
+        const [item] = reordenadas.splice(from, 1);
+        reordenadas.splice(toIndex, 0, item);
+        onReorder(reordenadas.map((t) => t.id));
+      }
+      setDragTab(null);
+      setHoverTabIndex(null);
+      pressStartRef.current = null;
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("touchmove", onMove, { passive: false });
+    window.addEventListener("touchend", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("touchmove", onMove);
+      window.removeEventListener("touchend", onUp);
+    };
+  }, [dragTab]); // eslint-disable-line
 
   const confirmarCrear = () => {
     if (!nombreNuevo.trim()) return;
@@ -3518,18 +3648,32 @@ function ExcelTabsBar({ core, tabs, activeId, incluirSinTab, sinColumnaNombre, o
       );
     }
     const colorTexto = esHover || esActiva ? "#FFFFFF" : "#2A2118";
+    const reorderIndex = id !== null ? tabs.findIndex((t) => t.id === id) : null;
+    const seEstaArrastrando = dragTab?.id === id;
+    const esDestinoReorden = reorderIndex !== null && hoverTabIndex === reorderIndex && dragTab && dragTab.id !== id;
     return (
       <div
         key={key}
         data-tab-id={key}
+        {...(reorderIndex !== null ? { "data-tab-reorder-index": reorderIndex } : {})}
         onDoubleClick={() => setEditandoId(id)}
+        onPointerDown={reorderIndex !== null ? (e) => iniciarPresionTab(id, e) : undefined}
+        onPointerMove={reorderIndex !== null ? moverPresionTab : undefined}
+        onPointerUp={reorderIndex !== null ? soltarPresionTab : undefined}
+        onPointerCancel={reorderIndex !== null ? soltarPresionTab : undefined}
+        onTouchStart={reorderIndex !== null ? (e) => iniciarPresionTab(id, e) : undefined}
+        onTouchMove={reorderIndex !== null ? moverPresionTab : undefined}
+        onTouchEnd={reorderIndex !== null ? soltarPresionTab : undefined}
         style={{
           backgroundColor: esHover || esActiva ? core.tema.botonActivo : core.tema.botonInactivo,
           color: colorTexto,
-          borderColor: core.tema.linea,
+          borderColor: esDestinoReorden ? core.tema.botonActivo : core.tema.linea,
+          borderLeftWidth: esDestinoReorden ? "3px" : undefined,
           marginBottom: esActiva && !esHover ? "-2px" : "0px",
           zIndex: esActiva ? 2 : 1,
           transform: esHover ? "scale(1.05)" : "none",
+          opacity: seEstaArrastrando ? 0.4 : 1,
+          touchAction: seEstaArrastrando ? "none" : undefined,
         }}
         className="relative shrink-0 h-8 flex items-center gap-1.5 pl-3 pr-1.5 text-[10px] font-bold tracking-wide border border-b-0 rounded-t-sm transition-transform"
       >
@@ -3613,15 +3757,12 @@ function ExcelTabsBar({ core, tabs, activeId, incluirSinTab, sinColumnaNombre, o
 
 function KanbanView({ core, setCore, acciones, setAcciones, onOpen, t, soloTipo }) {
   const [columnaActiva, setColumnaActiva] = useState(null); // null = "Sin columna"
-  const [dragging, setDragging] = useState(null); // { grupo } (hilo con acción pendiente) o { hiloId } (sin acción)
-  const [hoverColumnaId, setHoverColumnaId] = useState(undefined); // undefined = nada, "null" = Sin columna, o id
   const [bucket, setBucket] = useState("todas");
   const [orden, setOrden] = useState("asc");
   const [agruparPersona, setAgruparPersona] = useState(false);
   const [showNuevoHilo, setShowNuevoHilo] = useState(false);
   const [estadoFiltro, setEstadoFiltro] = useState("activos"); // 'activos' | 'inactivos' | 'todos'
   const tabsRef = useRef(null);
-  const hoverRef = useRef(undefined);
 
   const columnas = core.kanbanColumnas || [];
   const hiloPasaFiltroEstado = (h) => {
@@ -3689,51 +3830,23 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, t, soloTipo 
     [hilosColumnaActiva, pendientesPorHiloId]
   );
 
-  useEffect(() => { hoverRef.current = hoverColumnaId; }, [hoverColumnaId]);
-
   const moverColumnaHilo = (hiloId, colId) => {
     setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === hiloId ? { ...h, columnaSeguimientoId: colId } : h)) }));
   };
 
-  useEffect(() => {
-    if (!dragging) return;
-    const onMove = (e) => {
-      const p = e.touches ? e.touches[0] : e;
-      let found;
-      tabsRef.current?.querySelectorAll("[data-tab-id]").forEach((el) => {
-        const r = el.getBoundingClientRect();
-        if (p.clientX >= r.left && p.clientX <= r.right && p.clientY >= r.top && p.clientY <= r.bottom) {
-          found = el.getAttribute("data-tab-id");
-        }
-      });
-      setHoverColumnaId(found);
-    };
-    const onUp = () => {
-      const target = hoverRef.current;
-      if (target !== undefined) {
-        const colId = target === "null" ? null : target;
-        const hiloId = dragging.grupo ? dragging.grupo[0].hiloId : dragging.hiloId;
-        moverColumnaHilo(hiloId, colId);
-      }
-      setDragging(null);
-      setHoverColumnaId(undefined);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    window.addEventListener("touchmove", onMove, { passive: false });
-    window.addEventListener("touchend", onUp);
-    return () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("touchmove", onMove);
-      window.removeEventListener("touchend", onUp);
-    };
-  }, [dragging]); // eslint-disable-line
+  const { dragging, hoverColumnaId, pointerPos, iniciarDrag } = useArrastreEntreColumnas({ tabsRef, onSoltar: moverColumnaHilo });
+  const tituloArrastrando = dragging ? core.hilos.find((h) => h.id === dragging.hiloId)?.titulo || "" : "";
 
   const eliminarColumna = (colId) => {
     if (contarColumna(colId) > 0) return;
     setCore((prev) => ({ ...prev, kanbanColumnas: (prev.kanbanColumnas || []).filter((c) => c.id !== colId) }));
     if (columnaActiva === colId) setColumnaActiva(null);
+  };
+  const reordenarColumnas = (idsEnOrden) => {
+    setCore((prev) => ({
+      ...prev,
+      kanbanColumnas: idsEnOrden.map((id) => (prev.kanbanColumnas || []).find((c) => c.id === id)).filter(Boolean),
+    }));
   };
 
   const nombreSinColumna = core.parametros.nombreSinColumnaSeguimientos || "Sin columna";
@@ -3762,11 +3875,13 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, t, soloTipo 
         onRename={(id, nombre) => setCore((prev) => ({ ...prev, kanbanColumnas: (prev.kanbanColumnas || []).map((c) => (c.id === id ? { ...c, nombre } : c)) }))}
         onRenameSinColumna={(nombre) => setCore((prev) => ({ ...prev, parametros: { ...prev.parametros, nombreSinColumnaSeguimientos: nombre } }))}
         onDelete={eliminarColumna}
+        onReorder={reordenarColumnas}
         contarTab={contarColumna}
         tabsRef={tabsRef}
         hoverId={hoverColumnaId}
         dragging={dragging}
       />
+      <TarjetaFlotante pos={pointerPos} titulo={tituloArrastrando} core={core} />
 
       <div className="border-t border-[#E4DECF] my-3" />
 
@@ -3822,8 +3937,8 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, t, soloTipo 
                 setAcciones={setAcciones}
                 onOpen={onOpen}
                 t={t}
-                onIniciarDrag={() => setDragging({ grupo })}
-                arrastrando={dragging?.grupo === grupo}
+                onIniciarDrag={() => iniciarDrag(grupo[0].hiloId)}
+                arrastrando={dragging?.hiloId === grupo[0].hiloId}
               />
             </Fragment>
           ))}
@@ -3845,7 +3960,7 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, t, soloTipo 
                   acciones={acciones}
                   setAcciones={setAcciones}
                   onOpen={onOpen}
-                  onIniciarDrag={() => setDragging({ hiloId: h.id })}
+                  onIniciarDrag={() => iniciarDrag(h.id)}
                   arrastrando={dragging?.hiloId === h.id}
                 />
               </Fragment>
