@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.60.0";
+const APP_VERSION = "2.61.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -1144,8 +1144,13 @@ function BuscadorSelect({ opciones, value, onChange, placeholder, vacioLabel }) 
   }, []);
 
   const seleccionada = opciones.find((o) => o.id === value);
-  const q = query.trim().toLowerCase();
-  const filtradas = q ? opciones.filter((o) => o.label.toLowerCase().includes(q)) : opciones;
+  // Cada palabra escrita tiene que aparecer en algún lado del nombre, sin importar el orden —
+  // así "fid inm vall" encuentra "Fideicomiso inmobiliario Altos del Valle".
+  const qTokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const filtradas = qTokens.length === 0 ? opciones : opciones.filter((o) => {
+    const label = o.label.toLowerCase();
+    return qTokens.every((t) => label.includes(t));
+  });
 
   const elegir = (id) => {
     onChange(id);
@@ -2574,8 +2579,8 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
             >
               + Agregar
             </button>
+            <button type="button" onClick={() => setShowNuevaPersona(true)} className="shrink-0 border border-[#E4DECF] rounded-sm px-3 text-sm font-bold text-[#2A2118]">+ Persona</button>
           </div>
-          <button type="button" onClick={() => setShowNuevaPersona(true)} className="w-full border border-[#E4DECF] rounded-sm py-2 font-bold text-xs text-[#2A2118] mt-2">+ Crear persona nueva</button>
           {showNuevaPersona && (
             <PersonaForm
               initial={{}}
@@ -2593,14 +2598,18 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
       ) : (
         !personaFija && (
           <Field label="Persona">
-            <BuscadorSelect
-              opciones={core.personas.map((p) => ({ id: p.id, label: p.nombre }))}
-              value={personaId}
-              onChange={elegirPersona}
-              vacioLabel="— ninguna —"
-              placeholder="Buscar persona..."
-            />
-            <button type="button" onClick={() => setShowNuevaPersona(true)} className="w-full border border-[#E4DECF] rounded-sm py-2 font-bold text-xs text-[#2A2118] mt-2">+ Crear persona nueva</button>
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <BuscadorSelect
+                  opciones={core.personas.map((p) => ({ id: p.id, label: p.nombre }))}
+                  value={personaId}
+                  onChange={elegirPersona}
+                  vacioLabel="— ninguna —"
+                  placeholder="Buscar persona..."
+                />
+              </div>
+              <button type="button" onClick={() => setShowNuevaPersona(true)} className="shrink-0 border border-[#E4DECF] rounded-sm px-3 text-sm font-bold text-[#2A2118]">+ Persona</button>
+            </div>
             {showNuevaPersona && (
               <PersonaForm
                 initial={{}}
@@ -2636,36 +2645,41 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
           )}
           {(() => {
             const opciones = (personaFija ? empresasDeLaPersona : core.empresas).filter((e) => !empresaIds.includes(e.id));
-            if (opciones.length === 0) {
-              return empresaIds.length === 0 && personaFija ? (
-                <p className="text-sm text-[#A69C88] mb-1.5">Este contacto no tiene empresas vinculadas todavía.</p>
-              ) : null;
-            }
+            const sinOpciones = opciones.length === 0;
             return (
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <BuscadorSelect
-                    opciones={opciones.map((e) => ({ id: e.id, label: e.denominacion }))}
-                    value={empresaParaAgregar}
-                    onChange={setEmpresaParaAgregar}
-                    placeholder="Buscar empresa..."
-                  />
+              <>
+                {sinOpciones && empresaIds.length === 0 && personaFija && (
+                  <p className="text-sm text-[#A69C88] mb-1.5">Este contacto no tiene empresas vinculadas todavía.</p>
+                )}
+                <div className="flex gap-2">
+                  {!sinOpciones && (
+                    <div className="flex-1">
+                      <BuscadorSelect
+                        opciones={opciones.map((e) => ({ id: e.id, label: e.denominacion }))}
+                        value={empresaParaAgregar}
+                        onChange={setEmpresaParaAgregar}
+                        placeholder="Buscar empresa..."
+                      />
+                    </div>
+                  )}
+                  {!sinOpciones && (
+                    <button
+                      type="button"
+                      disabled={!empresaParaAgregar}
+                      onClick={() => { agregarEmpresa(empresaParaAgregar); setEmpresaParaAgregar(""); }}
+                      className="shrink-0 border border-[#E4DECF] rounded-sm px-3 text-sm font-bold text-[#2A2118] disabled:text-[#C9C1AE] disabled:cursor-not-allowed"
+                    >
+                      + Agregar
+                    </button>
+                  )}
+                  <button type="button" onClick={() => setShowNuevaEmpresa(true)} className={`shrink-0 border border-[#E4DECF] rounded-sm px-3 text-sm font-bold text-[#2A2118] ${sinOpciones ? "w-full" : ""}`}>+ Empresa</button>
                 </div>
-                <button
-                  type="button"
-                  disabled={!empresaParaAgregar}
-                  onClick={() => { agregarEmpresa(empresaParaAgregar); setEmpresaParaAgregar(""); }}
-                  className="shrink-0 border border-[#E4DECF] rounded-sm px-3 text-sm font-bold text-[#2A2118] disabled:text-[#C9C1AE] disabled:cursor-not-allowed"
-                >
-                  + Agregar
-                </button>
-              </div>
+              </>
             );
           })()}
           {personaFija && (
             <button type="button" onClick={() => setShowVincularEmpresa(true)} className="text-xs font-bold text-[var(--tema-vinculo)] mt-1.5">+ Vincular otra empresa a este contacto</button>
           )}
-          <button type="button" onClick={() => setShowNuevaEmpresa(true)} className="w-full border border-[#E4DECF] rounded-sm py-2 font-bold text-xs text-[#2A2118] mt-2">+ Crear empresa nueva</button>
           {showNuevaEmpresa && (
             <EmpresaForm
               initial={{}}
@@ -2706,30 +2720,36 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
           )}
           {(() => {
             const opciones = (personaFija ? obrasDeLasEmpresas : core.obras).filter((o) => !obraIds.includes(o.id));
-            if (opciones.length === 0) {
-              return obraIds.length === 0 && personaFija ? (
-                <p className="text-sm text-[#A69C88] mb-1.5">{empresaIds.length > 0 ? "Estas empresas no tienen obras vinculadas." : "Elegí primero una empresa para poder sumar una obra."}</p>
-              ) : null;
-            }
+            const sinOpciones = opciones.length === 0;
             return (
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <BuscadorSelect
-                    opciones={opciones.map((o) => ({ id: o.id, label: o.nombre }))}
-                    value={obraParaAgregar}
-                    onChange={setObraParaAgregar}
-                    placeholder="Buscar obra..."
-                  />
+              <>
+                {sinOpciones && obraIds.length === 0 && personaFija && (
+                  <p className="text-sm text-[#A69C88] mb-1.5">{empresaIds.length > 0 ? "Estas empresas no tienen obras vinculadas." : "Elegí primero una empresa para poder sumar una obra."}</p>
+                )}
+                <div className="flex gap-2">
+                  {!sinOpciones && (
+                    <div className="flex-1">
+                      <BuscadorSelect
+                        opciones={opciones.map((o) => ({ id: o.id, label: o.nombre }))}
+                        value={obraParaAgregar}
+                        onChange={setObraParaAgregar}
+                        placeholder="Buscar obra..."
+                      />
+                    </div>
+                  )}
+                  {!sinOpciones && (
+                    <button
+                      type="button"
+                      disabled={!obraParaAgregar}
+                      onClick={() => { agregarObra(obraParaAgregar); setObraParaAgregar(""); }}
+                      className="shrink-0 border border-[#E4DECF] rounded-sm px-3 text-sm font-bold text-[#2A2118] disabled:text-[#C9C1AE] disabled:cursor-not-allowed"
+                    >
+                      + Agregar
+                    </button>
+                  )}
+                  <button type="button" onClick={() => setShowNuevaObra(true)} className={`shrink-0 border border-[#E4DECF] rounded-sm px-3 text-sm font-bold text-[#2A2118] ${sinOpciones ? "w-full" : ""}`}>+ Obra</button>
                 </div>
-                <button
-                  type="button"
-                  disabled={!obraParaAgregar}
-                  onClick={() => { agregarObra(obraParaAgregar); setObraParaAgregar(""); }}
-                  className="shrink-0 border border-[#E4DECF] rounded-sm px-3 text-sm font-bold text-[#2A2118] disabled:text-[#C9C1AE] disabled:cursor-not-allowed"
-                >
-                  + Agregar
-                </button>
-              </div>
+              </>
             );
           })()}
           {personaFija && (
@@ -2742,7 +2762,6 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
               + Vincular obra a una empresa
             </button>
           )}
-          <button type="button" onClick={() => setShowNuevaObra(true)} className="w-full border border-[#E4DECF] rounded-sm py-2 font-bold text-xs text-[#2A2118] mt-2">+ Crear obra nueva</button>
           {showNuevaObra && (
             <ObraForm
               initial={{}}
@@ -8931,6 +8950,17 @@ function RelacionForm({ core, setCore, entidadFija, onCreado }) {
   const [hastaOpcional, setHastaOpcional] = useState("");
   const [nota, setNota] = useState("");
   const [feedback, setFeedback] = useState("");
+  // Crear una persona/empresa/obra nueva sin salir del formulario, si todavía no existe —
+  // { lado: 'origen'|'destino', tipo?: 'Persona'|'Empresa'|'Obra' }; sin tipo todavía, se
+  // muestran los 3 botones para elegir cuál crear.
+  const [crearEntidad, setCrearEntidad] = useState(null);
+  const coleccionPorTipoEntidad = { Persona: "personas", Empresa: "empresas", Obra: "obras" };
+  const agregarEntidadNueva = (lado, tipo, data) => {
+    setCore((prev) => ({ ...prev, [coleccionPorTipoEntidad[tipo]]: [data, ...prev[coleccionPorTipoEntidad[tipo]]] }));
+    const nueva = { tipo, id: data.id };
+    if (lado === "origen") setOrigenes((a) => [...a, nueva]); else setDestinos((a) => [...a, nueva]);
+    setCrearEntidad(null);
+  };
 
   const todas = todasLasEntidadesRelacionables(core);
   const yaOrigen = new Set(origenes.map(clave));
@@ -9008,6 +9038,7 @@ function RelacionForm({ core, setCore, entidadFija, onCreado }) {
         <div className="flex gap-2">
           <div className="flex-1"><BuscadorSelect opciones={opcionesOrigen} value={origenSel} onChange={setOrigenSel} placeholder="Buscar persona, empresa u obra..." /></div>
           <button type="button" disabled={!origenSel} onClick={agregarOrigen} className="shrink-0 border border-[#E4DECF] rounded-sm px-3 text-sm font-bold text-[#2A2118] disabled:text-[#C9C1AE] disabled:cursor-not-allowed">+ Agregar</button>
+          <button type="button" onClick={() => setCrearEntidad({ lado: "origen" })} className="shrink-0 border border-[#E4DECF] rounded-sm px-3 text-sm font-bold text-[#2A2118]">+ Entidad</button>
         </div>
       </Field>
 
@@ -9036,8 +9067,60 @@ function RelacionForm({ core, setCore, entidadFija, onCreado }) {
         <div className="flex gap-2">
           <div className="flex-1"><BuscadorSelect opciones={opcionesDestino} value={destinoSel} onChange={setDestinoSel} placeholder="Buscar persona, empresa u obra..." /></div>
           <button type="button" disabled={!destinoSel} onClick={agregarDestino} className="shrink-0 border border-[#E4DECF] rounded-sm px-3 text-sm font-bold text-[#2A2118] disabled:text-[#C9C1AE] disabled:cursor-not-allowed">+ Agregar</button>
+          <button type="button" onClick={() => setCrearEntidad({ lado: "destino" })} className="shrink-0 border border-[#E4DECF] rounded-sm px-3 text-sm font-bold text-[#2A2118]">+ Entidad</button>
         </div>
       </Field>
+      {crearEntidad && !crearEntidad.tipo && (
+        <div className="flex gap-2 mb-3 -mt-1">
+          <button type="button" onClick={() => setCrearEntidad({ ...crearEntidad, tipo: "Persona" })} className="flex-1 border border-[#E4DECF] rounded-sm py-1.5 text-xs font-bold text-[#2A2118]">+ Persona</button>
+          <button type="button" onClick={() => setCrearEntidad({ ...crearEntidad, tipo: "Empresa" })} className="flex-1 border border-[#E4DECF] rounded-sm py-1.5 text-xs font-bold text-[#2A2118]">+ Empresa</button>
+          <button type="button" onClick={() => setCrearEntidad({ ...crearEntidad, tipo: "Obra" })} className="flex-1 border border-[#E4DECF] rounded-sm py-1.5 text-xs font-bold text-[#2A2118]">+ Obra</button>
+          <button type="button" onClick={() => setCrearEntidad(null)} aria-label="Cancelar" className="shrink-0 border border-[#E4DECF] rounded-sm px-2.5 text-[#6B6352]"><X size={14} /></button>
+        </div>
+      )}
+      {crearEntidad?.tipo === "Persona" && (
+        <PersonaForm
+          initial={{}}
+          core={core}
+          setCore={setCore}
+          onClose={() => setCrearEntidad(null)}
+          onSave={(data) => agregarEntidadNueva(crearEntidad.lado, "Persona", data)}
+        />
+      )}
+      {crearEntidad?.tipo === "Empresa" && (
+        <EmpresaForm
+          initial={{}}
+          core={core}
+          setCore={setCore}
+          onClose={() => setCrearEntidad(null)}
+          onSave={(data, vinculoPersona) => {
+            agregarEntidadNueva(crearEntidad.lado, "Empresa", data);
+            if (vinculoPersona?.personaId) {
+              setCore((prev) => ({
+                ...prev,
+                vinculos: [...(prev.vinculos || []), vinc("Persona", vinculoPersona.personaId, "Empresa", data.id, vinculoPersona.tipoRelacionId || null, true, todayISO())],
+              }));
+            }
+          }}
+        />
+      )}
+      {crearEntidad?.tipo === "Obra" && (
+        <ObraForm
+          initial={{}}
+          core={core}
+          setCore={setCore}
+          onClose={() => setCrearEntidad(null)}
+          onSave={(data, vinculoEmpresa) => {
+            agregarEntidadNueva(crearEntidad.lado, "Obra", data);
+            if (vinculoEmpresa?.empresaId) {
+              setCore((prev) => ({
+                ...prev,
+                vinculos: [...(prev.vinculos || []), vinc("Empresa", vinculoEmpresa.empresaId, "Obra", data.id, TR_DUENA, false, todayISO())],
+              }));
+            }
+          }}
+        />
+      )}
 
       <Field label="Fecha"><input type="date" className={inputCls} value={fecha} onChange={(e) => setFecha(e.target.value)} /></Field>
       <Field label="Fecha de finalización (opcional)"><input type="date" className={inputCls} value={hastaOpcional} onChange={(e) => setHastaOpcional(e.target.value)} /></Field>
