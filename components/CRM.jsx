@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.63.0";
+const APP_VERSION = "2.63.1";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -2984,11 +2984,9 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
         <p className="text-xs text-[#A69C88] mt-2">La fecha y hora son opcionales — si no las cargás, la tarea se guarda igual.</p>
       </div>
 
-      {dragging && (
-        <p className="text-center text-xs font-bold text-[var(--tema-vinculo)] tracking-wide mb-1.5 animate-pulse">
-          Soltá sobre una pestaña para mover la tarea
-        </p>
-      )}
+      <p className={`text-center text-xs font-bold text-[var(--tema-vinculo)] tracking-wide mb-1.5 ${dragging ? "animate-pulse opacity-100" : "opacity-0"}`}>
+        Soltá sobre una pestaña para mover la tarea
+      </p>
 
       <ExcelTabsBar
         core={core}
@@ -3550,6 +3548,7 @@ function ExcelTabsBar({ core, tabs, activeId, incluirSinTab, sinColumnaNombre, o
   const hoverTabIndexRef = useRef(null);
   const pressTimerRef = useRef(null);
   const pressStartRef = useRef(null);
+  const scrollDirTabRef = useRef(0);
 
   useEffect(() => { dragTabRef.current = dragTab; }, [dragTab]);
   useEffect(() => { hoverTabIndexRef.current = hoverTabIndex; }, [hoverTabIndex]);
@@ -3577,8 +3576,16 @@ function ExcelTabsBar({ core, tabs, activeId, incluirSinTab, sinColumnaNombre, o
 
   useEffect(() => {
     if (!dragTab) return;
+    const BORDE = 44;
     const onMove = (e) => {
       const p = e.touches ? e.touches[0] : e;
+      const tabsEl = tabsRef.current;
+      if (tabsEl) {
+        const rect = tabsEl.getBoundingClientRect();
+        if (p.clientX < rect.left + BORDE) scrollDirTabRef.current = -1;
+        else if (p.clientX > rect.right - BORDE) scrollDirTabRef.current = 1;
+        else scrollDirTabRef.current = 0;
+      }
       let found = null;
       tabsRef.current?.querySelectorAll("[data-tab-reorder-index]").forEach((el) => {
         const r = el.getBoundingClientRect();
@@ -3598,6 +3605,7 @@ function ExcelTabsBar({ core, tabs, activeId, incluirSinTab, sinColumnaNombre, o
       setDragTab(null);
       setHoverTabIndex(null);
       pressStartRef.current = null;
+      scrollDirTabRef.current = 0;
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
@@ -3609,6 +3617,17 @@ function ExcelTabsBar({ core, tabs, activeId, incluirSinTab, sinColumnaNombre, o
       window.removeEventListener("touchmove", onMove);
       window.removeEventListener("touchend", onUp);
     };
+  }, [dragTab]); // eslint-disable-line
+
+  useEffect(() => {
+    if (!dragTab) return;
+    let raf;
+    const step = () => {
+      if (scrollDirTabRef.current !== 0 && tabsRef.current) tabsRef.current.scrollLeft += scrollDirTabRef.current * 14;
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
   }, [dragTab]); // eslint-disable-line
 
   const confirmarCrear = () => {
@@ -3855,11 +3874,9 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, t, soloTipo 
   return (
     <div>
     <div className="sticky top-0 z-10 bg-[#F7F5F0]">
-      {dragging && (
-        <p className="text-center text-xs font-bold text-[var(--tema-vinculo)] tracking-wide mb-1.5 animate-pulse">
-          Soltá sobre una pestaña para mover el hilo
-        </p>
-      )}
+      <p className={`text-center text-xs font-bold text-[var(--tema-vinculo)] tracking-wide mb-1.5 ${dragging ? "animate-pulse opacity-100" : "opacity-0"}`}>
+        Soltá sobre una pestaña para mover el hilo
+      </p>
       <ExcelTabsBar
         core={core}
         tabs={columnas}
