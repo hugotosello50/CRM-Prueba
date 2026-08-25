@@ -7,7 +7,7 @@ import {
   Plus, X, ChevronRight, ChevronLeft, Search, Settings, Users, Building2,
   HardHat, CalendarClock, Trash2, Pencil, Check, AlertTriangle,
   Tag, Star, ListChecks, Repeat, ArrowLeft, ArrowDownAZ, ArrowUpAZ, GitBranch,
-  BarChart3, FileSpreadsheet, Download, Trello, GripVertical, LogOut, Menu, Tags, FolderKanban, Layers,
+  BarChart3, FileSpreadsheet, Download, Trello, LogOut, Menu, Tags, FolderKanban, Layers,
   FileText, Image as ImageIcon, Bell, Link2, CheckSquare, Square, Sparkles, Mic,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.63.1";
+const APP_VERSION = "2.63.2";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -3940,7 +3940,7 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, t, soloTipo 
     </div>
 
       {gruposActivos.length === 0 && hilosSinAccion.length === 0 ? (
-        <EmptyState icon={<Trello size={26} />} text={`No hay hilos en "${nombreColumnaActiva}" con este filtro. Arrastrá una tarjeta desde otra pestaña usando el ícono ⠿, o probá otro filtro de fecha.`} />
+        <EmptyState icon={<Trello size={26} />} text={`No hay hilos en "${nombreColumnaActiva}" con este filtro. Arrastrá una tarjeta desde otra pestaña manteniéndola presionada, o probá otro filtro de fecha.`} />
       ) : gruposActivos.length > 0 ? (
         <div>
           {gruposActivos.map((grupo, i) => (
@@ -4031,6 +4031,38 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   const [editingSubtarea, setEditingSubtarea] = useState(null);
   const [deletingSubtareaId, setDeletingSubtareaId] = useState(null);
   const [confirmar, setConfirmar] = useState(null); // { texto, onConfirm }
+
+  // Arrastrar la tarjeta a otra pestaña del kanban: mantener presionada en cualquier parte
+  // (mismo mecanismo de presión larga que reordenar pestañas) — el resto de las acciones de la
+  // tarjeta son de un solo clic, así que una presión sostenida no tiene ambigüedad posible.
+  const pressTimerRef = useRef(null);
+  const pressStartRef = useRef(null);
+  const cancelarPresionTarjeta = () => {
+    if (pressTimerRef.current) clearTimeout(pressTimerRef.current);
+    pressTimerRef.current = null;
+  };
+  const iniciarPresionTarjeta = (e) => {
+    const p = e.touches ? e.touches[0] : e;
+    pressStartRef.current = { x: p.clientX, y: p.clientY };
+    cancelarPresionTarjeta();
+    pressTimerRef.current = setTimeout(() => onIniciarDrag(), 400);
+  };
+  const moverPresionTarjeta = (e) => {
+    if (!pressStartRef.current) return;
+    const p = e.touches ? e.touches[0] : e;
+    if (Math.abs(p.clientX - pressStartRef.current.x) > 8 || Math.abs(p.clientY - pressStartRef.current.y) > 8) cancelarPresionTarjeta();
+  };
+  const soltarPresionTarjeta = () => { cancelarPresionTarjeta(); pressStartRef.current = null; };
+  const presionArrastre = onIniciarDrag ? {
+    onPointerDown: iniciarPresionTarjeta,
+    onPointerMove: moverPresionTarjeta,
+    onPointerUp: soltarPresionTarjeta,
+    onPointerCancel: soltarPresionTarjeta,
+    onTouchStart: iniciarPresionTarjeta,
+    onTouchMove: moverPresionTarjeta,
+    onTouchEnd: soltarPresionTarjeta,
+  } : {};
+  const estiloArrastrable = onIniciarDrag ? { WebkitTouchCallout: "none", WebkitUserSelect: "none", touchAction: arrastrando ? "none" : undefined } : {};
 
   const hilo = hiloProp || (accionesBucket ? core.hilos.find((h) => h.id === accionesBucket[0].hiloId) : null);
   if (!hilo) return standalone ? <div><p className="text-sm text-[#8A8272]">Este hilo ya no existe.</p></div> : null;
@@ -4193,7 +4225,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   );
 
   // Detecta si el nombre/subtítulo se está cortando (más entidades de las que entran en el
-  // ancho de la tarjeta) para mostrar los puntos suspensivos debajo del ícono de arrastrar.
+  // ancho de la tarjeta) para mostrar los puntos suspensivos.
   useEffect(() => {
     if (verEntidadesCompleto) { setTitulosTruncados(false); return; }
     const nombreTruncado = nombreRef.current ? nombreRef.current.scrollWidth > nombreRef.current.clientWidth : false;
@@ -4568,17 +4600,6 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
           </div>
           <IconBtn label="Editar título" onClick={() => setShowEditarTitulo(true)}><Pencil size={13} /></IconBtn>
           {hilo.estado === "Cerrado" && <Chip tone="estadoCerradoInactivo">{hilo.estado}</Chip>}
-          {onIniciarDrag && (
-            <button
-              onPointerDown={(e) => { e.preventDefault(); onIniciarDrag(); }}
-              onTouchStart={(e) => { e.preventDefault(); onIniciarDrag(); }}
-              aria-label="Arrastrar a otra columna"
-              style={{ touchAction: "none" }}
-              className="shrink-0 text-[#8A8272] cursor-grab active:cursor-grabbing p-1 -mr-1"
-            >
-              <GripVertical size={16} />
-            </button>
-          )}
         </div>
       </>
     );
@@ -4693,8 +4714,10 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
 
     return (
       <div className="bg-white border border-[#E4DECF] rounded-sm p-3 relative" style={{ opacity: arrastrando ? 0.35 : 1 }}>
-        {headerTarea}
-        {bodyTarea}
+        <div className={onIniciarDrag ? "select-none" : undefined} style={estiloArrastrable} {...presionArrastre}>
+          {headerTarea}
+          {bodyTarea}
+        </div>
         {modales}
       </div>
     );
@@ -4732,29 +4755,16 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
         </div>
         {persona && <WhatsAppLink persona={persona} size={15} />}
         {hilo.estado === "Cerrado" && <Chip tone="estadoCerradoInactivo">{hilo.estado}</Chip>}
-        {(onIniciarDrag || (titulosTruncados && !verEntidadesCompleto)) && (
+        {titulosTruncados && !verEntidadesCompleto && (
           <div className="shrink-0 flex flex-col items-center">
-            {onIniciarDrag && (
-              <button
-                onPointerDown={(e) => { e.preventDefault(); onIniciarDrag(); }}
-                onTouchStart={(e) => { e.preventDefault(); onIniciarDrag(); }}
-                aria-label="Arrastrar a otra columna"
-                style={{ touchAction: "none" }}
-                className="text-[#8A8272] cursor-grab active:cursor-grabbing p-1 -mr-1"
-              >
-                <GripVertical size={16} />
-              </button>
-            )}
-            {titulosTruncados && !verEntidadesCompleto && (
-              <button
-                type="button"
-                onClick={() => setVerEntidadesCompleto(true)}
-                aria-label="Ver todas las entidades"
-                className="text-[#8A8272] font-extrabold leading-none -mt-1"
-              >
-                …
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => setVerEntidadesCompleto(true)}
+              aria-label="Ver todas las entidades"
+              className="text-[#8A8272] font-extrabold leading-none -mt-1"
+            >
+              …
+            </button>
           </div>
         )}
       </div>
@@ -4913,8 +4923,10 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
 
   return (
     <div className="bg-white border border-[#E4DECF] rounded-sm p-3 relative" style={{ opacity: arrastrando ? 0.35 : 1 }}>
-      {headerCliente}
-      {bodyCliente}
+      <div className={onIniciarDrag ? "select-none" : undefined} style={estiloArrastrable} {...presionArrastre}>
+        {headerCliente}
+        {bodyCliente}
+      </div>
       {modales}
     </div>
   );
