@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.57.0";
+const APP_VERSION = "2.58.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -923,13 +923,23 @@ function programacionInicial({ modoFecha = "periodo", unidad = "dias", fecha = t
   };
 }
 
-// Resuelve el valor final del bloque (fecha concreta, aviso final, si cae en día no hábil) —
-// se usa tanto para guardar como para el chequeo de confirmación.
+// Resuelve el valor final del bloque (fecha concreta, aviso final, si hace falta confirmar) —
+// se usa tanto para guardar como para el chequeo de confirmación. En modo período, la fecha
+// "sugerida" (ajustada para no caer en día no hábil ni muy cargado) es la propuesta por
+// defecto, pero si el usuario ya confirmó que quiere insistir, se usa la fecha cruda del
+// período tal cual, sin ajustar — mismo criterio que en fecha específica.
 function resolverProgramacion(v, acciones, parametros) {
   const hoy = todayISO();
-  const fecha = v.modoFecha === "periodo"
-    ? computeSmartDate(addPeriod(hoy, Number(v.cantidad) || 1, v.unidad), acciones, parametros)
-    : (v.fecha || hoy);
+  let fecha, inhabil;
+  if (v.modoFecha === "periodo") {
+    const cruda = addPeriod(hoy, Number(v.cantidad) || 1, v.unidad);
+    const sugerida = computeSmartDate(cruda, acciones, parametros);
+    inhabil = cruda !== sugerida;
+    fecha = inhabil && v.confirmar ? cruda : sugerida;
+  } else {
+    fecha = v.fecha || hoy;
+    inhabil = esFechaInhabil(v.fecha, parametros);
+  }
   const hora = v.hora;
   const aviso = hora && v.aviso.activo ? v.aviso : null;
   return {
@@ -937,7 +947,7 @@ function resolverProgramacion(v, acciones, parametros) {
     recurrente: v.recurrente,
     repiteCadaN: v.recurrente ? Number(v.repiteCadaN) : null,
     repiteUnidad: v.recurrente ? v.repiteUnidad : null,
-    inhabil: v.modoFecha === "especifica" && esFechaInhabil(v.fecha, parametros),
+    inhabil,
   };
 }
 
@@ -954,6 +964,8 @@ function SelectorProgramacion({ value, onChange, acciones, parametros, labelRecu
 
   const set = (patch) => onChange({ ...value, ...patch });
   const inhabil = value.modoFecha === "especifica" && esFechaInhabil(value.fecha, parametros);
+  const cruda = addPeriod(todayISO(), Number(value.cantidad) || 1, value.unidad);
+  const inhabilPeriodo = value.modoFecha === "periodo" && preview !== null && cruda !== preview;
 
   return (
     <>
@@ -976,8 +988,8 @@ function SelectorProgramacion({ value, onChange, acciones, parametros, labelRecu
         <>
           <Field label="¿Dentro de cuánto? (hora opcional)">
             <div className="flex gap-2">
-              <input type="number" min={1} className={inputCls} value={value.cantidad} onChange={(e) => set({ cantidad: e.target.value })} />
-              <select className={inputCls} value={value.unidad} onChange={(e) => set({ unidad: e.target.value })}>
+              <input type="number" min={1} className={inputCls} value={value.cantidad} onChange={(e) => set({ cantidad: e.target.value, confirmar: false })} />
+              <select className={inputCls} value={value.unidad} onChange={(e) => set({ unidad: e.target.value, confirmar: false })}>
                 <option value="dias">días</option>
                 <option value="semanas">semanas</option>
                 <option value="meses">meses</option>
@@ -989,6 +1001,11 @@ function SelectorProgramacion({ value, onChange, acciones, parametros, labelRecu
             <p className="text-xs text-[#6B6352] mb-3 -mt-2 bg-[#EFEBE0] rounded-sm px-2.5 py-1.5">
               Fecha sugerida: <span className="font-bold">{fmtDate(preview)}</span> (ajustada para no caer en día no hábil ni en un día muy cargado)
             </p>
+          )}
+          {inhabilPeriodo && (
+            <div className="bg-[#FBEEE7] border border-[var(--tema-acento)] rounded-sm p-2.5 mb-3">
+              <p className="text-xs text-[#2A2118]">Esa fecha cae en un día no hábil o muy cargado — por eso se sugiere la de arriba. Si guardás de nuevo, se usa la fecha original del período igual.</p>
+            </div>
           )}
           <div className="mb-3"><AvisoFields aviso={value.aviso} onAviso={(a) => set({ aviso: a })} /></div>
         </>
@@ -2121,6 +2138,8 @@ export default function CRM({ userId, onLogout }) {
 // Próximos, cada tramo de semanas, y el bloque "Sin fecha") — un evento pertenece a una sola.
 const TIPOS_EVENTO_RESUMEN = ["tarea", "subtarea", "accionTarea", "seguimiento"];
 const TITULOS_EVENTO_RESUMEN = { tarea: "Tareas", subtarea: "Subtareas", accionTarea: "Acciones en tareas", seguimiento: "Seguimientos" };
+const DIAS_SEMANA_LARGO = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
+const nombreDia = (iso) => DIAS_SEMANA_LARGO[(parseISO(iso).getDay() + 6) % 7];
 
 function ResumenHoyModal({ core, acciones, onOpen, onClose }) {
   const t = todayISO();
@@ -2129,7 +2148,10 @@ function ResumenHoyModal({ core, acciones, onOpen, onClose }) {
   const lunesProximo = toISO(addDays(startOfWeekMonday(hoyDate), 7));
   const semanasPaso = Math.max(1, core.parametros.semanasProximas ?? 2);
   const semanaMonday = (k) => addDaysISO(lunesProximo, (k - 1) * 7);
-  const semanaFriday = (k) => addDaysISO(semanaMonday(k), 4);
+  // Un tramo cubre la semana completa (lunes a domingo), no solo lunes a viernes — así una
+  // acción que el usuario insistió en dejar en sábado/domingo (ver resolverProgramacion) no
+  // queda invisible entre un tramo y el siguiente.
+  const semanaSunday = (k) => addDaysISO(semanaMonday(k), 6);
 
   const [tramosCount, setTramosCount] = useState(0);
   const [mostroTodas, setMostroTodas] = useState(false);
@@ -2171,24 +2193,29 @@ function ResumenHoyModal({ core, acciones, onOpen, onClose }) {
   const tramos = [];
   for (let c = 1; c <= tramosCount; c++) {
     const desde = semanaMonday((c - 1) * semanasPaso + 1);
-    const hasta = semanaFriday(c * semanasPaso);
+    const hasta = semanaSunday(c * semanasPaso);
     tramos.push({ desde, hasta, items: eventos.filter((e) => e.fecha >= desde && e.fecha <= hasta).sort(porFecha) });
   }
 
-  const limiteVisibleSuperior = tramosCount === 0 ? lunesProximo : semanaFriday(tramosCount * semanasPaso);
+  const limiteVisibleSuperior = tramosCount === 0 ? lunesProximo : semanaSunday(tramosCount * semanasPaso);
   const masAlla = eventos.filter((e) => e.fecha > limiteVisibleSuperior).sort(porFecha);
   const siguienteDesde = semanaMonday(tramosCount * semanasPaso + 1);
-  const siguienteHasta = semanaFriday((tramosCount + 1) * semanasPaso);
+  const siguienteHasta = semanaSunday((tramosCount + 1) * semanasPaso);
   const siguienteCount = masAlla.filter((e) => e.fecha >= siguienteDesde && e.fecha <= siguienteHasta).length;
+
+  // Prefijo de fecha/hora al comienzo del primer renglón — chico y sin negrita (mismo
+  // tamaño/color que el segundo renglón) para que no compita con el título. Solo aplica a
+  // eventos con fecha (no se muestra en el bloque "Sin fecha").
+  const Prefijo = ({ fecha, hora }) => fecha ? <span className="font-normal text-xs text-[#6B6352]">{fmtDateHora(fecha, hora, core.parametros.formatoHora, true)} · </span> : null;
 
   const Fila = ({ e }) => {
     if (e.tipo === "tarea") {
       const hilo = e.hilo;
       return (
         <button onClick={() => { onClose(); onOpen("hilo", hilo.id); }} className="w-full text-left bg-white border border-[#E4DECF] rounded-sm p-2.5 mb-1.5">
-          <p className="text-sm font-semibold text-[#2A2118] truncate">{textoPlanoDeMenciones(hilo.titulo)}</p>
-          {(hilo.hora || (hilo.notas || []).length > 0) && (
-            <p className="text-xs text-[#6B6352] truncate">{textoPlanoDeMenciones([hilo.hora, (hilo.notas || []).at(-1)?.texto].filter(Boolean).join(" · "))}</p>
+          <p className="text-sm font-semibold text-[#2A2118] truncate"><Prefijo fecha={e.fecha} hora={hilo.hora} />{textoPlanoDeMenciones(hilo.titulo)}</p>
+          {(hilo.notas || []).length > 0 && (
+            <p className="text-xs text-[#6B6352] truncate">{textoPlanoDeMenciones((hilo.notas || []).at(-1)?.texto)}</p>
           )}
         </button>
       );
@@ -2197,8 +2224,8 @@ function ResumenHoyModal({ core, acciones, onOpen, onClose }) {
       const hilo = e.hilo, s = e.subtarea;
       return (
         <button onClick={() => { onClose(); onOpen("hilo", hilo.id); }} className="w-full text-left bg-white border border-[#E4DECF] rounded-sm p-2.5 mb-1.5">
-          <p className="text-sm font-semibold text-[#2A2118] truncate">{textoPlanoDeMenciones(s.texto)}</p>
-          <p className="text-xs text-[#6B6352] truncate">{textoPlanoDeMenciones([hilo.titulo, s.hora].filter(Boolean).join(" · "))}</p>
+          <p className="text-sm font-semibold text-[#2A2118] truncate"><Prefijo fecha={e.fecha} hora={s.hora} />{textoPlanoDeMenciones(s.texto)}</p>
+          <p className="text-xs text-[#6B6352] truncate">{textoPlanoDeMenciones(hilo.titulo)}</p>
         </button>
       );
     }
@@ -2210,7 +2237,7 @@ function ResumenHoyModal({ core, acciones, onOpen, onClose }) {
     const persona = esTarea ? null : personaPrincipalDeHilo(hilo, core);
     return (
       <button onClick={() => { onClose(); onOpen("hilo", hilo.id); }} className="w-full text-left bg-white border border-[#E4DECF] rounded-sm p-2.5 mb-1.5">
-        <p className="text-sm font-semibold text-[#2A2118] truncate">{textoPlanoDeMenciones(esTarea ? hilo.titulo : (persona?.nombre || hilo.titulo))}</p>
+        <p className="text-sm font-semibold text-[#2A2118] truncate"><Prefijo fecha={e.fecha} hora={a.horaProgramada} />{textoPlanoDeMenciones(esTarea ? hilo.titulo : (persona?.nombre || hilo.titulo))}</p>
         <p className="text-xs text-[#6B6352] truncate">{textoPlanoDeMenciones([tipoAccion?.nombre, esTarea ? "" : hilo.titulo, a.notaPlanificada].filter(Boolean).join(" · "))}</p>
       </button>
     );
@@ -2247,7 +2274,7 @@ function ResumenHoyModal({ core, acciones, onOpen, onClose }) {
         <Bloque titulo="Próximos" items={proximosDefault} vacio="Nada programado por ahora." />
 
         {tramos.map((tr) => (
-          <Bloque key={tr.desde} titulo={`Del ${fmtDate(tr.desde)} al ${fmtDate(tr.hasta)}`} items={tr.items} vacio="Nada programado en este tramo." />
+          <Bloque key={tr.desde} titulo={`Del ${nombreDia(tr.desde)} ${fmtDate(tr.desde)} al ${nombreDia(tr.hasta)} ${fmtDate(tr.hasta)}`} items={tr.items} vacio="Nada programado en este tramo." />
         ))}
         {mostroTodas && <Bloque titulo="Todas las siguientes" items={masAlla} vacio="Nada más programado." />}
 
@@ -2440,7 +2467,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
     if (obrasDirectas.length + obrasDeEsasEmpresas.length > 0) setObraIds((ids) => [...new Set([...ids, ...obrasDirectas, ...obrasDeEsasEmpresas])]);
   };
 
-  const especificaInhabil = showPrimerContacto && programarProxima && prog.modoFecha === "especifica" && esFechaInhabil(prog.fecha, core.parametros);
+  const especificaInhabil = showPrimerContacto && programarProxima && resolverProgramacion(prog, acciones, core.parametros).inhabil;
   const faltaVinculo = seleccionMultiple
     ? personaIdsMultiple.length === 0
     : !personaFija && !empresaFijaId && !obraFijaId && !personaId && empresaIds.length === 0 && obraIds.length === 0;
@@ -2730,7 +2757,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
       <div className="flex gap-2">
         <button onClick={onCancelar} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
         <button onClick={submit} disabled={!titulo.trim() || faltaVinculo} className={`flex-1 rounded-sm py-2.5 font-bold text-sm ${!titulo.trim() || faltaVinculo ? "bg-[#E7E2D8] text-[#A69C88] cursor-not-allowed" : "bg-[var(--tema-acento)] text-[#2A2118]"}`}>
-          {especificaInhabil && confirmarEspecifica ? "Sí, crear igual" : seleccionMultiple ? `Crear ${personaIdsMultiple.length} hilo${personaIdsMultiple.length === 1 ? "" : "s"}` : "Crear hilo"}
+          {especificaInhabil && prog.confirmar ? "Sí, crear igual" : seleccionMultiple ? `Crear ${personaIdsMultiple.length} hilo${personaIdsMultiple.length === 1 ? "" : "s"}` : "Crear hilo"}
         </button>
       </div>
 
@@ -6244,7 +6271,7 @@ function AvanzarHiloForm({ hilo, pendienteActual, core, setCore, acciones, setAc
   }));
   const [prioridad, setPrioridad] = useState("Media");
 
-  const especificaInhabil = prog.modoFecha === "especifica" && esFechaInhabil(prog.fecha, core.parametros);
+  const especificaInhabil = resolverProgramacion(prog, acciones, core.parametros).inhabil;
 
   const guardar = () => {
     const hoy = todayISO();
