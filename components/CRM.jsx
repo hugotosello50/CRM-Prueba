@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.61.0";
+const APP_VERSION = "2.62.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -318,7 +318,7 @@ function normalizeCore(c) {
     return { ...rest, categoriaId: match ? match.id : out.categorias[0].id };
   });
   if (!Array.isArray(out.hilos)) out.hilos = [];
-  out.hilos = out.hilos.map((h) => ({ tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "", notas: [], recurrente: false, repiteCadaN: null, repiteUnidad: null, ...h }));
+  out.hilos = out.hilos.map((h) => ({ tipo: "cliente", columnaTareaId: null, columnaSeguimientoId: null, hiloRelacionadoId: null, notaCierre: "", notas: [], recurrente: false, repiteCadaN: null, repiteUnidad: null, ...h }));
   // Notas: pasó de campo de texto único a lista de notas — migra lo viejo a la lista.
   out.hilos = out.hilos.map((h) => ({ ...h, notas: Array.isArray(h.notas) ? h.notas : (h.notas ? [{ id: uid("NT"), texto: h.notas, fecha: h.fechaCreacion || todayISO() }] : []) }));
   out.personas = (out.personas || []).map((p) => ({ ...p, notas: Array.isArray(p.notas) ? p.notas : (p.notas ? [{ id: uid("NT"), texto: p.notas, fecha: todayISO() }] : []) }));
@@ -2392,7 +2392,7 @@ function AgendaView({ core, setCore, acciones, setAcciones, onOpen }) {
 // sea obligatorio desde el inicio. "personaFija" ata el hilo a esa persona (y habilita el
 // flujo de vincular empresa/obra a ese contacto); "empresaFijaId"/"obraFijaId" atan el hilo
 // a esa empresa/obra sin mostrar el select correspondiente.
-function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empresaFijaId, obraFijaId, onCreated, onCancelar }) {
+function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empresaFijaId, obraFijaId, columnaFijaId, onCreated, onCancelar }) {
   const [titulo, setTitulo] = useState("");
   const [personaId, setPersonaId] = useState("");
   // Al arrancar desde una persona o una empresa fijas, se precargan también todas las
@@ -2500,7 +2500,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
     if (!titulo.trim() || faltaVinculo) return;
     const hoy = todayISO();
     const personaIdFinal = personaFija ? personaFija.id : personaId;
-    const nuevoHilo = { id: uid("H"), titulo: titulo.trim(), estado: "Activo", fechaCreacion: hoy, tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "", notas: [] };
+    const nuevoHilo = { id: uid("H"), titulo: titulo.trim(), estado: "Activo", fechaCreacion: hoy, tipo: "cliente", columnaTareaId: null, columnaSeguimientoId: columnaFijaId ?? null, hiloRelacionadoId: null, notaCierre: "", notas: [] };
     const nuevosVinculos = [
       ...(personaIdFinal ? [vinc("Persona", personaIdFinal, "Hilo", nuevoHilo.id, null, true, hoy)] : []),
       ...empresaIds.map((eid) => vinc("Hilo", nuevoHilo.id, "Empresa", eid, null, false, hoy)),
@@ -2522,7 +2522,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
   const crearMultiple = () => {
     if (!titulo.trim() || personaIdsMultiple.length === 0) return;
     const hoy = todayISO();
-    const nuevosHilos = personaIdsMultiple.map(() => ({ id: uid("H"), titulo: titulo.trim(), estado: "Activo", fechaCreacion: hoy, tipo: "cliente", columnaTareaId: null, hiloRelacionadoId: null, notaCierre: "", notas: [] }));
+    const nuevosHilos = personaIdsMultiple.map(() => ({ id: uid("H"), titulo: titulo.trim(), estado: "Activo", fechaCreacion: hoy, tipo: "cliente", columnaTareaId: null, columnaSeguimientoId: columnaFijaId ?? null, hiloRelacionadoId: null, notaCierre: "", notas: [] }));
     const nuevosVinculos = personaIdsMultiple.map((pid, i) => vinc("Persona", pid, "Hilo", nuevosHilos[i].id, null, true, hoy));
     setCore((prev) => ({ ...prev, hilos: [...nuevosHilos, ...prev.hilos], vinculos: [...(prev.vinculos || []), ...nuevosVinculos] }));
 
@@ -3613,7 +3613,7 @@ function ExcelTabsBar({ core, tabs, activeId, incluirSinTab, sinColumnaNombre, o
 
 function KanbanView({ core, setCore, acciones, setAcciones, onOpen, t, soloTipo }) {
   const [columnaActiva, setColumnaActiva] = useState(null); // null = "Sin columna"
-  const [dragging, setDragging] = useState(null); // { grupo }
+  const [dragging, setDragging] = useState(null); // { grupo } (hilo con acción pendiente) o { hiloId } (sin acción)
   const [hoverColumnaId, setHoverColumnaId] = useState(undefined); // undefined = nada, "null" = Sin columna, o id
   const [bucket, setBucket] = useState("todas");
   const [orden, setOrden] = useState("asc");
@@ -3629,19 +3629,30 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, t, soloTipo 
     if (estadoFiltro === "inactivos") return h?.estado === "Cerrado";
     return h?.estado === "Activo";
   };
-  const pendientes = acciones.filter((a) => {
-    if (a.estado !== "Pendiente" || !a.fechaProgramada) return false;
-    const h = core.hilos.find((hh) => hh.id === a.hiloId);
-    if (!hiloPasaFiltroEstado(h)) return false;
-    if (!soloTipo) return true;
-    return (h?.tipo || "cliente") === soloTipo;
-  });
+  // El hilo es quien tiene la columna (columnaSeguimientoId) — igual que las tareas con
+  // columnaTareaId — así un hilo recién creado (o sin ninguna acción pendiente todavía) queda
+  // en la pestaña donde estaba parado el usuario, en vez de siempre en "Sin columna".
+  const hiloPasaFiltroTipo = (h) => !soloTipo || (h?.tipo || "cliente") === soloTipo;
+  const contarColumna = (colId) => core.hilos.filter((h) => hiloPasaFiltroEstado(h) && hiloPasaFiltroTipo(h) && (h.columnaSeguimientoId || null) === colId).length;
 
-  const contarColumna = (colId) => pendientes.filter((a) => (a.columnaId || null) === colId).length;
+  const hilosColumnaActiva = useMemo(
+    () => core.hilos.filter((h) => hiloPasaFiltroEstado(h) && hiloPasaFiltroTipo(h) && (h.columnaSeguimientoId || null) === columnaActiva),
+    [core.hilos, soloTipo, columnaActiva, estadoFiltro]
+  );
+
+  const pendientesPorHiloId = useMemo(() => {
+    const map = new Map();
+    for (const a of acciones) {
+      if (a.estado !== "Pendiente" || !a.fechaProgramada) continue;
+      if (!map.has(a.hiloId)) map.set(a.hiloId, []);
+      map.get(a.hiloId).push(a);
+    }
+    return map;
+  }, [acciones]);
 
   const pendientesColumna = useMemo(
-    () => pendientes.filter((a) => (a.columnaId || null) === columnaActiva),
-    [pendientes, columnaActiva]
+    () => hilosColumnaActiva.flatMap((h) => pendientesPorHiloId.get(h.id) || []),
+    [hilosColumnaActiva, pendientesPorHiloId]
   );
 
   const buckets = useMemo(() => {
@@ -3671,24 +3682,17 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, t, soloTipo 
     [gruposPorHilo, agruparPersona, core, orden]
   );
 
-  // Hilos activos que todavía no tienen ninguna acción pendiente programada — sin esto,
-  // quedan invisibles en Seguimientos aunque existan (solo se ven desde la ficha de origen).
-  // Las acciones no tienen columnaId hasta que se les asigna una, así que este bloque solo
-  // aplica en "Sin columna".
-  const hilosSinAccion = useMemo(() => {
-    if (columnaActiva !== null) return [];
-    return core.hilos.filter((h) => {
-      if (!hiloPasaFiltroEstado(h)) return false;
-      if (soloTipo && (h.tipo || "cliente") !== soloTipo) return false;
-      return !acciones.some((a) => a.hiloId === h.id && a.estado === "Pendiente");
-    });
-  }, [core.hilos, acciones, soloTipo, columnaActiva, estadoFiltro]);
+  // Hilos de la pestaña activa que todavía no tienen ninguna acción pendiente programada —
+  // visible en cualquier pestaña ahora (antes solo existía el concepto en "Sin columna").
+  const hilosSinAccion = useMemo(
+    () => hilosColumnaActiva.filter((h) => !pendientesPorHiloId.has(h.id)),
+    [hilosColumnaActiva, pendientesPorHiloId]
+  );
 
   useEffect(() => { hoverRef.current = hoverColumnaId; }, [hoverColumnaId]);
 
-  const moverGrupo = (grupo, colId) => {
-    const ids = grupo.map((a) => a.id);
-    setAcciones((prev) => prev.map((a) => (ids.includes(a.id) ? { ...a, columnaId: colId } : a)));
+  const moverColumnaHilo = (hiloId, colId) => {
+    setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === hiloId ? { ...h, columnaSeguimientoId: colId } : h)) }));
   };
 
   useEffect(() => {
@@ -3707,7 +3711,9 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, t, soloTipo 
     const onUp = () => {
       const target = hoverRef.current;
       if (target !== undefined) {
-        moverGrupo(dragging.grupo, target === "null" ? null : target);
+        const colId = target === "null" ? null : target;
+        const hiloId = dragging.grupo ? dragging.grupo[0].hiloId : dragging.hiloId;
+        moverColumnaHilo(hiloId, colId);
       }
       setDragging(null);
       setHoverColumnaId(undefined);
@@ -3801,9 +3807,9 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, t, soloTipo 
       <div className="border-t border-[#E4DECF] mb-3" />
     </div>
 
-      {gruposActivos.length === 0 ? (
+      {gruposActivos.length === 0 && hilosSinAccion.length === 0 ? (
         <EmptyState icon={<Trello size={26} />} text={`No hay hilos en "${nombreColumnaActiva}" con este filtro. Arrastrá una tarjeta desde otra pestaña usando el ícono ⠿, o probá otro filtro de fecha.`} />
-      ) : (
+      ) : gruposActivos.length > 0 ? (
         <div>
           {gruposActivos.map((grupo, i) => (
             <Fragment key={grupo[0].id}>
@@ -3822,7 +3828,7 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, t, soloTipo 
             </Fragment>
           ))}
         </div>
-      )}
+      ) : null}
 
       {hilosSinAccion.length > 0 && (
         <div className="mt-4">
@@ -3832,7 +3838,16 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, t, soloTipo 
             {hilosSinAccion.map((h, i) => (
               <Fragment key={h.id}>
                 {i > 0 && <div className="flex justify-center py-2"><span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: core.tema.botonActivo }} /></div>}
-                <HiloAgendaCard hilo={h} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onOpen={onOpen} />
+                <HiloAgendaCard
+                  hilo={h}
+                  core={core}
+                  setCore={setCore}
+                  acciones={acciones}
+                  setAcciones={setAcciones}
+                  onOpen={onOpen}
+                  onIniciarDrag={() => setDragging({ hiloId: h.id })}
+                  arrastrando={dragging?.hiloId === h.id}
+                />
               </Fragment>
             ))}
           </div>
@@ -3846,6 +3861,7 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, t, soloTipo 
             setCore={setCore}
             acciones={acciones}
             setAcciones={setAcciones}
+            columnaFijaId={columnaActiva}
             onCreated={(hiloId) => { setShowNuevoHilo(false); onOpen("hilo", hiloId); }}
             onCancelar={() => setShowNuevoHilo(false)}
           />
@@ -6410,9 +6426,7 @@ function AvanzarHiloForm({ hilo, pendienteActual, core, setCore, acciones, setAc
 
       if (programarProxima) {
         const idNueva = uid("A");
-        // Hereda la columna del Kanban de la acción que se acaba de completar, para que el
-        // hilo no se vaya a "Sin columna" al continuarlo (ver AvanzarHiloForm).
-        next = [{ id: idNueva, hiloId: hilo.id, tipoAccionId: tipoAccionId2, estado: "Pendiente", fechaRealizada: "", fechaProgramada: fecha, horaProgramada: hora, prioridad, notaPlanificada: notas2, notaHecho: "", origenId: idCompletada, destinoId: null, numero: siguienteNumero++, recurrente: r.recurrente, repiteCadaN: r.repiteCadaN, repiteUnidad: r.repiteUnidad, fechaCreacion: hoy, secuencia: Date.now() + 1, columnaId: pendienteActual?.columnaId ?? null, aviso, avisoEnviado: false, avisoVistoEnApp: false }, ...next];
+        next = [{ id: idNueva, hiloId: hilo.id, tipoAccionId: tipoAccionId2, estado: "Pendiente", fechaRealizada: "", fechaProgramada: fecha, horaProgramada: hora, prioridad, notaPlanificada: notas2, notaHecho: "", origenId: idCompletada, destinoId: null, numero: siguienteNumero++, recurrente: r.recurrente, repiteCadaN: r.repiteCadaN, repiteUnidad: r.repiteUnidad, fechaCreacion: hoy, secuencia: Date.now() + 1, aviso, avisoEnviado: false, avisoVistoEnApp: false }, ...next];
         next = next.map((a) => (a.id === idCompletada ? { ...a, destinoId: idNueva } : a));
       }
       return next;
