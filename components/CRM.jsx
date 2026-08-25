@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.59.0";
+const APP_VERSION = "2.60.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -2421,6 +2421,10 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
   const [seleccionMultiple, setSeleccionMultiple] = useState(false);
   const [personaIdsMultiple, setPersonaIdsMultiple] = useState([]);
   const [personaParaAgregar, setPersonaParaAgregar] = useState("");
+  // Crear una persona/empresa/obra nueva sin salir del formulario, si todavía no existe.
+  const [showNuevaPersona, setShowNuevaPersona] = useState(false);
+  const [showNuevaEmpresa, setShowNuevaEmpresa] = useState(false);
+  const [showNuevaObra, setShowNuevaObra] = useState(false);
 
   const [tipoAccionId1, setTipoAccionId1] = useState(tipoDefaultId(core));
   const [notas1, setNotas1] = useState("");
@@ -2571,6 +2575,20 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
               + Agregar
             </button>
           </div>
+          <button type="button" onClick={() => setShowNuevaPersona(true)} className="w-full border border-[#E4DECF] rounded-sm py-2 font-bold text-xs text-[#2A2118] mt-2">+ Crear persona nueva</button>
+          {showNuevaPersona && (
+            <PersonaForm
+              initial={{}}
+              core={core}
+              setCore={setCore}
+              onClose={() => setShowNuevaPersona(false)}
+              onSave={(data) => {
+                setCore((prev) => ({ ...prev, personas: [data, ...prev.personas] }));
+                setPersonaIdsMultiple((ids) => [...ids, data.id]);
+                setShowNuevaPersona(false);
+              }}
+            />
+          )}
         </Field>
       ) : (
         !personaFija && (
@@ -2582,6 +2600,20 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
               vacioLabel="— ninguna —"
               placeholder="Buscar persona..."
             />
+            <button type="button" onClick={() => setShowNuevaPersona(true)} className="w-full border border-[#E4DECF] rounded-sm py-2 font-bold text-xs text-[#2A2118] mt-2">+ Crear persona nueva</button>
+            {showNuevaPersona && (
+              <PersonaForm
+                initial={{}}
+                core={core}
+                setCore={setCore}
+                onClose={() => setShowNuevaPersona(false)}
+                onSave={(data) => {
+                  setCore((prev) => ({ ...prev, personas: [data, ...prev.personas] }));
+                  elegirPersona(data.id);
+                  setShowNuevaPersona(false);
+                }}
+              />
+            )}
           </Field>
         )
       )}
@@ -2632,6 +2664,26 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
           })()}
           {personaFija && (
             <button type="button" onClick={() => setShowVincularEmpresa(true)} className="text-xs font-bold text-[var(--tema-vinculo)] mt-1.5">+ Vincular otra empresa a este contacto</button>
+          )}
+          <button type="button" onClick={() => setShowNuevaEmpresa(true)} className="w-full border border-[#E4DECF] rounded-sm py-2 font-bold text-xs text-[#2A2118] mt-2">+ Crear empresa nueva</button>
+          {showNuevaEmpresa && (
+            <EmpresaForm
+              initial={{}}
+              core={core}
+              setCore={setCore}
+              onClose={() => setShowNuevaEmpresa(false)}
+              onSave={(data, vinculoPersona) => {
+                setCore((prev) => ({ ...prev, empresas: [data, ...prev.empresas] }));
+                agregarEmpresa(data.id);
+                if (vinculoPersona?.personaId) {
+                  setCore((prev) => ({
+                    ...prev,
+                    vinculos: [...(prev.vinculos || []), vinc("Persona", vinculoPersona.personaId, "Empresa", data.id, vinculoPersona.tipoRelacionId || null, true, todayISO())],
+                  }));
+                }
+                setShowNuevaEmpresa(false);
+              }}
+            />
           )}
         </Field>
       )}
@@ -2689,6 +2741,26 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
             >
               + Vincular obra a una empresa
             </button>
+          )}
+          <button type="button" onClick={() => setShowNuevaObra(true)} className="w-full border border-[#E4DECF] rounded-sm py-2 font-bold text-xs text-[#2A2118] mt-2">+ Crear obra nueva</button>
+          {showNuevaObra && (
+            <ObraForm
+              initial={{}}
+              core={core}
+              setCore={setCore}
+              onClose={() => setShowNuevaObra(false)}
+              onSave={(data, vinculoEmpresa) => {
+                setCore((prev) => ({ ...prev, obras: [data, ...prev.obras] }));
+                agregarObra(data.id);
+                if (vinculoEmpresa?.empresaId) {
+                  setCore((prev) => ({
+                    ...prev,
+                    vinculos: [...(prev.vinculos || []), vinc("Empresa", vinculoEmpresa.empresaId, "Obra", data.id, TR_DUENA, false, todayISO())],
+                  }));
+                }
+                setShowNuevaObra(false);
+              }}
+            />
           )}
         </Field>
       )}
