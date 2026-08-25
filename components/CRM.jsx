@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.56.0";
+const APP_VERSION = "2.57.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -210,7 +210,7 @@ const seedCore = () => ({
     { id: uid("et"), etiquetaId: "ET03", entidadTipo: "Empresa", entidadId: "E001" },
     { id: uid("et"), etiquetaId: "ET02", entidadTipo: "Obra", entidadId: "O001" },
   ],
-  parametros: { umbralDiaLleno: 8, diasHabiles: [1, 2, 3, 4, 5], fechasNoHabiles: [], diasUrgente: 3, diasProximos: 7, googleContactsLabel: "CRM", tituloApp: "Seguimiento comercial", nombreSinColumnaSeguimientos: "Sin columna", nombreSinColumnaTareas: "Sin columna", formatoHora: "24", tituloSeccionTamano: "Chico", tituloSeccionNegrita: true, avisoDefaultSeguimientos: { activo: false, cantidad: 30, unidad: "minutos" }, avisoDefaultTareas: { activo: false, cantidad: 30, unidad: "minutos" } },
+  parametros: { umbralDiaLleno: 8, diasHabiles: [1, 2, 3, 4, 5], fechasNoHabiles: [], diasUrgente: 3, diasProximos: 7, semanasProximas: 2, googleContactsLabel: "CRM", tituloApp: "Seguimiento comercial", nombreSinColumnaSeguimientos: "Sin columna", nombreSinColumnaTareas: "Sin columna", formatoHora: "24", tituloSeccionTamano: "Chico", tituloSeccionNegrita: true, avisoDefaultSeguimientos: { activo: false, cantidad: 30, unidad: "minutos" }, avisoDefaultTareas: { activo: false, cantidad: 30, unidad: "minutos" } },
   tema: { ...TEMA_DEFAULT },
   kanbanColumnas: [
     { id: "K1", nombre: "Por hacer", orden: 0 },
@@ -1825,10 +1825,15 @@ export default function CRM({ userId, onLogout }) {
   const hayResumenParaMostrar = (c, a) => {
     if (!c || !a) return false;
     const t = todayISO();
-    const limiteProximos = addDaysISO(t, c.parametros.diasProximos ?? 7);
-    const hayAccionPendiente = a.some((acc) => acc.estado === "Pendiente" && acc.fechaProgramada && acc.fechaProgramada <= limiteProximos);
-    const hayTareaConFecha = c.hilos.some((h) => h.tipo === "tarea" && h.estado === "Activo" && h.fecha && h.fecha <= limiteProximos);
-    return hayAccionPendiente || hayTareaConFecha;
+    // Misma ventana que muestra ResumenHoyModal por defecto: hoy + resto de esta semana + el
+    // lunes que viene (más, sin límite, cualquier cosa vencida).
+    const finSemana = toISO(addDays(startOfWeekMonday(parseISO(t)), 4));
+    const lunes = toISO(addDays(startOfWeekMonday(parseISO(t)), 7));
+    const enVentana = (fecha) => fecha <= finSemana || fecha === lunes;
+    const hayAccionPendiente = a.some((acc) => acc.estado === "Pendiente" && acc.fechaProgramada && enVentana(acc.fechaProgramada));
+    const hayTareaConFecha = c.hilos.some((h) => h.tipo === "tarea" && h.estado === "Activo" && h.fecha && enVentana(h.fecha));
+    const haySubtareaConFecha = c.hilos.some((h) => h.tipo === "tarea" && h.estado === "Activo" && (h.subtareas || []).some((s) => !s.hecha && s.fecha && enVentana(s.fecha)));
+    return hayAccionPendiente || hayTareaConFecha || haySubtareaConFecha;
   };
 
   // Busca, en los datos mismos (no en cómo se volvió a la app), el primer aviso que el
@@ -2112,36 +2117,75 @@ export default function CRM({ userId, onLogout }) {
   );
 }
 
+// Orden y títulos fijos de las 4 sub-secciones que arma un bloque de fecha (Hoy, Vencidas,
+// Próximos, cada tramo de semanas, y el bloque "Sin fecha") — un evento pertenece a una sola.
+const TIPOS_EVENTO_RESUMEN = ["tarea", "subtarea", "accionTarea", "seguimiento"];
+const TITULOS_EVENTO_RESUMEN = { tarea: "Tareas", subtarea: "Subtareas", accionTarea: "Acciones en tareas", seguimiento: "Seguimientos" };
+
 function ResumenHoyModal({ core, acciones, onOpen, onClose }) {
   const t = todayISO();
-  const diasProximos = core.parametros.diasProximos ?? 7;
-  const limiteProximos = addDaysISO(t, diasProximos);
+  const hoyDate = parseISO(t);
+  const finSemanaActual = toISO(addDays(startOfWeekMonday(hoyDate), 4));
+  const lunesProximo = toISO(addDays(startOfWeekMonday(hoyDate), 7));
+  const semanasPaso = Math.max(1, core.parametros.semanasProximas ?? 2);
+  const semanaMonday = (k) => addDaysISO(lunesProximo, (k - 1) * 7);
+  const semanaFriday = (k) => addDaysISO(semanaMonday(k), 4);
+
+  const [tramosCount, setTramosCount] = useState(0);
+  const [mostroTodas, setMostroTodas] = useState(false);
+  const [verSinFecha, setVerSinFecha] = useState(false);
 
   const esTareaAccion = (a) => core.hilos.find((h) => h.id === a.hiloId)?.tipo === "tarea";
 
-  // Un "evento" es, o bien una acción pendiente (de un seguimiento o del hilo interno de
-  // una tarea), o bien la fecha propia de una tarea simple (hilo.fecha) — se combinan en
-  // una sola lista para armar los tres grupos de abajo.
-  const eventosDeAccion = acciones
-    .filter((a) => a.estado === "Pendiente" && a.fechaProgramada)
-    .map((a) => ({ key: `a-${a.id}`, fecha: a.fechaProgramada, esTarea: esTareaAccion(a), accion: a }));
-  const eventosDeTarea = core.hilos
-    .filter((h) => h.tipo === "tarea" && h.estado === "Activo" && h.fecha)
-    .map((h) => ({ key: `h-${h.id}`, fecha: h.fecha, esTarea: true, hilo: h }));
-  const eventos = [...eventosDeAccion, ...eventosDeTarea];
+  // Un "evento" es una acción pendiente (de un seguimiento o del hilo interno de una tarea),
+  // la fecha propia de una tarea simple (hilo.fecha), o una subtarea pendiente con fecha.
+  const eventos = [];
+  for (const a of acciones) {
+    if (a.estado === "Pendiente" && a.fechaProgramada) eventos.push({ key: `a-${a.id}`, fecha: a.fechaProgramada, tipo: esTareaAccion(a) ? "accionTarea" : "seguimiento", accion: a });
+  }
+  for (const h of core.hilos) {
+    if (h.tipo !== "tarea" || h.estado !== "Activo") continue;
+    if (h.fecha) eventos.push({ key: `h-${h.id}`, fecha: h.fecha, tipo: "tarea", hilo: h });
+    for (const s of h.subtareas || []) {
+      if (!s.hecha && s.fecha) eventos.push({ key: `st-${h.id}-${s.id}`, fecha: s.fecha, tipo: "subtarea", hilo: h, subtarea: s });
+    }
+  }
 
+  const sinFecha = [];
+  for (const a of acciones) {
+    if (a.estado === "Pendiente" && !a.fechaProgramada) sinFecha.push({ key: `a-${a.id}`, tipo: esTareaAccion(a) ? "accionTarea" : "seguimiento", accion: a });
+  }
+  for (const h of core.hilos) {
+    if (h.tipo !== "tarea" || h.estado !== "Activo") continue;
+    if (!h.fecha) sinFecha.push({ key: `h-${h.id}`, tipo: "tarea", hilo: h });
+    for (const s of h.subtareas || []) {
+      if (!s.hecha && !s.fecha) sinFecha.push({ key: `st-${h.id}-${s.id}`, tipo: "subtarea", hilo: h, subtarea: s });
+    }
+  }
+
+  const porFecha = (a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0);
   const hoy = eventos.filter((e) => e.fecha === t);
-  const vencidas = eventos.filter((e) => e.fecha < t).sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
-  const proximos = eventos.filter((e) => e.fecha > t && e.fecha <= limiteProximos).sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
+  const vencidas = eventos.filter((e) => e.fecha < t).sort(porFecha);
+  const proximosDefault = eventos.filter((e) => (e.fecha > t && e.fecha <= finSemanaActual) || (tramosCount === 0 && e.fecha === lunesProximo)).sort(porFecha);
+
+  const tramos = [];
+  for (let c = 1; c <= tramosCount; c++) {
+    const desde = semanaMonday((c - 1) * semanasPaso + 1);
+    const hasta = semanaFriday(c * semanasPaso);
+    tramos.push({ desde, hasta, items: eventos.filter((e) => e.fecha >= desde && e.fecha <= hasta).sort(porFecha) });
+  }
+
+  const limiteVisibleSuperior = tramosCount === 0 ? lunesProximo : semanaFriday(tramosCount * semanasPaso);
+  const masAlla = eventos.filter((e) => e.fecha > limiteVisibleSuperior).sort(porFecha);
+  const siguienteDesde = semanaMonday(tramosCount * semanasPaso + 1);
+  const siguienteHasta = semanaFriday((tramosCount + 1) * semanasPaso);
+  const siguienteCount = masAlla.filter((e) => e.fecha >= siguienteDesde && e.fecha <= siguienteHasta).length;
 
   const Fila = ({ e }) => {
-    if (e.hilo) {
+    if (e.tipo === "tarea") {
       const hilo = e.hilo;
       return (
-        <button
-          onClick={() => { onClose(); onOpen("hilo", hilo.id); }}
-          className="w-full text-left bg-white border border-[#E4DECF] rounded-sm p-2.5 mb-1.5"
-        >
+        <button onClick={() => { onClose(); onOpen("hilo", hilo.id); }} className="w-full text-left bg-white border border-[#E4DECF] rounded-sm p-2.5 mb-1.5">
           <p className="text-sm font-semibold text-[#2A2118] truncate">{textoPlanoDeMenciones(hilo.titulo)}</p>
           {(hilo.hora || (hilo.notas || []).length > 0) && (
             <p className="text-xs text-[#6B6352] truncate">{textoPlanoDeMenciones([hilo.hora, (hilo.notas || []).at(-1)?.texto].filter(Boolean).join(" · "))}</p>
@@ -2149,66 +2193,91 @@ function ResumenHoyModal({ core, acciones, onOpen, onClose }) {
         </button>
       );
     }
+    if (e.tipo === "subtarea") {
+      const hilo = e.hilo, s = e.subtarea;
+      return (
+        <button onClick={() => { onClose(); onOpen("hilo", hilo.id); }} className="w-full text-left bg-white border border-[#E4DECF] rounded-sm p-2.5 mb-1.5">
+          <p className="text-sm font-semibold text-[#2A2118] truncate">{textoPlanoDeMenciones(s.texto)}</p>
+          <p className="text-xs text-[#6B6352] truncate">{textoPlanoDeMenciones([hilo.titulo, s.hora].filter(Boolean).join(" · "))}</p>
+        </button>
+      );
+    }
     const a = e.accion;
     const hilo = core.hilos.find((h) => h.id === a.hiloId);
     if (!hilo) return null;
     const tipoAccion = core.tiposAccion.find((ta) => ta.id === a.tipoAccionId);
-    const esTarea = hilo.tipo === "tarea";
+    const esTarea = e.tipo === "accionTarea";
     const persona = esTarea ? null : personaPrincipalDeHilo(hilo, core);
     return (
-      <button
-        onClick={() => { onClose(); onOpen("hilo", hilo.id); }}
-        className="w-full text-left bg-white border border-[#E4DECF] rounded-sm p-2.5 mb-1.5"
-      >
+      <button onClick={() => { onClose(); onOpen("hilo", hilo.id); }} className="w-full text-left bg-white border border-[#E4DECF] rounded-sm p-2.5 mb-1.5">
         <p className="text-sm font-semibold text-[#2A2118] truncate">{textoPlanoDeMenciones(esTarea ? hilo.titulo : (persona?.nombre || hilo.titulo))}</p>
         <p className="text-xs text-[#6B6352] truncate">{textoPlanoDeMenciones([tipoAccion?.nombre, esTarea ? "" : hilo.titulo, a.notaPlanificada].filter(Boolean).join(" · "))}</p>
       </button>
     );
   };
 
-  // Separa un grupo (Hoy/Vencidas/Próximos) en Tareas y Seguimientos — solo muestra la
-  // etiqueta de la sub-lista que tiene contenido, y la línea entre ambas si hay las dos.
+  // Separa un bloque de fecha en las 4 sub-secciones (Tareas/Subtareas/Acciones en
+  // tareas/Seguimientos) — solo muestra las que tienen contenido.
   const Grupo = ({ items }) => {
-    const tareas = items.filter((e) => e.esTarea);
-    const seguimientos = items.filter((e) => !e.esTarea);
+    const grupos = TIPOS_EVENTO_RESUMEN.map((tipo) => ({ tipo, items: items.filter((e) => e.tipo === tipo) })).filter((g) => g.items.length > 0);
     return (
       <>
-        {tareas.length > 0 && (
-          <div className={seguimientos.length > 0 ? "mb-2" : ""}>
-            <p className="text-[10px] font-bold tracking-wide text-[#8A8272] mb-1">Tareas</p>
-            {tareas.map((e) => <Fila key={e.key} e={e} />)}
+        {grupos.map((g, i) => (
+          <div key={g.tipo} className={i > 0 ? "mt-2 pt-2 border-t border-[#EFEBE0]" : ""}>
+            <p className="text-[10px] font-bold tracking-wide text-[#8A8272] mb-1">{TITULOS_EVENTO_RESUMEN[g.tipo]}</p>
+            {g.items.map((e) => <Fila key={e.key} e={e} />)}
           </div>
-        )}
-        {seguimientos.length > 0 && (
-          <div className={tareas.length > 0 ? "border-t border-[#EFEBE0] pt-2" : ""}>
-            <p className="text-[10px] font-bold tracking-wide text-[#8A8272] mb-1">Seguimientos</p>
-            {seguimientos.map((e) => <Fila key={e.key} e={e} />)}
-          </div>
-        )}
+        ))}
       </>
     );
   };
 
+  const Bloque = ({ titulo, tono, items, vacio }) => (
+    <div className="mb-3">
+      <p className={`text-sm font-bold tracking-wide mb-1.5 ${tono || "text-[#6B6352]"}`}>{titulo}{items.length > 0 ? ` (${items.length})` : ""}</p>
+      {items.length === 0 ? <p className="text-xs text-[#A69C88]">{vacio}</p> : <Grupo items={items} />}
+    </div>
+  );
+
   return (
     <Modal title="Resumen de hoy" onClose={onClose}>
       <div>
-        <p className="text-sm font-bold tracking-wide text-[#6B6352] mb-1.5">Hoy{hoy.length > 0 ? ` (${hoy.length})` : ""}</p>
-        {hoy.length === 0 ? (
-          <p className="text-xs text-[#A69C88] mb-3">Nada programado para hoy.</p>
-        ) : (
-          <div className="mb-3"><Grupo items={hoy} /></div>
+        <Bloque titulo="Hoy" items={hoy} vacio="Nada programado para hoy." />
+        <Bloque titulo="Vencidas" tono="text-[var(--tema-urgenciaVencida)]" items={vencidas} vacio="No hay pendientes vencidas." />
+        <Bloque titulo="Próximos" items={proximosDefault} vacio="Nada programado por ahora." />
+
+        {tramos.map((tr) => (
+          <Bloque key={tr.desde} titulo={`Del ${fmtDate(tr.desde)} al ${fmtDate(tr.hasta)}`} items={tr.items} vacio="Nada programado en este tramo." />
+        ))}
+        {mostroTodas && <Bloque titulo="Todas las siguientes" items={masAlla} vacio="Nada más programado." />}
+
+        {!mostroTodas && (
+          masAlla.length === 0 ? (
+            <p className="text-xs text-[#A69C88] text-center mb-3">No hay más actividades hacia adelante.</p>
+          ) : (
+            <div className="flex gap-2 mb-3">
+              <button onClick={() => setTramosCount((c) => c + 1)} className="flex-1 border border-[#D8D2C4] rounded-sm py-2 text-xs font-bold text-[#2A2118]">
+                Mostrar próximas {semanasPaso} semana{semanasPaso === 1 ? "" : "s"}{siguienteCount > 0 ? ` (${siguienteCount})` : ""}
+              </button>
+              <button onClick={() => setMostroTodas(true)} className="flex-1 border border-[#D8D2C4] rounded-sm py-2 text-xs font-bold text-[#2A2118]">
+                Mostrar todas las siguientes ({masAlla.length})
+              </button>
+            </div>
+          )
         )}
-        <p className="text-sm font-bold tracking-wide text-[var(--tema-urgenciaVencida)] mb-1.5">Vencidas{vencidas.length > 0 ? ` (${vencidas.length})` : ""}</p>
-        {vencidas.length === 0 ? (
-          <p className="text-xs text-[#A69C88] mb-3">No hay pendientes vencidas.</p>
-        ) : (
-          <div className="mb-3"><Grupo items={vencidas} /></div>
-        )}
-        <p className="text-sm font-bold tracking-wide text-[#6B6352] mb-1.5">Próximos {diasProximos} días{proximos.length > 0 ? ` (${proximos.length})` : ""}</p>
-        {proximos.length === 0 ? (
-          <p className="text-xs text-[#A69C88]">Nada programado para los próximos {diasProximos} días.</p>
-        ) : (
-          <Grupo items={proximos} />
+
+        <button
+          type="button"
+          onClick={() => setVerSinFecha((v) => !v)}
+          className="w-full flex items-center justify-center gap-1 text-xs font-bold text-[var(--tema-vinculo)] border-t border-[#EFEBE0] pt-2"
+        >
+          {verSinFecha ? "Ocultar actividades sin fecha" : "Mostrar actividades sin fecha"}
+          <ChevronRight size={13} className={`transition-transform ${verSinFecha ? "rotate-90" : ""}`} />
+        </button>
+        {verSinFecha && (
+          <div className="mt-2">
+            {sinFecha.length === 0 ? <p className="text-xs text-[#A69C88]">No hay actividades sin fecha.</p> : <Grupo items={sinFecha} />}
+          </div>
         )}
       </div>
     </Modal>
@@ -8217,6 +8286,7 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
   const setUmbral = (v) => setCore((prev) => ({ ...prev, parametros: { ...prev.parametros, umbralDiaLleno: Number(v) || 1 } }));
   const setDiasUrgente = (v) => setCore((prev) => ({ ...prev, parametros: { ...prev.parametros, diasUrgente: Math.max(0, Number(v) || 0) } }));
   const setDiasProximos = (v) => setCore((prev) => ({ ...prev, parametros: { ...prev.parametros, diasProximos: Math.max(1, Number(v) || 1) } }));
+  const setSemanasProximas = (v) => setCore((prev) => ({ ...prev, parametros: { ...prev.parametros, semanasProximas: Math.max(1, Number(v) || 1) } }));
   const setGoogleContactsLabel = (v) => setCore((prev) => ({ ...prev, parametros: { ...prev.parametros, googleContactsLabel: v } }));
   const setTituloApp = (v) => setCore((prev) => ({ ...prev, parametros: { ...prev.parametros, tituloApp: v } }));
   const setFormatoHora = (v) => setCore((prev) => ({ ...prev, parametros: { ...prev.parametros, formatoHora: v } }));
@@ -8330,6 +8400,12 @@ function ConfigView({ core, setCore, acciones, setAcciones }) {
           <div className="bg-white border border-[#E4DECF] rounded-sm p-4">
             <Field label='Pestaña "N días" del Kanban — cuántos días hacia adelante incluye (contando hoy)'>
               <input type="number" min={1} className={inputCls} value={core.parametros.diasProximos ?? 7} onChange={(e) => setDiasProximos(e.target.value)} />
+            </Field>
+          </div>
+
+          <div className="bg-white border border-[#E4DECF] rounded-sm p-4">
+            <Field label='"Resumen de hoy" — cuántas semanas hacia adelante carga cada vez que tocás "Mostrar próximas semanas"'>
+              <input type="number" min={1} className={inputCls} value={core.parametros.semanasProximas ?? 2} onChange={(e) => setSemanasProximas(e.target.value)} />
             </Field>
           </div>
 
