@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.58.0";
+const APP_VERSION = "2.59.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -4421,7 +4421,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
         )}
         {verAdjuntos && (
           <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
-            <AdjuntosDeHilo hilo={hilo} hiloId={id} core={core} setCore={setCore} setConfirmar={setConfirmar} />
+            <AdjuntosDeEntidad core={core} setCore={setCore} entidadTipo="Hilo" entidadId={id} />
           </div>
         )}
         {verResumen && (
@@ -4639,7 +4639,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       )}
       {verAdjuntos && (
         <div className="mt-2.5 pt-2.5 border-t border-dashed border-[#E4DECF]">
-          <AdjuntosDeHilo hilo={hilo} hiloId={id} core={core} setCore={setCore} setConfirmar={setConfirmar} />
+          <AdjuntosDeEntidad core={core} setCore={setCore} entidadTipo="Hilo" entidadId={id} />
         </div>
       )}
       {verResumen && (
@@ -5282,6 +5282,7 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
   const [showNuevaNota, setShowNuevaNota] = useState(false);
   const [editingNota, setEditingNota] = useState(null);
   const [deletingNotaId, setDeletingNotaId] = useState(null);
+  const [verAdjuntos, setVerAdjuntos] = useState(false);
 
   if (!persona) return <div><BackHeader onClose={onClose} /><p className="text-sm text-[#8A8272]">Esta persona ya no existe.</p></div>;
 
@@ -5389,6 +5390,15 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
                 </div>
               )}
               <button onClick={() => setShowAgregarTareaEntidad(true)} className="text-xs font-bold text-[var(--tema-vinculo)] flex items-center gap-1 mt-3"><Plus size={12} /> Tarea</button>
+            </div>
+          )}
+        </div>
+
+        <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
+          <PillToggle activo={verAdjuntos} marcado={(persona.adjuntos || []).length > 0} onClick={() => setVerAdjuntos((v) => !v)}>Adjuntos</PillToggle>
+          {verAdjuntos && (
+            <div className="mt-2.5">
+              <AdjuntosDeEntidad core={core} setCore={setCore} entidadTipo="Persona" entidadId={id} />
             </div>
           )}
         </div>
@@ -5796,22 +5806,30 @@ function VinculosDeHilo({ hilo, hiloId, core, setCore, onOpen, agregarPersona, s
   );
 }
 
-// Adjuntos de un hilo (Seguimientos y Tareas): PDF, imágenes, Excel y Word, guardados en el
-// bucket privado "adjuntos" de Supabase Storage (ver supabase/schema.sql). Solo se guarda el
-// archivo en sí en Storage; la metadata (nombre, tipo, tamaño, ruta, fecha) viaja dentro del
-// hilo, junto con el resto de sus datos.
-function AdjuntosDeHilo({ hilo, hiloId, core, setCore, setConfirmar }) {
+// Adjuntos de una entidad (Personas, Empresas, Obras, Seguimientos y Tareas): PDF, imágenes,
+// Excel y Word, guardados en el bucket privado "adjuntos" de Supabase Storage (ver
+// supabase/schema.sql); o links (sirve también para una dirección de Instagram u otra red).
+// Solo se guarda el archivo en sí en Storage; la metadata (nombre, tipo, tamaño/URL, ruta,
+// fecha) viaja dentro de la entidad, junto con el resto de sus datos. Componente de solo
+// contenido — no trae su propio "Ver/Ocultar": cada lugar que lo usa decide cómo mostrarlo
+// (fila de pills compartida en HiloAgendaCard, PillToggle propio en las demás fichas).
+const COLECCION_POR_TIPO_ADJUNTO = { Hilo: "hilos", Persona: "personas", Empresa: "empresas", Obra: "obras" };
+function AdjuntosDeEntidad({ core, setCore, entidadTipo, entidadId }) {
   const [subiendo, setSubiendo] = useState(false);
   const [error, setError] = useState("");
   const [agregandoLink, setAgregandoLink] = useState(false);
   const [linkNombre, setLinkNombre] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
+  const [deletingAdjunto, setDeletingAdjunto] = useState(null);
   const inputRef = useRef(null);
-  const adjuntos = hilo.adjuntos || [];
+
+  const coleccion = COLECCION_POR_TIPO_ADJUNTO[entidadTipo];
+  const entidad = core[coleccion].find((x) => x.id === entidadId);
+  const adjuntos = entidad?.adjuntos || [];
 
   const guardarAdjuntos = (nuevaLista) => setCore((prev) => ({
     ...prev,
-    hilos: prev.hilos.map((h) => (h.id === hiloId ? { ...h, adjuntos: nuevaLista } : h)),
+    [coleccion]: prev[coleccion].map((x) => (x.id === entidadId ? { ...x, adjuntos: nuevaLista } : x)),
   }));
 
   const subirArchivo = async (file) => {
@@ -5823,7 +5841,7 @@ function AdjuntosDeHilo({ hilo, hiloId, core, setCore, setConfirmar }) {
       if (!session) { setError("No se encontró la sesión — volvé a iniciar sesión."); return; }
       const adjuntoId = uid("ADJ");
       const nombreSanitizado = file.name.replace(/[^a-zA-Z0-9.\-_ ]/g, "_");
-      const path = `${session.user.id}/${hiloId}/${adjuntoId}-${nombreSanitizado}`;
+      const path = `${session.user.id}/${entidadTipo}-${entidadId}/${adjuntoId}-${nombreSanitizado}`;
       const { error: uploadError } = await supabase.storage.from("adjuntos").upload(path, file, { contentType: file.type || "application/octet-stream" });
       if (uploadError) { setError("No se pudo subir el archivo. Probá de nuevo."); return; }
       guardarAdjuntos([{ id: adjuntoId, nombre: file.name, tipo: file.type, tamano: file.size, path, subidoEn: todayISO() }, ...adjuntos]);
@@ -5862,7 +5880,7 @@ function AdjuntosDeHilo({ hilo, hiloId, core, setCore, setConfirmar }) {
       {agregandoLink && (
         <div className="bg-[#F7F5F0] border border-[#E4DECF] rounded-sm p-2.5 mb-2 space-y-1.5">
           <input className={inputCls} value={linkNombre} onChange={(e) => setLinkNombre(e.target.value)} placeholder="Nombre (opcional)" />
-          <input className={inputCls} value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} placeholder="https://..." autoFocus />
+          <input className={inputCls} value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} placeholder="https://... (por ejemplo, un perfil de Instagram)" autoFocus />
           <div className="flex gap-2">
             <button type="button" onClick={() => { setAgregandoLink(false); setLinkNombre(""); setLinkUrl(""); }} className="flex-1 border border-[#D8D2C4] rounded-sm py-1.5 text-xs font-bold text-[#6B6352]">Cancelar</button>
             <button type="button" onClick={agregarLink} disabled={!linkUrl.trim()} className="flex-1 bg-[var(--tema-acento)] text-[#2A2118] rounded-sm py-1.5 text-xs font-bold disabled:opacity-50">Agregar</button>
@@ -5881,7 +5899,7 @@ function AdjuntosDeHilo({ hilo, hiloId, core, setCore, setConfirmar }) {
                 <span className="truncate font-semibold text-[#2A2118]">{a.nombre}</span>
                 {a.tipo !== "link" && <span className="shrink-0 text-xs text-[#A69C88]">{formatBytes(a.tamano)}</span>}
               </button>
-              <IconBtn label="Eliminar adjunto" danger onClick={() => setConfirmar({ texto: `¿Eliminar "${a.nombre}"? No se puede deshacer.`, onConfirm: () => eliminarAdjunto(a) })}><Trash2 size={14} /></IconBtn>
+              <IconBtn label="Eliminar adjunto" danger onClick={() => setDeletingAdjunto(a)}><Trash2 size={14} /></IconBtn>
             </div>
           ))}
         </div>
@@ -5898,6 +5916,14 @@ function AdjuntosDeHilo({ hilo, hiloId, core, setCore, setConfirmar }) {
         className="hidden"
         onChange={(e) => { const f = e.target.files?.[0]; if (f) subirArchivo(f); e.target.value = ""; }}
       />
+      {deletingAdjunto && (
+        <ConfirmDeleteModal
+          title="Eliminar adjunto"
+          texto={`¿Eliminar "${deletingAdjunto.nombre}"? No se puede deshacer.`}
+          onCancel={() => setDeletingAdjunto(null)}
+          onConfirm={() => { eliminarAdjunto(deletingAdjunto); setDeletingAdjunto(null); }}
+        />
+      )}
     </div>
   );
 }
@@ -6921,6 +6947,7 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
   const [verCerrados, setVerCerrados] = useState(false);
   const [verTareas, setVerTareas] = useState(false);
   const [showAgregarTareaEntidad, setShowAgregarTareaEntidad] = useState(false);
+  const [verAdjuntos, setVerAdjuntos] = useState(false);
   if (!empresa) return <div><BackHeader onClose={onClose} /><p className="text-sm text-[#8A8272]">Esta empresa ya no existe.</p></div>;
 
   const cabecera = cabeceraDeEmpresa(id, core);
@@ -7016,6 +7043,15 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
             )}
           </div>
         )}
+
+        <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
+          <PillToggle activo={verAdjuntos} marcado={(empresa.adjuntos || []).length > 0} onClick={() => setVerAdjuntos((v) => !v)}>Adjuntos</PillToggle>
+          {verAdjuntos && (
+            <div className="mt-2.5">
+              <AdjuntosDeEntidad core={core} setCore={setCore} entidadTipo="Empresa" entidadId={id} />
+            </div>
+          )}
+        </div>
       </div>
 
       {showNuevoHiloEmpresa && (
@@ -7265,6 +7301,7 @@ function ObraDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
   const [verCerrados, setVerCerrados] = useState(false);
   const [verTareas, setVerTareas] = useState(false);
   const [showAgregarTareaEntidad, setShowAgregarTareaEntidad] = useState(false);
+  const [verAdjuntos, setVerAdjuntos] = useState(false);
   if (!obra) return <div><BackHeader onClose={onClose} /><p className="text-sm text-[#8A8272]">Esta obra ya no existe.</p></div>;
   const hilosIdsDeEstaObra = new Set(contrapartesDe(core, "Obra", id, "Hilo").map(({ c }) => c.id));
   const hilosDeEstaObra = core.hilos.filter((h) => hilosIdsDeEstaObra.has(h.id) && h.estado === "Activo" && h.tipo === "cliente");
@@ -7327,6 +7364,15 @@ function ObraDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
                 </div>
               )}
               <button onClick={() => setShowAgregarTareaEntidad(true)} className="text-xs font-bold text-[var(--tema-vinculo)] flex items-center gap-1 mt-3"><Plus size={12} /> Tarea</button>
+            </div>
+          )}
+        </div>
+
+        <div className="border-t border-dashed border-[#E4DECF] mt-3 pt-3">
+          <PillToggle activo={verAdjuntos} marcado={(obra.adjuntos || []).length > 0} onClick={() => setVerAdjuntos((v) => !v)}>Adjuntos</PillToggle>
+          {verAdjuntos && (
+            <div className="mt-2.5">
+              <AdjuntosDeEntidad core={core} setCore={setCore} entidadTipo="Obra" entidadId={id} />
             </div>
           )}
         </div>
