@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.63.2";
+const APP_VERSION = "2.63.3";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -2984,10 +2984,6 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
         <p className="text-xs text-[#A69C88] mt-2">La fecha y hora son opcionales — si no las cargás, la tarea se guarda igual.</p>
       </div>
 
-      <p className={`text-center text-xs font-bold text-[var(--tema-vinculo)] tracking-wide mb-1.5 ${dragging ? "animate-pulse opacity-100" : "opacity-0"}`}>
-        Soltá sobre una pestaña para mover la tarea
-      </p>
-
       <ExcelTabsBar
         core={core}
         tabs={columnas}
@@ -3467,6 +3463,9 @@ function useArrastreEntreColumnas({ tabsRef, onSoltar }) {
     if (!dragging) return;
     const BORDE = 44;
     const onMove = (e) => {
+      // Con una tarjeta agarrada, el único scroll permitido es el automático cerca de las
+      // pestañas — se frena el scroll nativo de la lista para que no compita con el arrastre.
+      if (e.cancelable) e.preventDefault();
       const p = e.touches ? e.touches[0] : e;
       setPointerPos({ x: p.clientX, y: p.clientY });
       let found;
@@ -3874,9 +3873,6 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, t, soloTipo 
   return (
     <div>
     <div className="sticky top-0 z-10 bg-[#F7F5F0]">
-      <p className={`text-center text-xs font-bold text-[var(--tema-vinculo)] tracking-wide mb-1.5 ${dragging ? "animate-pulse opacity-100" : "opacity-0"}`}>
-        Soltá sobre una pestaña para mover el hilo
-      </p>
       <ExcelTabsBar
         core={core}
         tabs={columnas}
