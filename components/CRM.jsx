@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.63.4";
+const APP_VERSION = "2.64.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -2058,7 +2058,7 @@ export default function CRM({ userId, onLogout }) {
               {tab === "tiposRelacion" && <TiposRelacionView core={core} setCore={setCore} />}
               {tab === "relaciones" && <RelacionesView core={core} setCore={setCore} onOpen={openDetail} />}
               {tab === "informes" && <InformesView core={core} acciones={acciones} />}
-              {tab === "buscar" && <BuscarView core={core} search={search} setSearch={setSearch} onOpen={openDetail} />}
+              {tab === "buscar" && <BuscarView core={core} acciones={acciones} search={search} setSearch={setSearch} onOpen={openDetail} />}
               {tab === "config" && <ConfigView core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} />}
             </ErrorBoundary>
           )}
@@ -7657,10 +7657,32 @@ function ObraDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
 // ---------------------------------------------------------------------------
 // Buscar
 // ---------------------------------------------------------------------------
-function BuscarView({ core, search, setSearch, onOpen }) {
-  const q = search.trim().toLowerCase();
-  const personas = q ? core.personas.filter((p) => p.nombre.toLowerCase().includes(q)) : [];
-  const empresasDirectas = q ? core.empresas.filter((e) => e.denominacion.toLowerCase().includes(q)) : [];
+// Cada palabra escrita tiene que aparecer en algún lado del texto, sin importar el orden —
+// mismo criterio tokenizado que ya usa BuscadorSelect (así "fid inm vall" encuentra
+// "Fideicomiso inmobiliario Altos del Valle" también acá).
+function coincideTokens(texto, qTokens) {
+  const t = textoPlanoDeMenciones(texto || "").toLowerCase();
+  return qTokens.every((tok) => t.includes(tok));
+}
+
+// Recorta el texto alrededor de la primera palabra buscada que aparece, para mostrar por qué
+// matcheó sin mostrar la nota/descripción entera.
+function extraerFragmento(texto, qTokens) {
+  const plano = textoPlanoDeMenciones(texto || "");
+  const low = plano.toLowerCase();
+  const posiciones = qTokens.map((tok) => low.indexOf(tok)).filter((i) => i >= 0);
+  const pos = posiciones.length ? Math.min(...posiciones) : 0;
+  const inicio = Math.max(0, pos - 20);
+  const fin = Math.min(plano.length, pos + 70);
+  return (inicio > 0 ? "…" : "") + plano.slice(inicio, fin).trim() + (fin < plano.length ? "…" : "");
+}
+
+function BuscarView({ core, acciones, search, setSearch, onOpen }) {
+  const qTokens = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const q = qTokens.length > 0;
+
+  const personas = q ? core.personas.filter((p) => coincideTokens(p.nombre, qTokens)) : [];
+  const empresasDirectas = q ? core.empresas.filter((e) => coincideTokens(e.denominacion, qTokens)) : [];
   // Si el nombre coincide con una cabecera o con una subsidiaria, sumamos el resto del
   // grupo — si no, buscar "Constructora del Sur" no te muestra las empresas que agrupa.
   const empresasIds = new Set(empresasDirectas.map((e) => e.id));
@@ -7674,20 +7696,40 @@ function BuscarView({ core, search, setSearch, onOpen }) {
       if (r && !empresasIds.has(r.id)) { empresasIds.add(r.id); empresas.push(r); }
     }
   }
-  const obras = q ? core.obras.filter((o) => o.nombre.toLowerCase().includes(q)) : [];
+  const obras = q ? core.obras.filter((o) => coincideTokens(o.nombre, qTokens)) : [];
+  const hilos = q ? core.hilos.filter((h) => coincideTokens(h.titulo, qTokens)) : [];
+
+  // Contenido: hilos/tareas que no matchearon por título pero tienen una nota, subtarea o
+  // descripción de acción que sí — se agrupan bajo el hilo (no una entrada por cada nota
+  // suelta) y muestran el fragmento que coincidió para que se entienda por qué aparecen.
+  const hilosPorTitulo = new Set(hilos.map((h) => h.id));
+  const contenido = q ? core.hilos
+    .filter((h) => !hilosPorTitulo.has(h.id))
+    .map((h) => {
+      const nota = (h.notas || []).find((n) => coincideTokens(n.texto, qTokens));
+      if (nota) return { hilo: h, fragmento: extraerFragmento(nota.texto, qTokens) };
+      const subtarea = (h.subtareas || []).find((s) => coincideTokens(s.texto, qTokens) || coincideTokens(s.nota, qTokens));
+      if (subtarea) return { hilo: h, fragmento: extraerFragmento(coincideTokens(subtarea.texto, qTokens) ? subtarea.texto : subtarea.nota, qTokens) };
+      const accion = acciones.find((a) => a.hiloId === h.id && (coincideTokens(a.notaPlanificada, qTokens) || coincideTokens(a.notaHecho, qTokens)));
+      if (accion) return { hilo: h, fragmento: extraerFragmento(coincideTokens(accion.notaPlanificada, qTokens) ? accion.notaPlanificada : accion.notaHecho, qTokens) };
+      return null;
+    })
+    .filter(Boolean) : [];
+
+  const sinResultados = personas.length + empresas.length + obras.length + hilos.length + contenido.length === 0;
 
   return (
     <div>
     <div className="sticky top-0 z-10 bg-[#F7F5F0]">
       <div className="relative mb-4">
         <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#A69C88]" />
-        <input autoFocus value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar persona, empresa u obra..." className={`${inputCls} pl-8`} />
+        <input autoFocus value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar en toda la app..." className={`${inputCls} pl-8`} />
       </div>
     </div>
 
       {!q ? (
-        <EmptyState icon={<Search size={26} />} text="Escribí un nombre para buscar en toda tu cartera." />
-      ) : personas.length + empresas.length + obras.length === 0 ? (
+        <EmptyState icon={<Search size={26} />} text="Escribí algo para buscar en personas, empresas, obras, hilos, tareas y sus notas." />
+      ) : sinResultados ? (
         <EmptyState icon={<Search size={26} />} text="Sin resultados." />
       ) : (
         <div className="space-y-4">
@@ -7699,6 +7741,8 @@ function BuscarView({ core, search, setSearch, onOpen }) {
             return { id: e.id, label: e.denominacion, type: "empresa", sub };
           })} onOpen={onOpen} />}
           {obras.length > 0 && <ResultGroup title="Obras" items={obras.map((o) => ({ id: o.id, label: o.nombre, type: "obra" }))} onOpen={onOpen} />}
+          {hilos.length > 0 && <ResultGroup title="Hilos y tareas" items={hilos.map((h) => ({ id: h.id, label: textoPlanoDeMenciones(h.titulo), type: "hilo", sub: h.tipo === "tarea" ? "Tarea" : null }))} onOpen={onOpen} />}
+          {contenido.length > 0 && <ResultGroup title="Encontrado en notas y acciones" items={contenido.map(({ hilo, fragmento }) => ({ id: hilo.id, label: textoPlanoDeMenciones(hilo.titulo), type: "hilo", sub: fragmento }))} onOpen={onOpen} />}
         </div>
       )}
     </div>
