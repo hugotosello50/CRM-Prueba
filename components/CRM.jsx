@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.63.3";
+const APP_VERSION = "2.63.4";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -3696,15 +3696,7 @@ function ExcelTabsBar({ core, tabs, activeId, incluirSinTab, sinColumnaNombre, o
         className="relative shrink-0 h-8 flex items-center gap-1.5 pl-3 pr-1.5 text-[10px] font-bold tracking-wide border border-b-0 rounded-t-sm transition-transform"
       >
         <button type="button" onClick={() => onSelect(id)} className="flex items-center gap-1.5">
-          {nombre}
-          {contarTab(id) > 0 && (
-            <span
-              className="inline-flex items-center justify-center min-w-[1.15rem] h-[1.15rem] px-1 rounded-full border text-[9px] font-bold leading-none"
-              style={{ borderColor: colorTexto, color: colorTexto }}
-            >
-              {contarTab(id)}
-            </span>
-          )}
+          {nombre}{contarTab(id) > 0 ? ` (${contarTab(id)})` : ""}
         </button>
         {id !== null && (
           <button
