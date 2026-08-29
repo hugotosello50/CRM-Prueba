@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.67.0";
+const APP_VERSION = "2.68.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -2184,8 +2184,17 @@ function ResumenHoyModal({ core, setCore, acciones, setAcciones, onOpen, onClose
   const [tramosCount, setTramosCount] = useState(0);
   const [mostroTodas, setMostroTodas] = useState(false);
   const [verSinFecha, setVerSinFecha] = useState(false);
+  const [seleccionModo, setSeleccionModo] = useState(false);
+  const [seleccionados, setSeleccionados] = useState(new Set());
   const [fechaReprogramar, setFechaReprogramar] = useState(t);
   const [confirmarReprogramar, setConfirmarReprogramar] = useState(false);
+
+  const salirSeleccion = () => { setSeleccionModo(false); setSeleccionados(new Set()); };
+  const toggleSeleccionado = (key) => setSeleccionados((prev) => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
 
   const esTareaAccion = (a) => core.hilos.find((h) => h.id === a.hiloId)?.tipo === "tarea";
 
@@ -2220,16 +2229,18 @@ function ResumenHoyModal({ core, setCore, acciones, setAcciones, onOpen, onClose
   const vencidas = eventos.filter((e) => e.fecha < t).sort(porFecha);
   const proximosDefault = eventos.filter((e) => (e.fecha > t && e.fecha <= finSemanaActual) || (tramosCount === 0 && e.fecha === lunesProximo)).sort(porFecha);
 
-  // Reprograma de una sola vez todas las vencidas a la fecha elegida a mano — a diferencia del
-  // selector de programación (período/específica), acá no se propone una fecha ajustada por
-  // hilo/acción: es un movimiento masivo explícito, se usa la fecha tal cual se cargó.
-  const reprogramarVencidas = () => {
+  // Reprograma de una sola vez lo que esté tildado (de cualquier bloque, con o sin fecha) a la
+  // fecha elegida a mano — a diferencia del selector de programación (período/específica), acá
+  // no se propone una fecha ajustada por hilo/acción: es un movimiento masivo explícito.
+  const eventoPorKey = new Map([...eventos, ...sinFecha].map((e) => [e.key, e]));
+  const reprogramarSeleccionadas = () => {
     const nuevaFecha = fechaReprogramar;
-    if (!nuevaFecha) return;
-    const idsAcciones = new Set(vencidas.filter((e) => e.tipo === "seguimiento" || e.tipo === "accionTarea").map((e) => e.accion.id));
-    const hilosConFecha = new Set(vencidas.filter((e) => e.tipo === "tarea").map((e) => e.hilo.id));
+    if (!nuevaFecha || seleccionados.size === 0) return;
+    const elegidos = [...seleccionados].map((k) => eventoPorKey.get(k)).filter(Boolean);
+    const idsAcciones = new Set(elegidos.filter((e) => e.tipo === "seguimiento" || e.tipo === "accionTarea").map((e) => e.accion.id));
+    const hilosConFecha = new Set(elegidos.filter((e) => e.tipo === "tarea").map((e) => e.hilo.id));
     const subtareasPorHilo = new Map();
-    vencidas.filter((e) => e.tipo === "subtarea").forEach((e) => {
+    elegidos.filter((e) => e.tipo === "subtarea").forEach((e) => {
       if (!subtareasPorHilo.has(e.hilo.id)) subtareasPorHilo.set(e.hilo.id, new Set());
       subtareasPorHilo.get(e.hilo.id).add(e.subtarea.id);
     });
@@ -2250,6 +2261,7 @@ function ResumenHoyModal({ core, setCore, acciones, setAcciones, onOpen, onClose
       }));
     }
     setConfirmarReprogramar(false);
+    salirSeleccion();
   };
 
   const tramos = [];
@@ -2271,36 +2283,49 @@ function ResumenHoyModal({ core, setCore, acciones, setAcciones, onOpen, onClose
   const Prefijo = ({ fecha, hora }) => fecha ? <span className="font-normal text-xs text-[#6B6352]">{fmtDateHora(fecha, hora, core.parametros.formatoHora, true)} · </span> : null;
 
   const Fila = ({ e }) => {
+    const hiloDestino = e.hilo || core.hilos.find((h) => h.id === e.accion?.hiloId);
+    if (!hiloDestino) return null;
+    const seleccionado = seleccionados.has(e.key);
+
+    let contenido;
     if (e.tipo === "tarea") {
-      const hilo = e.hilo;
-      return (
-        <button onClick={() => { onClose(); onOpen("hilo", hilo.id); }} className="w-full text-left bg-white border border-[#E4DECF] rounded-sm p-2.5 mb-1.5">
-          <p className="text-sm font-semibold text-[#2A2118] truncate"><Prefijo fecha={e.fecha} hora={hilo.hora} />{textoPlanoDeMenciones(hilo.titulo)}</p>
-          {(hilo.notas || []).length > 0 && (
-            <p className="text-xs text-[#6B6352] truncate">{textoPlanoDeMenciones((hilo.notas || []).at(-1)?.texto)}</p>
+      contenido = (
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-[#2A2118] truncate"><Prefijo fecha={e.fecha} hora={hiloDestino.hora} />{textoPlanoDeMenciones(hiloDestino.titulo)}</p>
+          {(hiloDestino.notas || []).length > 0 && (
+            <p className="text-xs text-[#6B6352] truncate">{textoPlanoDeMenciones((hiloDestino.notas || []).at(-1)?.texto)}</p>
           )}
-        </button>
+        </div>
       );
-    }
-    if (e.tipo === "subtarea") {
-      const hilo = e.hilo, s = e.subtarea;
-      return (
-        <button onClick={() => { onClose(); onOpen("hilo", hilo.id); }} className="w-full text-left bg-white border border-[#E4DECF] rounded-sm p-2.5 mb-1.5">
+    } else if (e.tipo === "subtarea") {
+      const s = e.subtarea;
+      contenido = (
+        <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-[#2A2118] truncate"><Prefijo fecha={e.fecha} hora={s.hora} />{textoPlanoDeMenciones(s.texto)}</p>
-          <p className="text-xs text-[#6B6352] truncate">{textoPlanoDeMenciones(hilo.titulo)}</p>
-        </button>
+          <p className="text-xs text-[#6B6352] truncate">{textoPlanoDeMenciones(hiloDestino.titulo)}</p>
+        </div>
+      );
+    } else {
+      const a = e.accion;
+      const tipoAccion = core.tiposAccion.find((ta) => ta.id === a.tipoAccionId);
+      const esTarea = e.tipo === "accionTarea";
+      const persona = esTarea ? null : personaPrincipalDeHilo(hiloDestino, core);
+      contenido = (
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-[#2A2118] truncate"><Prefijo fecha={e.fecha} hora={a.horaProgramada} />{textoPlanoDeMenciones(esTarea ? hiloDestino.titulo : (persona?.nombre || hiloDestino.titulo))}</p>
+          <p className="text-xs text-[#6B6352] truncate">{textoPlanoDeMenciones([tipoAccion?.nombre, esTarea ? "" : hiloDestino.titulo, a.notaPlanificada].filter(Boolean).join(" · "))}</p>
+        </div>
       );
     }
-    const a = e.accion;
-    const hilo = core.hilos.find((h) => h.id === a.hiloId);
-    if (!hilo) return null;
-    const tipoAccion = core.tiposAccion.find((ta) => ta.id === a.tipoAccionId);
-    const esTarea = e.tipo === "accionTarea";
-    const persona = esTarea ? null : personaPrincipalDeHilo(hilo, core);
+
     return (
-      <button onClick={() => { onClose(); onOpen("hilo", hilo.id); }} className="w-full text-left bg-white border border-[#E4DECF] rounded-sm p-2.5 mb-1.5">
-        <p className="text-sm font-semibold text-[#2A2118] truncate"><Prefijo fecha={e.fecha} hora={a.horaProgramada} />{textoPlanoDeMenciones(esTarea ? hilo.titulo : (persona?.nombre || hilo.titulo))}</p>
-        <p className="text-xs text-[#6B6352] truncate">{textoPlanoDeMenciones([tipoAccion?.nombre, esTarea ? "" : hilo.titulo, a.notaPlanificada].filter(Boolean).join(" · "))}</p>
+      <button
+        onClick={() => { if (seleccionModo) toggleSeleccionado(e.key); else { onClose(); onOpen("hilo", hiloDestino.id); } }}
+        className="w-full text-left bg-white border rounded-sm p-2.5 mb-1.5 flex items-center gap-2"
+        style={{ borderColor: seleccionModo && seleccionado ? "var(--tema-acento)" : "#E4DECF", backgroundColor: seleccionModo && seleccionado ? "#FBEEE7" : undefined }}
+      >
+        {seleccionModo && (seleccionado ? <CheckSquare size={18} className="shrink-0 text-[var(--tema-acento)]" /> : <Square size={18} className="shrink-0 text-[#C9C1AE]" />)}
+        {contenido}
       </button>
     );
   };
@@ -2331,21 +2356,16 @@ function ResumenHoyModal({ core, setCore, acciones, setAcciones, onOpen, onClose
   return (
     <Modal title="Resumen de hoy" onClose={onClose}>
       <div>
+        <button
+          type="button"
+          onClick={() => (seleccionModo ? salirSeleccion() : setSeleccionModo(true))}
+          className="w-full border border-[#D8D2C4] rounded-sm py-2 text-xs font-bold text-[#2A2118] mb-3"
+        >
+          {seleccionModo ? "Cancelar selección" : "Reprogramar"}
+        </button>
+
         <Bloque titulo="Hoy" items={hoy} vacio="Nada programado para hoy." />
         <Bloque titulo="Vencidas" tono="text-[var(--tema-urgenciaVencida)]" items={vencidas} vacio="No hay pendientes vencidas." />
-        {vencidas.length > 0 && (
-          <div className="flex gap-2 mb-3 -mt-1.5">
-            <input type="date" min={t} className={`${inputCls} flex-1`} value={fechaReprogramar} onChange={(e) => setFechaReprogramar(e.target.value)} />
-            <button
-              type="button"
-              onClick={() => setConfirmarReprogramar(true)}
-              disabled={!fechaReprogramar}
-              className="shrink-0 border border-[#D8D2C4] rounded-sm px-3 text-xs font-bold text-[#2A2118] disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Reprogramar vencidas
-            </button>
-          </div>
-        )}
         <Bloque titulo="Próximos" items={proximosDefault} vacio="Nada programado por ahora." />
 
         {tramos.map((tr) => (
@@ -2381,14 +2401,39 @@ function ResumenHoyModal({ core, setCore, acciones, setAcciones, onOpen, onClose
             {sinFecha.length === 0 ? <p className="text-xs text-[#A69C88]">No hay actividades sin fecha.</p> : <Grupo items={sinFecha} />}
           </div>
         )}
+        {seleccionModo && seleccionados.size > 0 && <div className="h-24" />}
       </div>
+      {seleccionModo && seleccionados.size > 0 && (
+        <div className="fixed inset-x-0 bottom-0 z-20 flex justify-center pointer-events-none">
+          <div
+            className="pointer-events-auto w-full max-w-md mx-3 mb-3 rounded-sm shadow-lg px-4 py-3"
+            style={{ backgroundColor: "#2A2F36", paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
+          >
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <span className="text-sm font-bold text-white">{seleccionados.size} seleccionad{seleccionados.size === 1 ? "a" : "as"}</span>
+              <button type="button" onClick={salirSeleccion} className="text-xs font-bold text-[#C9C1AE]">Cancelar</button>
+            </div>
+            <div className="flex gap-2">
+              <input type="date" min={t} className={`${inputCls} flex-1`} value={fechaReprogramar} onChange={(e) => setFechaReprogramar(e.target.value)} />
+              <button
+                type="button"
+                onClick={() => setConfirmarReprogramar(true)}
+                disabled={!fechaReprogramar}
+                className="shrink-0 bg-[var(--tema-acento)] text-[#2A2118] rounded-sm px-3 font-bold text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Reprogramar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {confirmarReprogramar && (
         <ConfirmDeleteModal
           title="¿Confirmás?"
-          texto={`Se van a reprogramar ${vencidas.length} actividad${vencidas.length === 1 ? "" : "es"} vencida${vencidas.length === 1 ? "" : "s"} para el ${fmtDate(fechaReprogramar)}.`}
+          texto={`Se van a reprogramar ${seleccionados.size} actividad${seleccionados.size === 1 ? "" : "es"} para el ${fmtDate(fechaReprogramar)}.`}
           confirmLabel="Sí, reprogramar"
           onCancel={() => setConfirmarReprogramar(false)}
-          onConfirm={reprogramarVencidas}
+          onConfirm={reprogramarSeleccionadas}
         />
       )}
     </Modal>
