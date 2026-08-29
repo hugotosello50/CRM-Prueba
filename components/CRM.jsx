@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.65.0";
+const APP_VERSION = "2.66.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -924,22 +924,16 @@ function programacionInicial({ modoFecha = "periodo", unidad = "dias", fecha = t
 }
 
 // Resuelve el valor final del bloque (fecha concreta, aviso final, si hace falta confirmar) —
-// se usa tanto para guardar como para el chequeo de confirmación. En modo período, la fecha
-// "sugerida" (ajustada para no caer en día no hábil ni muy cargado) es la propuesta por
-// defecto, pero si el usuario ya confirmó que quiere insistir, se usa la fecha cruda del
-// período tal cual, sin ajustar — mismo criterio que en fecha específica.
+// se usa tanto para guardar como para el chequeo de confirmación. En los dos modos se calcula
+// primero la fecha "cruda" (la del período tal cual, o la que se tipeó en específica) y se le
+// aplica el mismo ajuste (computeSmartDate) para proponer una "sugerida" que no caiga en día no
+// hábil ni muy cargado — si el usuario confirmó que quiere insistir, se usa la cruda igual.
 function resolverProgramacion(v, acciones, parametros) {
   const hoy = todayISO();
-  let fecha, inhabil;
-  if (v.modoFecha === "periodo") {
-    const cruda = addPeriod(hoy, Number(v.cantidad) || 1, v.unidad);
-    const sugerida = computeSmartDate(cruda, acciones, parametros);
-    inhabil = cruda !== sugerida;
-    fecha = inhabil && v.confirmar ? cruda : sugerida;
-  } else {
-    fecha = v.fecha || hoy;
-    inhabil = esFechaInhabil(v.fecha, parametros);
-  }
+  const cruda = v.modoFecha === "periodo" ? addPeriod(hoy, Number(v.cantidad) || 1, v.unidad) : (v.fecha || hoy);
+  const sugerida = computeSmartDate(cruda, acciones, parametros);
+  const inhabil = cruda !== sugerida;
+  const fecha = inhabil && v.confirmar ? cruda : sugerida;
   const hora = v.hora;
   const aviso = hora && v.aviso.activo ? v.aviso : null;
   return {
@@ -957,15 +951,31 @@ function resolverProgramacion(v, acciones, parametros) {
 function SelectorProgramacion({ value, onChange, acciones, parametros, labelRecurrente = "Es una acción repetitiva" }) {
   const [preview, setPreview] = useState(null);
   useEffect(() => {
-    if (value.modoFecha === "periodo") {
-      setPreview(computeSmartDate(addPeriod(todayISO(), Number(value.cantidad) || 1, value.unidad), acciones, parametros));
-    }
-  }, [value.modoFecha, value.cantidad, value.unidad]); // eslint-disable-line
+    const cruda = value.modoFecha === "periodo" ? addPeriod(todayISO(), Number(value.cantidad) || 1, value.unidad) : value.fecha;
+    setPreview(cruda ? computeSmartDate(cruda, acciones, parametros) : null);
+  }, [value.modoFecha, value.cantidad, value.unidad, value.fecha]); // eslint-disable-line
 
   const set = (patch) => onChange({ ...value, ...patch });
-  const inhabil = value.modoFecha === "especifica" && esFechaInhabil(value.fecha, parametros);
-  const cruda = addPeriod(todayISO(), Number(value.cantidad) || 1, value.unidad);
-  const inhabilPeriodo = value.modoFecha === "periodo" && preview !== null && cruda !== preview;
+  const cruda = value.modoFecha === "periodo" ? addPeriod(todayISO(), Number(value.cantidad) || 1, value.unidad) : value.fecha;
+  const inhabil = !!cruda && preview !== null && cruda !== preview;
+
+  // Mismo bloque de "fecha sugerida" + aviso en los dos modos — período y específica se
+  // comportan igual: se propone una fecha ajustada, y al guardar se puede elegir esa o la
+  // original (ver los botones que arma cada formulario que usa este selector).
+  const previewYAviso = (
+    <>
+      {preview && (
+        <p className="text-xs text-[#6B6352] mb-3 -mt-2 bg-[#EFEBE0] rounded-sm px-2.5 py-1.5">
+          Fecha sugerida: <span className="font-bold">{fmtDate(preview)}</span> (ajustada para no caer en día no hábil ni en un día muy cargado)
+        </p>
+      )}
+      {inhabil && (
+        <div className="bg-[#FBEEE7] border border-[var(--tema-acento)] rounded-sm p-2.5 mb-3">
+          <p className="text-xs text-[#2A2118]">Esa fecha cae en un día no hábil o muy cargado — por eso se sugiere la de arriba. Al guardar vas a poder elegir entre la fecha sugerida o la original.</p>
+        </div>
+      )}
+    </>
+  );
 
   return (
     <>
@@ -997,16 +1007,7 @@ function SelectorProgramacion({ value, onChange, acciones, parametros, labelRecu
               <input type="time" className={inputCls} value={value.hora || ""} onChange={(e) => set({ hora: e.target.value })} />
             </div>
           </Field>
-          {preview && (
-            <p className="text-xs text-[#6B6352] mb-3 -mt-2 bg-[#EFEBE0] rounded-sm px-2.5 py-1.5">
-              Fecha sugerida: <span className="font-bold">{fmtDate(preview)}</span> (ajustada para no caer en día no hábil ni en un día muy cargado)
-            </p>
-          )}
-          {inhabilPeriodo && (
-            <div className="bg-[#FBEEE7] border border-[var(--tema-acento)] rounded-sm p-2.5 mb-3">
-              <p className="text-xs text-[#2A2118]">Esa fecha cae en un día no hábil o muy cargado — por eso se sugiere la de arriba. Al guardar vas a poder elegir entre la fecha sugerida o la original del período.</p>
-            </div>
-          )}
+          {previewYAviso}
           <div className="mb-3"><AvisoFields aviso={value.aviso} onAviso={(a) => set({ aviso: a })} /></div>
         </>
       ) : (
@@ -1019,11 +1020,7 @@ function SelectorProgramacion({ value, onChange, acciones, parametros, labelRecu
             onFecha={(v) => set({ fecha: v, confirmar: false })}
             onHora={(h) => set({ hora: h })}
           />
-          {inhabil && (
-            <div className="bg-[#FBEEE7] border border-[var(--tema-acento)] rounded-sm p-2.5 mb-3">
-              <p className="text-xs text-[#2A2118]">Ese día está marcado como no hábil. Si guardás de nuevo, se confirma igual.</p>
-            </div>
-          )}
+          {previewYAviso}
         </>
       )}
 
@@ -1043,6 +1040,32 @@ function SelectorProgramacion({ value, onChange, acciones, parametros, labelRecu
         </Field>
       )}
     </>
+  );
+}
+
+// Par de botones, uno al lado del otro, para guardar cuando la fecha programada (período o
+// específica) tuvo que ajustarse: uno usa la sugerida, el otro insiste con la original tal
+// cual — mismo criterio en los 5 formularios que usan SelectorProgramacion.
+function BotonesGuardarFecha({ onGuardar, disabled, labelForzar = "Guardar la fecha original igual" }) {
+  return (
+    <div className="flex gap-2">
+      <button
+        type="button"
+        onClick={() => onGuardar(false)}
+        disabled={disabled}
+        className={`flex-1 rounded-sm py-2.5 font-bold text-sm ${disabled ? "bg-[#E7E2D8] text-[#A69C88] cursor-not-allowed" : "bg-[var(--tema-acento)] text-[#2A2118]"}`}
+      >
+        Guardar fecha sugerida
+      </button>
+      <button
+        type="button"
+        onClick={() => onGuardar(true)}
+        disabled={disabled}
+        className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#2A2118] disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {labelForzar}
+      </button>
+    </div>
   );
 }
 
@@ -2545,15 +2568,9 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
 
   const guardar = (forzar) => { if (seleccionMultiple) crearMultiple(forzar); else crear(forzar); };
 
-  // En período, si la fecha se tuvo que ajustar, se ofrecen directamente las dos opciones
-  // (sugerida u original) en vez de pedir un segundo click sobre el mismo botón — eso solo
-  // tiene sentido en fecha específica, donde hay una única fecha para insistir.
-  const periodoConDosOpciones = showPrimerContacto && programarProxima && prog.modoFecha === "periodo" && especificaInhabil;
-
-  const submit = () => {
-    if (showPrimerContacto && programarProxima && especificaInhabil && !prog.confirmar) { setProg((p) => ({ ...p, confirmar: true })); return; }
-    guardar(prog.confirmar);
-  };
+  // Si la fecha de la próxima acción tuvo que ajustarse (período o específica, mismo
+  // criterio), se ofrecen directamente las dos opciones en vez de pedir un segundo click.
+  const mostrarDosOpciones = especificaInhabil;
 
   return (
     <div>
@@ -2855,23 +2872,20 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
 
       <div className="flex gap-2">
         <button onClick={onCancelar} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
-        <button
-          onClick={() => (periodoConDosOpciones ? guardar(false) : submit())}
-          disabled={!titulo.trim() || faltaVinculo}
-          className={`flex-1 rounded-sm py-2.5 font-bold text-sm ${!titulo.trim() || faltaVinculo ? "bg-[#E7E2D8] text-[#A69C88] cursor-not-allowed" : "bg-[var(--tema-acento)] text-[#2A2118]"}`}
-        >
-          {periodoConDosOpciones ? "Guardar fecha sugerida" : especificaInhabil && prog.confirmar ? "Sí, crear igual" : seleccionMultiple ? `Crear ${personaIdsMultiple.length} hilo${personaIdsMultiple.length === 1 ? "" : "s"}` : "Crear hilo"}
-        </button>
+        {!mostrarDosOpciones && (
+          <button
+            onClick={() => guardar(false)}
+            disabled={!titulo.trim() || faltaVinculo}
+            className={`flex-1 rounded-sm py-2.5 font-bold text-sm ${!titulo.trim() || faltaVinculo ? "bg-[#E7E2D8] text-[#A69C88] cursor-not-allowed" : "bg-[var(--tema-acento)] text-[#2A2118]"}`}
+          >
+            {seleccionMultiple ? `Crear ${personaIdsMultiple.length} hilo${personaIdsMultiple.length === 1 ? "" : "s"}` : "Crear hilo"}
+          </button>
+        )}
       </div>
-      {periodoConDosOpciones && (
-        <button
-          type="button"
-          onClick={() => guardar(true)}
-          disabled={!titulo.trim() || faltaVinculo}
-          className="w-full mt-2 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#2A2118] disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          Guardar la fecha no hábil igual
-        </button>
+      {mostrarDosOpciones && (
+        <div className="mt-2">
+          <BotonesGuardarFecha onGuardar={guardar} disabled={!titulo.trim() || faltaVinculo} />
+        </div>
       )}
 
       {showVincularEmpresa && personaFija && (
@@ -3084,7 +3098,9 @@ function EditarTareaForm({ hilo, core, setCore, acciones = [], onClose }) {
     repiteUnidad: hilo.repiteUnidad || "meses",
   }));
 
-  const guardar = () => {
+  const especificaInhabil = conFecha && resolverProgramacion(prog, acciones, core.parametros).inhabil;
+
+  const guardar = (forzar) => {
     if (!titulo.trim()) return;
     const tituloFinal = titulo.trim();
     if (!conFecha) {
@@ -3096,7 +3112,7 @@ function EditarTareaForm({ hilo, core, setCore, acciones = [], onClose }) {
       onClose();
       return;
     }
-    const r = resolverProgramacion(prog, acciones, core.parametros);
+    const r = resolverProgramacion(forzar ? { ...prog, confirmar: true } : prog, acciones, core.parametros);
     const avisoCambio = r.fecha !== (hilo.fecha || "") || r.hora !== (hilo.hora || "") || JSON.stringify(r.aviso) !== JSON.stringify(hilo.aviso || null);
     setCore((prev) => ({
       ...prev,
@@ -3114,7 +3130,11 @@ function EditarTareaForm({ hilo, core, setCore, acciones = [], onClose }) {
       {conFecha && (
         <SelectorProgramacion value={prog} onChange={setProg} acciones={acciones} parametros={core.parametros} labelRecurrente="Es una tarea repetitiva" />
       )}
-      <PrimaryBtn full disabled={!titulo.trim()} onClick={guardar}>Guardar</PrimaryBtn>
+      {especificaInhabil ? (
+        <BotonesGuardarFecha onGuardar={guardar} disabled={!titulo.trim()} />
+      ) : (
+        <PrimaryBtn full disabled={!titulo.trim()} onClick={() => guardar(false)}>Guardar</PrimaryBtn>
+      )}
     </div>
   );
 }
@@ -6371,9 +6391,11 @@ function AgregarTareaAlHiloForm({ core, acciones = [], hiloClienteId, personasDe
     return [...conMismaPersona, ...resto];
   }, [core.hilos, q, personasDelHilo]);
 
-  const crear = () => {
+  const especificaInhabil = conFecha && resolverProgramacion(prog, acciones, core.parametros).inhabil;
+
+  const crear = (forzar) => {
     if (!titulo.trim()) return;
-    const r = conFecha ? resolverProgramacion(prog, acciones, core.parametros) : null;
+    const r = conFecha ? resolverProgramacion(forzar ? { ...prog, confirmar: true } : prog, acciones, core.parametros) : null;
     const nuevoHilo = {
       id: uid("H"), titulo: titulo.trim(), notas: notas.trim() ? [{ id: uid("NT"), texto: notas.trim(), fecha: todayISO() }] : [],
       fecha: r?.fecha || "", hora: r?.hora || "", aviso: r?.aviso || null, avisoEnviado: false, avisoVistoEnApp: false,
@@ -6440,7 +6462,11 @@ function AgregarTareaAlHiloForm({ core, acciones = [], hiloClienteId, personasDe
           {conFecha && (
             <SelectorProgramacion value={prog} onChange={setProg} acciones={acciones} parametros={core.parametros} labelRecurrente="Es una tarea repetitiva" />
           )}
-          <PrimaryBtn full onClick={crear}>Crear tarea</PrimaryBtn>
+          {especificaInhabil ? (
+            <BotonesGuardarFecha onGuardar={crear} />
+          ) : (
+            <PrimaryBtn full onClick={() => crear(false)}>Crear tarea</PrimaryBtn>
+          )}
         </>
       )}
       <button type="button" onClick={onClose} className="w-full mt-3 border border-[#E4DECF] rounded-sm py-2.5 font-bold text-sm text-[#2A2118]">Listo</button>
@@ -6466,9 +6492,11 @@ function AgregarTareaAEntidadForm({ core, acciones = [], tareasExcluidas, onVinc
     return texto ? sueltas.filter((h) => h.titulo.toLowerCase().includes(texto)) : sueltas;
   }, [core.hilos, q, tareasExcluidas]);
 
-  const crear = () => {
+  const especificaInhabil = conFecha && resolverProgramacion(prog, acciones, core.parametros).inhabil;
+
+  const crear = (forzar) => {
     if (!titulo.trim()) return;
-    const r = conFecha ? resolverProgramacion(prog, acciones, core.parametros) : null;
+    const r = conFecha ? resolverProgramacion(forzar ? { ...prog, confirmar: true } : prog, acciones, core.parametros) : null;
     const nuevoHilo = {
       id: uid("H"), titulo: titulo.trim(), notas: [],
       fecha: r?.fecha || "", hora: r?.hora || "", aviso: r?.aviso || null, avisoEnviado: false, avisoVistoEnApp: false,
@@ -6535,7 +6563,11 @@ function AgregarTareaAEntidadForm({ core, acciones = [], tareasExcluidas, onVinc
             <SelectorProgramacion value={prog} onChange={setProg} acciones={acciones} parametros={core.parametros} labelRecurrente="Es una tarea repetitiva" />
           )}
           <p className="text-xs text-[#A69C88] mb-3">Si cargás fecha, se crea con esa acción pendiente. Si no, la tarea queda sin fecha hasta que la avances.</p>
-          <PrimaryBtn full onClick={crear}>Crear tarea</PrimaryBtn>
+          {especificaInhabil ? (
+            <BotonesGuardarFecha onGuardar={crear} />
+          ) : (
+            <PrimaryBtn full onClick={() => crear(false)}>Crear tarea</PrimaryBtn>
+          )}
         </>
       )}
       <button type="button" onClick={onClose} className="w-full mt-3 border border-[#E4DECF] rounded-sm py-2.5 font-bold text-sm text-[#2A2118]">Listo</button>
@@ -6559,10 +6591,9 @@ function AvanzarHiloForm({ hilo, pendienteActual, core, setCore, acciones, setAc
   const [prioridad, setPrioridad] = useState("Media");
 
   const especificaInhabil = resolverProgramacion(prog, acciones, core.parametros).inhabil;
-  // En período, si la fecha se tuvo que ajustar, se ofrecen directamente las dos opciones
-  // (sugerida u original) en vez de pedir un segundo click sobre el mismo botón — eso solo
-  // tiene sentido en fecha específica, donde hay una única fecha para insistir.
-  const periodoConDosOpciones = programarProxima && prog.modoFecha === "periodo" && especificaInhabil;
+  // Si la fecha de la próxima acción tuvo que ajustarse (período o específica, mismo
+  // criterio), se ofrecen directamente las dos opciones en vez de pedir un segundo click.
+  const mostrarDosOpciones = programarProxima && especificaInhabil;
 
   const guardar = (forzar) => {
     const hoy = todayISO();
@@ -6590,11 +6621,6 @@ function AvanzarHiloForm({ hilo, pendienteActual, core, setCore, acciones, setAc
       return next;
     });
     onClose();
-  };
-
-  const submit = () => {
-    if (programarProxima && especificaInhabil && !prog.confirmar) { setProg((p) => ({ ...p, confirmar: true })); return; }
-    guardar(prog.confirmar);
   };
 
   return (
@@ -6654,17 +6680,10 @@ function AvanzarHiloForm({ hilo, pendienteActual, core, setCore, acciones, setAc
         )}
       </div>
 
-      <PrimaryBtn full onClick={() => (periodoConDosOpciones ? guardar(false) : submit())}>
-        {periodoConDosOpciones ? "Guardar fecha sugerida" : especificaInhabil && prog.confirmar ? "Sí, guardar igual" : "Guardar y continuar"}
-      </PrimaryBtn>
-      {periodoConDosOpciones && (
-        <button
-          type="button"
-          onClick={() => guardar(true)}
-          className="w-full mt-2 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#2A2118]"
-        >
-          Guardar la fecha no hábil igual
-        </button>
+      {mostrarDosOpciones ? (
+        <BotonesGuardarFecha onGuardar={guardar} />
+      ) : (
+        <PrimaryBtn full onClick={() => guardar(false)}>Guardar y continuar</PrimaryBtn>
       )}
     </Modal>
   );
