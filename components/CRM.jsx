@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.68.1";
+const APP_VERSION = "2.69.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -1437,6 +1437,19 @@ function EmptyState({ icon, text }) {
     <div className="flex flex-col items-center justify-center gap-2 py-12 text-[#A69C88]">
       {icon}
       <p className="text-sm text-center max-w-[240px]">{text}</p>
+    </div>
+  );
+}
+
+// Divisor entre tarjetas que, en vez del punto simple de siempre, muestra de qué columna del
+// Kanban viene la tarjeta que sigue — se usa solo en la pestaña "Todo", que mezcla tarjetas de
+// todas las columnas y si no sería imposible saber de dónde es cada una.
+function DivisorColumna({ core, nombre }) {
+  return (
+    <div className="flex items-center justify-center gap-2 py-2">
+      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: core.tema.botonActivo }} />
+      <span className="text-[10px] font-bold tracking-wide text-[#8A8272] shrink-0">{nombre}</span>
+      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: core.tema.botonActivo }} />
     </div>
   );
 }
@@ -3034,14 +3047,15 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
   const columnas = core.kanbanColumnasTareas || [];
   const tareas = core.hilos.filter((h) => h.tipo === "tarea" && h.estado === "Activo");
   // Filtradas por la pestaña activa, igual que "tareas" — si no, la misma lista completa de
-  // cerradas aparecía repetida debajo de cada columna (incluida "Sin columna").
-  const tareasCerradas = core.hilos.filter((h) => h.tipo === "tarea" && h.estado === "Cerrado" && (h.columnaTareaId || null) === columnaActiva);
+  // cerradas aparecía repetida debajo de cada columna (incluida "Sin columna"). "Todo" no
+  // filtra por columna, muestra todas juntas.
+  const tareasCerradas = core.hilos.filter((h) => h.tipo === "tarea" && h.estado === "Cerrado" && (columnaActiva === "todo" || (h.columnaTareaId || null) === columnaActiva));
 
-  const contarColumna = (colId) => tareas.filter((h) => (h.columnaTareaId || null) === colId).length;
+  const contarColumna = (colId) => tareas.filter((h) => colId === "todo" || (h.columnaTareaId || null) === colId).length;
 
   const tareasColumna = useMemo(() => {
     return tareas
-      .filter((h) => (h.columnaTareaId || null) === columnaActiva)
+      .filter((h) => columnaActiva === "todo" || (h.columnaTareaId || null) === columnaActiva)
       .sort((a, b) => {
         const fa = a.fecha || "", fb = b.fecha || "";
         if (fa && fb) return fa < fb ? -1 : fa > fb ? 1 : 0;
@@ -3074,7 +3088,7 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
     if (!tituloNuevo.trim()) return;
     const hoy = todayISO();
     const aviso = horaNueva && avisoNuevo.activo ? avisoNuevo : null;
-    const nuevoHilo = { id: uid("H"), titulo: tituloNuevo.trim(), notas: [], fecha: fechaNueva, hora: horaNueva, aviso, avisoEnviado: false, avisoVistoEnApp: false, estado: "Activo", fechaCreacion: hoy, tipo: "tarea", columnaTareaId: columnaActiva, hiloRelacionadoId: null, notaCierre: "", recurrente: false, repiteCadaN: null, repiteUnidad: null };
+    const nuevoHilo = { id: uid("H"), titulo: tituloNuevo.trim(), notas: [], fecha: fechaNueva, hora: horaNueva, aviso, avisoEnviado: false, avisoVistoEnApp: false, estado: "Activo", fechaCreacion: hoy, tipo: "tarea", columnaTareaId: columnaActiva === "todo" ? null : columnaActiva, hiloRelacionadoId: null, notaCierre: "", recurrente: false, repiteCadaN: null, repiteUnidad: null };
     setCore((prev) => ({ ...prev, hilos: [nuevoHilo, ...prev.hilos] }));
     setTituloNuevo("");
     setFechaNueva("");
@@ -3084,7 +3098,8 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
   };
 
   const nombreSinColumna = core.parametros.nombreSinColumnaTareas || "Sin columna";
-  const nombreColumnaActiva = columnaActiva === null ? nombreSinColumna : columnas.find((c) => c.id === columnaActiva)?.nombre || "Columna";
+  const nombreColumnaDe = (colId) => (colId ? columnas.find((c) => c.id === colId)?.nombre || "Columna" : nombreSinColumna);
+  const nombreColumnaActiva = columnaActiva === "todo" ? "Todo" : nombreColumnaDe(columnaActiva);
 
   return (
     <div>
@@ -3097,7 +3112,7 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
               value={tituloNuevo}
               onChange={setTituloNuevo}
               onKeyDown={(e) => e.key === "Enter" && crearTareaRapida()}
-              placeholder="+ Nueva tarea..."
+              placeholder="+ Nueva tarea... (fecha y hora opcionales)"
             />
           </div>
           <button
@@ -3122,7 +3137,6 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
             <SelectorFechaHora fecha={fechaNueva} hora={horaNueva} aviso={avisoNuevo} onAviso={setAvisoNuevo} onFecha={setFechaNueva} onHora={setHoraNueva} />
           </div>
         )}
-        <p className="text-xs text-[#A69C88] mt-2">La fecha y hora son opcionales — si no las cargás, la tarea se guarda igual.</p>
       </div>
 
       <ExcelTabsBar
@@ -3130,6 +3144,7 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
         tabs={columnas}
         activeId={columnaActiva}
         incluirSinTab
+        incluirTodoTab
         sinColumnaNombre={nombreSinColumna}
         onSelect={setColumnaActiva}
         onCreate={(nombre) => {
@@ -3156,7 +3171,11 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
           <div>
             {tareasColumna.map((h, i) => (
               <Fragment key={h.id}>
-                {i > 0 && <div className="flex justify-center py-2"><span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: core.tema.botonActivo }} /></div>}
+                {columnaActiva === "todo" ? (
+                  <DivisorColumna core={core} nombre={nombreColumnaDe(h.columnaTareaId)} />
+                ) : (
+                  i > 0 && <div className="flex justify-center py-2"><span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: core.tema.botonActivo }} /></div>
+                )}
                 <HiloAgendaCard
                   hilo={h}
                   core={core}
@@ -3679,7 +3698,7 @@ function TarjetaFlotante({ pos, titulo, core }) {
   );
 }
 
-function ExcelTabsBar({ core, tabs, activeId, incluirSinTab, sinColumnaNombre, onSelect, onCreate, onRename, onRenameSinColumna, onDelete, onReorder, contarTab, tabsRef, hoverId, dragging }) {
+function ExcelTabsBar({ core, tabs, activeId, incluirSinTab, incluirTodoTab, sinColumnaNombre, onSelect, onCreate, onRename, onRenameSinColumna, onDelete, onReorder, contarTab, tabsRef, hoverId, dragging }) {
   const [creando, setCreando] = useState(false);
   const [nombreNuevo, setNombreNuevo] = useState("");
   const [editandoId, setEditandoId] = useState(undefined); // undefined = nadie editando, null = "Sin columna", id = esa pestaña
@@ -3871,6 +3890,25 @@ function ExcelTabsBar({ core, tabs, activeId, incluirSinTab, sinColumnaNombre, o
         className="flex gap-0.5 overflow-x-auto no-scrollbar"
         style={{ borderBottom: `2px solid ${core.tema.linea}`, outline: dragging ? `2px dashed ${core.tema.botonActivo}` : undefined, outlineOffset: dragging ? "3px" : undefined }}
       >
+        {incluirTodoTab && (
+          // Pestaña fija "Todo": sin data-tab-id a propósito, para que no sea un destino
+          // válido al soltar una tarjeta arrastrada (no es una columna real) — y sin
+          // onDoubleClick/botón de borrar, no se puede renombrar ni eliminar.
+          <button
+            type="button"
+            onClick={() => onSelect("todo")}
+            style={{
+              backgroundColor: "var(--tema-urgenciaProxima)",
+              color: "#FFFFFF",
+              borderColor: "var(--tema-urgenciaProxima)",
+              marginBottom: activeId === "todo" ? "-2px" : "0px",
+              zIndex: activeId === "todo" ? 2 : 1,
+            }}
+            className="shrink-0 h-8 flex items-center gap-1.5 pl-3 pr-3 text-[10px] font-bold tracking-wide border border-b-0 rounded-t-sm"
+          >
+            Todo{contarTab("todo") > 0 ? ` (${contarTab("todo")})` : ""}
+          </button>
+        )}
         {incluirSinTab && renderTab(null, nombreSinColumna)}
         {tabs.map((t) => renderTab(t.id, t.nombre))}
         {creando ? (
@@ -3931,10 +3969,12 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, t, soloTipo 
   // columnaTareaId — así un hilo recién creado (o sin ninguna acción pendiente todavía) queda
   // en la pestaña donde estaba parado el usuario, en vez de siempre en "Sin columna".
   const hiloPasaFiltroTipo = (h) => !soloTipo || (h?.tipo || "cliente") === soloTipo;
-  const contarColumna = (colId) => core.hilos.filter((h) => hiloPasaFiltroEstado(h) && hiloPasaFiltroTipo(h) && (h.columnaSeguimientoId || null) === colId).length;
+  const contarColumna = (colId) => core.hilos.filter((h) => hiloPasaFiltroEstado(h) && hiloPasaFiltroTipo(h) && (colId === "todo" || (h.columnaSeguimientoId || null) === colId)).length;
 
+  // "Todo" no filtra por columna — muestra los hilos de todas juntas (con el resto de los
+  // filtros igual aplicados).
   const hilosColumnaActiva = useMemo(
-    () => core.hilos.filter((h) => hiloPasaFiltroEstado(h) && hiloPasaFiltroTipo(h) && (h.columnaSeguimientoId || null) === columnaActiva),
+    () => core.hilos.filter((h) => hiloPasaFiltroEstado(h) && hiloPasaFiltroTipo(h) && (columnaActiva === "todo" || (h.columnaSeguimientoId || null) === columnaActiva)),
     [core.hilos, soloTipo, columnaActiva, estadoFiltro]
   );
 
@@ -4007,7 +4047,8 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, t, soloTipo 
   };
 
   const nombreSinColumna = core.parametros.nombreSinColumnaSeguimientos || "Sin columna";
-  const nombreColumnaActiva = columnaActiva === null ? nombreSinColumna : columnas.find((c) => c.id === columnaActiva)?.nombre || "Columna";
+  const nombreColumnaDe = (colId) => (colId ? columnas.find((c) => c.id === colId)?.nombre || "Columna" : nombreSinColumna);
+  const nombreColumnaActiva = columnaActiva === "todo" ? "Todo" : nombreColumnaDe(columnaActiva);
 
   return (
     <div>
@@ -4017,6 +4058,7 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, t, soloTipo 
         tabs={columnas}
         activeId={columnaActiva}
         incluirSinTab
+        incluirTodoTab
         sinColumnaNombre={nombreSinColumna}
         onSelect={setColumnaActiva}
         onCreate={(nombre) => {
@@ -4080,7 +4122,11 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, t, soloTipo 
         <div>
           {gruposActivos.map((grupo, i) => (
             <Fragment key={grupo[0].id}>
-              {i > 0 && <div className="flex justify-center py-2"><span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: core.tema.botonActivo }} /></div>}
+              {columnaActiva === "todo" ? (
+                <DivisorColumna core={core} nombre={nombreColumnaDe(core.hilos.find((h) => h.id === grupo[0].hiloId)?.columnaSeguimientoId)} />
+              ) : (
+                i > 0 && <div className="flex justify-center py-2"><span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: core.tema.botonActivo }} /></div>
+              )}
               <HiloAgendaCard
                 accionesBucket={grupo}
                 core={core}
@@ -4104,7 +4150,11 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, t, soloTipo 
           <div>
             {hilosSinAccion.map((h, i) => (
               <Fragment key={h.id}>
-                {i > 0 && <div className="flex justify-center py-2"><span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: core.tema.botonActivo }} /></div>}
+                {columnaActiva === "todo" ? (
+                  <DivisorColumna core={core} nombre={nombreColumnaDe(h.columnaSeguimientoId)} />
+                ) : (
+                  i > 0 && <div className="flex justify-center py-2"><span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: core.tema.botonActivo }} /></div>
+                )}
                 <HiloAgendaCard
                   hilo={h}
                   core={core}
@@ -4128,7 +4178,7 @@ function KanbanView({ core, setCore, acciones, setAcciones, onOpen, t, soloTipo 
             setCore={setCore}
             acciones={acciones}
             setAcciones={setAcciones}
-            columnaFijaId={columnaActiva}
+            columnaFijaId={columnaActiva === "todo" ? null : columnaActiva}
             onCreated={(hiloId) => { setShowNuevoHilo(false); onOpen("hilo", hiloId); }}
             onCancelar={() => setShowNuevoHilo(false)}
           />
