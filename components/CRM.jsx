@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.68.0";
+const APP_VERSION = "2.68.1";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -1870,9 +1870,10 @@ export default function CRM({ userId, onLogout }) {
   const hayResumenParaMostrar = (c, a) => {
     if (!c || !a) return false;
     const t = todayISO();
-    // Misma ventana que muestra ResumenHoyModal por defecto: hoy + resto de esta semana + el
-    // lunes que viene (más, sin límite, cualquier cosa vencida).
-    const finSemana = toISO(addDays(startOfWeekMonday(parseISO(t)), 4));
+    // Misma ventana que muestra ResumenHoyModal por defecto: hoy + resto de esta semana (hasta
+    // el domingo, no el viernes — si no, algo programado para sábado/domingo de esta semana
+    // queda invisible) + el lunes que viene (más, sin límite, cualquier cosa vencida).
+    const finSemana = toISO(addDays(startOfWeekMonday(parseISO(t)), 6));
     const lunes = toISO(addDays(startOfWeekMonday(parseISO(t)), 7));
     const enVentana = (fecha) => fecha <= finSemana || fecha === lunes;
     const hayAccionPendiente = a.some((acc) => acc.estado === "Pendiente" && acc.fechaProgramada && enVentana(acc.fechaProgramada));
@@ -2172,7 +2173,10 @@ const nombreDia = (iso) => DIAS_SEMANA_LARGO[(parseISO(iso).getDay() + 6) % 7];
 function ResumenHoyModal({ core, setCore, acciones, setAcciones, onOpen, onClose }) {
   const t = todayISO();
   const hoyDate = parseISO(t);
-  const finSemanaActual = toISO(addDays(startOfWeekMonday(hoyDate), 4));
+  // Hasta el domingo de esta semana, no el viernes — si no, algo programado para sábado/
+  // domingo de esta semana queda sin caer en ningún bloque (ni "Próximos" ni el lunes puntual
+  // ni los tramos, que arrancan recién el lunes que viene).
+  const finSemanaActual = toISO(addDays(startOfWeekMonday(hoyDate), 6));
   const lunesProximo = toISO(addDays(startOfWeekMonday(hoyDate), 7));
   const semanasPaso = Math.max(1, core.parametros.semanasProximas ?? 2);
   const semanaMonday = (k) => addDaysISO(lunesProximo, (k - 1) * 7);
