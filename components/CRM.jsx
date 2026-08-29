@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.70.1";
+const APP_VERSION = "2.70.2";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -4300,6 +4300,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   const [verResumen, setVerResumen] = useState(false);
   const [verDetalle, setVerDetalle] = useState(false);
   const [verSubtareas, setVerSubtareas] = useState(false);
+  const [verSubtareasFinalizadas, setVerSubtareasFinalizadas] = useState(false);
   const [verAdjuntos, setVerAdjuntos] = useState(false);
   const [showNuevaSubtarea, setShowNuevaSubtarea] = useState(false);
   const [editingSubtarea, setEditingSubtarea] = useState(null);
@@ -4672,35 +4673,49 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   );
 
   // Checklist de subtareas (solo tareas) — se muestra adentro de "Ver/Ocultar detalles".
+  const filaSubtarea = (s) => (
+    <div key={s.id} className="flex items-start gap-1.5 py-1">
+      <button
+        type="button"
+        onClick={() => toggleSubtarea(s.id)}
+        aria-label={s.hecha ? "Marcar subtarea como pendiente" : "Marcar subtarea como completada"}
+        className="shrink-0 rounded-full flex items-center justify-center mt-0.5"
+        style={{ width: 14, height: 14, backgroundColor: s.hecha ? "var(--tema-estadoRealizada)" : "#FFFFFF", border: `2px solid ${s.hecha ? "var(--tema-estadoRealizada)" : "#C9C1AE"}` }}
+      >
+        {s.hecha && <Check size={9} color="#FFFFFF" strokeWidth={3} />}
+      </button>
+      <div className="flex-1 min-w-0">
+        <p className={`text-xs ${s.hecha ? "line-through text-[#A69C88]" : "text-[#2A2118]"}`}>{s.texto}</p>
+        {(s.fecha || s.hora || s.nota) && (
+          <p className="text-[10px] text-[#8A8272] mt-0.5 flex items-center flex-wrap gap-1">
+            {(s.fecha || s.hora) && <span>{s.fecha ? fmtDateHora(s.fecha, s.hora, core.parametros.formatoHora) : fmtHora(s.hora, core.parametros.formatoHora)}</span>}
+            {s.aviso?.activo && <Bell size={10} className="shrink-0 text-[var(--tema-vinculo)]" aria-label="Tiene aviso programado" />}
+            {s.nota && <span>{(s.fecha || s.hora) && "· "}{s.nota}</span>}
+          </p>
+        )}
+      </div>
+      <IconBtn label="Editar subtarea" onClick={() => setEditingSubtarea(s)}><Pencil size={11} /></IconBtn>
+      <IconBtn label="Eliminar subtarea" danger onClick={() => setDeletingSubtareaId(s.id)}><Trash2 size={11} /></IconBtn>
+    </div>
+  );
+  const subtareasPendientes = subtareas.filter((s) => !s.hecha);
+  const subtareasFinalizadas = subtareas.filter((s) => s.hecha);
   const bloqueSubtareas = esTarea && (
     <div>
       <TituloSeccion core={core}>Subtareas ({subtareas.length})</TituloSeccion>
-      {subtareas.map((s) => (
-        <div key={s.id} className="flex items-start gap-1.5 py-1">
-          <button
-            type="button"
-            onClick={() => toggleSubtarea(s.id)}
-            aria-label={s.hecha ? "Marcar subtarea como pendiente" : "Marcar subtarea como completada"}
-            className="shrink-0 rounded-full flex items-center justify-center mt-0.5"
-            style={{ width: 14, height: 14, backgroundColor: s.hecha ? "var(--tema-estadoRealizada)" : "#FFFFFF", border: `2px solid ${s.hecha ? "var(--tema-estadoRealizada)" : "#C9C1AE"}` }}
-          >
-            {s.hecha && <Check size={9} color="#FFFFFF" strokeWidth={3} />}
-          </button>
-          <div className="flex-1 min-w-0">
-            <p className={`text-xs ${s.hecha ? "line-through text-[#A69C88]" : "text-[#2A2118]"}`}>{s.texto}</p>
-            {(s.fecha || s.hora || s.nota) && (
-              <p className="text-[10px] text-[#8A8272] mt-0.5 flex items-center flex-wrap gap-1">
-                {(s.fecha || s.hora) && <span>{s.fecha ? fmtDateHora(s.fecha, s.hora, core.parametros.formatoHora) : fmtHora(s.hora, core.parametros.formatoHora)}</span>}
-                {s.aviso?.activo && <Bell size={10} className="shrink-0 text-[var(--tema-vinculo)]" aria-label="Tiene aviso programado" />}
-                {s.nota && <span>{(s.fecha || s.hora) && "· "}{s.nota}</span>}
-              </p>
-            )}
-          </div>
-          <IconBtn label="Editar subtarea" onClick={() => setEditingSubtarea(s)}><Pencil size={11} /></IconBtn>
-          <IconBtn label="Eliminar subtarea" danger onClick={() => setDeletingSubtareaId(s.id)}><Trash2 size={11} /></IconBtn>
-        </div>
-      ))}
+      {subtareasPendientes.map(filaSubtarea)}
       <button type="button" onClick={() => setShowNuevaSubtarea(true)} className="text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] mt-1">+ Subtarea</button>
+      {subtareasFinalizadas.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setVerSubtareasFinalizadas((v) => !v)}
+          className="flex items-center gap-1 text-[10px] font-bold tracking-wide text-[var(--tema-vinculo)] mt-1.5"
+        >
+          {verSubtareasFinalizadas ? "Ocultar subtareas finalizadas" : "Ver subtareas finalizadas"}
+          <ChevronRight size={11} className={`transition-transform ${verSubtareasFinalizadas ? "rotate-90" : ""}`} />
+        </button>
+      )}
+      {verSubtareasFinalizadas && subtareasFinalizadas.map(filaSubtarea)}
     </div>
   );
 
