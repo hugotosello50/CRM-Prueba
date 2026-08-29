@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.70.0";
+const APP_VERSION = "2.70.1";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -3628,15 +3628,31 @@ function CalendarioView({ core, setCore, acciones, setAcciones, onOpen, t }) {
 // doble clic para editar el nombre, "+" para crear, "Eliminar" si está vacía.
 // Casilla para marcar un hilo (o tarea) como finalizado. Si ya tiene historial, pide un texto
 // de cierre para dejarlo registrado; si no tiene nada registrado todavía, cierra directo.
-function CasillaFinalizar({ hilo, acciones, setCore, size = 20 }) {
+function CasillaFinalizar({ hilo, acciones, setAcciones, setCore, size = 20 }) {
   const [pidiendoTexto, setPidiendoTexto] = useState(false);
   const finalizado = hilo.estado === "Cerrado";
   const tieneHistorial = acciones.some((a) => a.hiloId === hilo.id && a.estado === "Realizada");
 
   const reabrir = () => setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === hilo.id ? { ...h, estado: "Activo" } : h)) }));
-  const cerrarDirecto = () => setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === hilo.id ? { ...h, estado: "Cerrado" } : h)) }));
+
+  // Al cerrar, no puede quedar ninguna acción/subtarea Pendiente colgada — si no, sigue
+  // apareciendo como "vencida" en Resumen de hoy, Calendario, el Tablero de control y el aviso push.
+  const limpiarPendientes = () => {
+    setAcciones((prev) => prev.filter((a) => !(a.hiloId === hilo.id && a.estado === "Pendiente")));
+    if (hilo.tipo === "tarea" && (hilo.subtareas || []).some((s) => !s.hecha)) {
+      setCore((prev) => ({
+        ...prev,
+        hilos: prev.hilos.map((h) => (h.id === hilo.id ? { ...h, subtareas: (h.subtareas || []).map((s) => (s.hecha ? s : { ...s, hecha: true })) } : h)),
+      }));
+    }
+  };
+  const cerrarDirecto = () => {
+    setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === hilo.id ? { ...h, estado: "Cerrado" } : h)) }));
+    limpiarPendientes();
+  };
   const cerrarConTexto = (texto) => {
     setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === hilo.id ? { ...h, estado: "Cerrado", notaCierre: texto } : h)) }));
+    limpiarPendientes();
     setPidiendoTexto(false);
   };
 
@@ -4831,7 +4847,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
     const headerTarea = (
       <>
         <div className="flex items-start gap-2.5 min-w-0">
-          <CasillaFinalizar hilo={hilo} acciones={accionesDelHilo} setCore={setCore} size={18} />
+          <CasillaFinalizar hilo={hilo} acciones={accionesDelHilo} setAcciones={setAcciones} setCore={setCore} size={18} />
           {standalone ? (
             <div
               className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-extrabold"
@@ -4990,7 +5006,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
   const headerCliente = (
     <>
       <div className="flex items-start gap-2.5 min-w-0 mt-1">
-        <CasillaFinalizar hilo={hilo} acciones={accionesDelHilo} setCore={setCore} size={18} />
+        <CasillaFinalizar hilo={hilo} acciones={accionesDelHilo} setAcciones={setAcciones} setCore={setCore} size={18} />
         {standalone ? (
           <div
             className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-extrabold"
