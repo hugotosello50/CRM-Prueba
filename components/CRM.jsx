@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.64.0";
+const APP_VERSION = "2.65.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -1004,7 +1004,7 @@ function SelectorProgramacion({ value, onChange, acciones, parametros, labelRecu
           )}
           {inhabilPeriodo && (
             <div className="bg-[#FBEEE7] border border-[var(--tema-acento)] rounded-sm p-2.5 mb-3">
-              <p className="text-xs text-[#2A2118]">Esa fecha cae en un día no hábil o muy cargado — por eso se sugiere la de arriba. Si guardás de nuevo, se usa la fecha original del período igual.</p>
+              <p className="text-xs text-[#2A2118]">Esa fecha cae en un día no hábil o muy cargado — por eso se sugiere la de arriba. Al guardar vas a poder elegir entre la fecha sugerida o la original del período.</p>
             </div>
           )}
           <div className="mb-3"><AvisoFields aviso={value.aviso} onAviso={(a) => set({ aviso: a })} /></div>
@@ -2482,13 +2482,14 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
     : !personaFija && !empresaFijaId && !obraFijaId && !personaId && empresaIds.length === 0 && obraIds.length === 0;
 
   // Arma las 1-2 acciones (primer contacto + próxima, según lo cargado en el formulario)
-  // para un hilo recién creado — se reusa igual para la creación simple y la múltiple.
-  const accionesParaHilo = (hiloId, hoy, siguienteNumeroInicial) => {
+  // para un hilo recién creado — se reusa igual para la creación simple y la múltiple. En modo
+  // período, "forzar" pisa la fecha sugerida y usa la original del período tal cual.
+  const accionesParaHilo = (hiloId, hoy, siguienteNumeroInicial, forzar) => {
     let siguienteNumero = siguienteNumeroInicial;
     const idPrimera = uid("A");
     const nuevas = [{ id: idPrimera, hiloId, tipoAccionId: tipoAccionId1, estado: "Realizada", fechaRealizada: hoy, fechaProgramada: "", horaProgramada: "", prioridad: "", notaPlanificada: "", notaHecho: notas1, origenId: null, destinoId: null, numero: siguienteNumero++, recurrente: false, repiteCadaN: null, repiteUnidad: null, fechaCreacion: hoy, secuencia: Date.now() }];
     if (programarProxima) {
-      const r = resolverProgramacion(prog, acciones, core.parametros);
+      const r = resolverProgramacion(forzar ? { ...prog, confirmar: true } : prog, acciones, core.parametros);
       const idNueva = uid("A");
       nuevas.push({ id: idNueva, hiloId, tipoAccionId: tipoAccionId2, estado: "Pendiente", fechaRealizada: "", fechaProgramada: r.fecha, horaProgramada: r.hora, prioridad, notaPlanificada: notas2, notaHecho: "", origenId: idPrimera, destinoId: null, numero: siguienteNumero++, recurrente: r.recurrente, repiteCadaN: r.repiteCadaN, repiteUnidad: r.repiteUnidad, fechaCreacion: hoy, secuencia: Date.now(), aviso: r.aviso, avisoEnviado: false, avisoVistoEnApp: false });
       nuevas[0] = { ...nuevas[0], destinoId: idNueva };
@@ -2496,7 +2497,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
     return { nuevas, siguienteNumero };
   };
 
-  const crear = () => {
+  const crear = (forzar) => {
     if (!titulo.trim() || faltaVinculo) return;
     const hoy = todayISO();
     const personaIdFinal = personaFija ? personaFija.id : personaId;
@@ -2511,7 +2512,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
     if (showPrimerContacto && setAcciones) {
       setAcciones((prev) => {
         const siguienteNumeroInicial = Math.max(0, ...prev.map((a) => a.numero || 0)) + 1;
-        const { nuevas } = accionesParaHilo(nuevoHilo.id, hoy, siguienteNumeroInicial);
+        const { nuevas } = accionesParaHilo(nuevoHilo.id, hoy, siguienteNumeroInicial, forzar);
         return [...nuevas, ...prev];
       });
     }
@@ -2519,7 +2520,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
     onCreated(nuevoHilo.id);
   };
 
-  const crearMultiple = () => {
+  const crearMultiple = (forzar) => {
     if (!titulo.trim() || personaIdsMultiple.length === 0) return;
     const hoy = todayISO();
     const nuevosHilos = personaIdsMultiple.map(() => ({ id: uid("H"), titulo: titulo.trim(), estado: "Activo", fechaCreacion: hoy, tipo: "cliente", columnaTareaId: null, columnaSeguimientoId: columnaFijaId ?? null, hiloRelacionadoId: null, notaCierre: "", notas: [] }));
@@ -2531,7 +2532,7 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
         let siguienteNumero = Math.max(0, ...prev.map((a) => a.numero || 0)) + 1;
         const todasLasNuevas = [];
         nuevosHilos.forEach((h) => {
-          const { nuevas, siguienteNumero: sig } = accionesParaHilo(h.id, hoy, siguienteNumero);
+          const { nuevas, siguienteNumero: sig } = accionesParaHilo(h.id, hoy, siguienteNumero, forzar);
           siguienteNumero = sig;
           todasLasNuevas.push(...nuevas);
         });
@@ -2542,9 +2543,16 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
     onCreated(nuevosHilos[nuevosHilos.length - 1].id);
   };
 
+  const guardar = (forzar) => { if (seleccionMultiple) crearMultiple(forzar); else crear(forzar); };
+
+  // En período, si la fecha se tuvo que ajustar, se ofrecen directamente las dos opciones
+  // (sugerida u original) en vez de pedir un segundo click sobre el mismo botón — eso solo
+  // tiene sentido en fecha específica, donde hay una única fecha para insistir.
+  const periodoConDosOpciones = showPrimerContacto && programarProxima && prog.modoFecha === "periodo" && especificaInhabil;
+
   const submit = () => {
     if (showPrimerContacto && programarProxima && especificaInhabil && !prog.confirmar) { setProg((p) => ({ ...p, confirmar: true })); return; }
-    if (seleccionMultiple) crearMultiple(); else crear();
+    guardar(prog.confirmar);
   };
 
   return (
@@ -2847,10 +2855,24 @@ function NuevoHiloForm({ core, setCore, acciones, setAcciones, personaFija, empr
 
       <div className="flex gap-2">
         <button onClick={onCancelar} className="flex-1 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Cancelar</button>
-        <button onClick={submit} disabled={!titulo.trim() || faltaVinculo} className={`flex-1 rounded-sm py-2.5 font-bold text-sm ${!titulo.trim() || faltaVinculo ? "bg-[#E7E2D8] text-[#A69C88] cursor-not-allowed" : "bg-[var(--tema-acento)] text-[#2A2118]"}`}>
-          {especificaInhabil && prog.confirmar ? "Sí, crear igual" : seleccionMultiple ? `Crear ${personaIdsMultiple.length} hilo${personaIdsMultiple.length === 1 ? "" : "s"}` : "Crear hilo"}
+        <button
+          onClick={() => (periodoConDosOpciones ? guardar(false) : submit())}
+          disabled={!titulo.trim() || faltaVinculo}
+          className={`flex-1 rounded-sm py-2.5 font-bold text-sm ${!titulo.trim() || faltaVinculo ? "bg-[#E7E2D8] text-[#A69C88] cursor-not-allowed" : "bg-[var(--tema-acento)] text-[#2A2118]"}`}
+        >
+          {periodoConDosOpciones ? "Guardar fecha sugerida" : especificaInhabil && prog.confirmar ? "Sí, crear igual" : seleccionMultiple ? `Crear ${personaIdsMultiple.length} hilo${personaIdsMultiple.length === 1 ? "" : "s"}` : "Crear hilo"}
         </button>
       </div>
+      {periodoConDosOpciones && (
+        <button
+          type="button"
+          onClick={() => guardar(true)}
+          disabled={!titulo.trim() || faltaVinculo}
+          className="w-full mt-2 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#2A2118] disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Guardar la fecha no hábil igual
+        </button>
+      )}
 
       {showVincularEmpresa && personaFija && (
         <VincularEmpresaForm
@@ -6537,10 +6559,14 @@ function AvanzarHiloForm({ hilo, pendienteActual, core, setCore, acciones, setAc
   const [prioridad, setPrioridad] = useState("Media");
 
   const especificaInhabil = resolverProgramacion(prog, acciones, core.parametros).inhabil;
+  // En período, si la fecha se tuvo que ajustar, se ofrecen directamente las dos opciones
+  // (sugerida u original) en vez de pedir un segundo click sobre el mismo botón — eso solo
+  // tiene sentido en fecha específica, donde hay una única fecha para insistir.
+  const periodoConDosOpciones = programarProxima && prog.modoFecha === "periodo" && especificaInhabil;
 
-  const guardar = () => {
+  const guardar = (forzar) => {
     const hoy = todayISO();
-    const r = resolverProgramacion(prog, acciones, core.parametros);
+    const r = resolverProgramacion(forzar ? { ...prog, confirmar: true } : prog, acciones, core.parametros);
     const { fecha, hora, aviso } = r;
     setAcciones((prev) => {
       let siguienteNumero = Math.max(0, ...prev.map((a) => a.numero || 0)) + 1;
@@ -6568,7 +6594,7 @@ function AvanzarHiloForm({ hilo, pendienteActual, core, setCore, acciones, setAc
 
   const submit = () => {
     if (programarProxima && especificaInhabil && !prog.confirmar) { setProg((p) => ({ ...p, confirmar: true })); return; }
-    guardar();
+    guardar(prog.confirmar);
   };
 
   return (
@@ -6628,7 +6654,18 @@ function AvanzarHiloForm({ hilo, pendienteActual, core, setCore, acciones, setAc
         )}
       </div>
 
-      <PrimaryBtn full onClick={submit}>{especificaInhabil && prog.confirmar ? "Sí, guardar igual" : "Guardar y continuar"}</PrimaryBtn>
+      <PrimaryBtn full onClick={() => (periodoConDosOpciones ? guardar(false) : submit())}>
+        {periodoConDosOpciones ? "Guardar fecha sugerida" : especificaInhabil && prog.confirmar ? "Sí, guardar igual" : "Guardar y continuar"}
+      </PrimaryBtn>
+      {periodoConDosOpciones && (
+        <button
+          type="button"
+          onClick={() => guardar(true)}
+          className="w-full mt-2 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#2A2118]"
+        >
+          Guardar la fecha no hábil igual
+        </button>
+      )}
     </Modal>
   );
 }
