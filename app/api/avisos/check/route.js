@@ -55,8 +55,8 @@ export async function POST(request) {
     const { user_id: userId, core, acciones } = fila;
     if (!core || !Array.isArray(acciones)) continue;
 
-    // Junta, de este usuario, todo lo que tenga un aviso vencido: acciones pendientes,
-    // tareas (hilos) y subtareas — son tres formas distintas de guardar fecha/hora/aviso.
+    // Junta, de este usuario, todo lo que tenga un aviso vencido: acciones pendientes (la
+    // fecha de una tarea vive ahí también, mismo mecanismo que un seguimiento) y subtareas.
     const pendientes = [];
 
     for (const a of acciones) {
@@ -65,9 +65,6 @@ export async function POST(request) {
       }
     }
     for (const h of core.hilos || []) {
-      if (h.tipo === 'tarea' && h.estado === 'Activo' && debeAvisarAhora(h.fecha, h.hora, h.aviso, h.avisoEnviado, ahoraMs)) {
-        pendientes.push({ tipo: 'tarea', hiloId: h.id, texto: h.titulo, fecha: h.fecha, hora: h.hora });
-      }
       for (const s of h.subtareas || []) {
         if (!s.hecha && debeAvisarAhora(s.fecha, s.hora, s.aviso, s.avisoEnviado, ahoraMs)) {
           pendientes.push({ tipo: 'subtarea', hiloId: h.id, subId: s.id, texto: s.texto, fecha: s.fecha, hora: s.hora });
@@ -107,20 +104,15 @@ export async function POST(request) {
     const idsAcciones = new Set(pendientes.filter((p) => p.tipo === 'accion').map((p) => p.id));
     const nuevasAcciones = acciones.map((a) => (idsAcciones.has(a.id) ? { ...a, avisoEnviado: true } : a));
 
-    const idsTareas = new Set(pendientes.filter((p) => p.tipo === 'tarea').map((p) => p.hiloId));
     const subIdsPorHilo = new Map();
     pendientes.filter((p) => p.tipo === 'subtarea').forEach((p) => {
       if (!subIdsPorHilo.has(p.hiloId)) subIdsPorHilo.set(p.hiloId, new Set());
       subIdsPorHilo.get(p.hiloId).add(p.subId);
     });
     const nuevosHilos = (core.hilos || []).map((h) => {
-      let hh = h;
-      if (idsTareas.has(h.id)) hh = { ...hh, avisoEnviado: true };
-      if (subIdsPorHilo.has(h.id)) {
-        const subIds = subIdsPorHilo.get(h.id);
-        hh = { ...hh, subtareas: (hh.subtareas || []).map((s) => (subIds.has(s.id) ? { ...s, avisoEnviado: true } : s)) };
-      }
-      return hh;
+      const subIds = subIdsPorHilo.get(h.id);
+      if (!subIds) return h;
+      return { ...h, subtareas: (h.subtareas || []).map((s) => (subIds.has(s.id) ? { ...s, avisoEnviado: true } : s)) };
     });
 
     await supabaseAdmin

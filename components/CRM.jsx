@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.69.0";
+const APP_VERSION = "2.70.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -945,6 +945,21 @@ function resolverProgramacion(v, acciones, parametros) {
   };
 }
 
+// Arma una acción "Pendiente" para representar la fecha propia de una tarea — mismo mecanismo
+// que la próxima acción de un seguimiento (sin tipo de acción, no hace falta para una tarea).
+// "r" es el resultado de resolverProgramacion; "numeroBase" el listado actual de acciones, para
+// calcular el próximo número correlativo.
+function accionPendienteDeTarea(hiloId, r, acciones) {
+  const numero = Math.max(0, ...acciones.map((a) => a.numero || 0)) + 1;
+  return {
+    id: uid("A"), hiloId, tipoAccionId: "", estado: "Pendiente",
+    fechaRealizada: "", fechaProgramada: r.fecha, horaProgramada: r.hora, prioridad: "Media",
+    notaPlanificada: "", notaHecho: "", origenId: null, destinoId: null, numero,
+    recurrente: r.recurrente, repiteCadaN: r.repiteCadaN, repiteUnidad: r.repiteUnidad,
+    fechaCreacion: todayISO(), secuencia: Date.now(), aviso: r.aviso, avisoEnviado: false, avisoVistoEnApp: false,
+  };
+}
+
 // Bloque reusable para programar una fecha: por período o específica, con aviso y marca de
 // repetitiva. No incluye prioridad (queda afuera, la agrega cada llamador si corresponde) — así
 // se puede usar tanto para la próxima acción de un hilo como para la fecha propia de una tarea.
@@ -1855,6 +1870,41 @@ export default function CRM({ userId, onLogout }) {
         ultimoUpdatedAtRef.current = ts;
         await saveCrmField(userId, "core", c, 0, ts);
       }
+      // Migración inversa a la de arriba: la fecha propia de una tarea vuelve a vivir como una
+      // acción pendiente (mismo mecanismo que un seguimiento) — se dejó de usar hilo.fecha/hora/
+      // aviso porque tener dos lugares guardando la fecha de una tarea generaba inconsistencias
+      // (Calendario no contaba hilo.fecha, y una tarjeta podía mostrar dos fechas distintas). A
+      // las que ya tenían una fecha propia se les crea la acción pendiente una sola vez,
+      // conservando si el aviso ya se había enviado para no volver a notificar de golpe.
+      if (c.hilos.some((h) => h.tipo === "tarea" && h.fecha)) {
+        let a2 = a;
+        const hilosConvertidos = c.hilos.map((h) => {
+          if (h.tipo !== "tarea" || !h.fecha) return h;
+          const yaTienePendiente = a2.some((acc) => acc.hiloId === h.id && acc.estado === "Pendiente");
+          if (!yaTienePendiente) {
+            const siguienteNumero = Math.max(0, ...a2.map((acc) => acc.numero || 0)) + 1;
+            a2 = [
+              {
+                id: uid("A"), hiloId: h.id, tipoAccionId: "", estado: "Pendiente",
+                fechaRealizada: "", fechaProgramada: h.fecha, horaProgramada: h.hora || "", prioridad: "Media",
+                notaPlanificada: "", notaHecho: "", origenId: null, destinoId: null, numero: siguienteNumero,
+                recurrente: !!h.recurrente, repiteCadaN: h.recurrente ? h.repiteCadaN : null, repiteUnidad: h.recurrente ? h.repiteUnidad : null,
+                fechaCreacion: h.fechaCreacion || todayISO(), secuencia: Date.now(),
+                aviso: h.aviso || null, avisoEnviado: !!h.avisoEnviado, avisoVistoEnApp: !!h.avisoVistoEnApp,
+              },
+              ...a2,
+            ];
+          }
+          const { fecha, hora, aviso, avisoEnviado, avisoVistoEnApp, recurrente, repiteCadaN, repiteUnidad, ...resto } = h;
+          return resto;
+        });
+        c = { ...c, hilos: hilosConvertidos };
+        a = a2;
+        const ts = new Date().toISOString();
+        ultimoUpdatedAtRef.current = ts;
+        await saveCrmField(userId, "core", c, 0, ts);
+        await saveCrmField(userId, "acciones", a, 0, ts);
+      }
       setCore(c);
       setAcciones(a);
     })();
@@ -1889,10 +1939,11 @@ export default function CRM({ userId, onLogout }) {
     const finSemana = toISO(addDays(startOfWeekMonday(parseISO(t)), 6));
     const lunes = toISO(addDays(startOfWeekMonday(parseISO(t)), 7));
     const enVentana = (fecha) => fecha <= finSemana || fecha === lunes;
+    // La fecha de una tarea vive en una acción pendiente (mismo mecanismo que un seguimiento),
+    // así que ya queda cubierta acá — no hace falta un chequeo aparte por hilo.
     const hayAccionPendiente = a.some((acc) => acc.estado === "Pendiente" && acc.fechaProgramada && enVentana(acc.fechaProgramada));
-    const hayTareaConFecha = c.hilos.some((h) => h.tipo === "tarea" && h.estado === "Activo" && h.fecha && enVentana(h.fecha));
     const haySubtareaConFecha = c.hilos.some((h) => h.tipo === "tarea" && h.estado === "Activo" && (h.subtareas || []).some((s) => !s.hecha && s.fecha && enVentana(s.fecha)));
-    return hayAccionPendiente || hayTareaConFecha || haySubtareaConFecha;
+    return hayAccionPendiente || haySubtareaConFecha;
   };
 
   // Busca, en los datos mismos (no en cómo se volvió a la app), el primer aviso que el
@@ -1907,9 +1958,6 @@ export default function CRM({ userId, onLogout }) {
       }
     }
     for (const h of c.hilos) {
-      if (h.tipo === "tarea" && h.estado === "Activo" && h.aviso?.activo && h.avisoEnviado && !h.avisoVistoEnApp) {
-        return { origen: "tarea", hiloId: h.id, texto: h.titulo, fecha: h.fecha, hora: h.hora };
-      }
       for (const s of h.subtareas || []) {
         if (!s.hecha && s.aviso?.activo && s.avisoEnviado && !s.avisoVistoEnApp) {
           return { origen: "subtarea", hiloId: h.id, subId: s.id, texto: s.texto, fecha: s.fecha, hora: s.hora };
@@ -1923,8 +1971,6 @@ export default function CRM({ userId, onLogout }) {
     if (!match) return;
     if (match.origen === "accion") {
       setAcciones((prev) => prev.map((a) => (a.id === match.id ? { ...a, avisoVistoEnApp: true } : a)));
-    } else if (match.origen === "tarea") {
-      setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === match.hiloId ? { ...h, avisoVistoEnApp: true } : h)) }));
     } else if (match.origen === "subtarea") {
       setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === match.hiloId ? { ...h, subtareas: (h.subtareas || []).map((s) => (s.id === match.subId ? { ...s, avisoVistoEnApp: true } : s)) } : h)) }));
     }
@@ -2214,28 +2260,31 @@ function ResumenHoyModal({ core, setCore, acciones, setAcciones, onOpen, onClose
   });
 
   const esTareaAccion = (a) => core.hilos.find((h) => h.id === a.hiloId)?.tipo === "tarea";
+  const pendientePorHiloId = new Map();
+  for (const a of acciones) if (a.estado === "Pendiente") pendientePorHiloId.set(a.hiloId, a);
 
-  // Un "evento" es una acción pendiente (de un seguimiento o del hilo interno de una tarea),
-  // la fecha propia de una tarea simple (hilo.fecha), o una subtarea pendiente con fecha.
+  // Un "evento" es una acción pendiente (de un seguimiento o de una tarea — la fecha propia de
+  // una tarea vive ahí, mismo mecanismo que un seguimiento) o una subtarea pendiente con fecha.
   const eventos = [];
   for (const a of acciones) {
     if (a.estado === "Pendiente" && a.fechaProgramada) eventos.push({ key: `a-${a.id}`, fecha: a.fechaProgramada, tipo: esTareaAccion(a) ? "accionTarea" : "seguimiento", accion: a });
   }
   for (const h of core.hilos) {
     if (h.tipo !== "tarea" || h.estado !== "Activo") continue;
-    if (h.fecha) eventos.push({ key: `h-${h.id}`, fecha: h.fecha, tipo: "tarea", hilo: h });
     for (const s of h.subtareas || []) {
       if (!s.hecha && s.fecha) eventos.push({ key: `st-${h.id}-${s.id}`, fecha: s.fecha, tipo: "subtarea", hilo: h, subtarea: s });
     }
   }
 
+  // "Sin fecha" para una tarea es no tener ninguna acción pendiente (no una fecha vacía en el
+  // hilo, que ya no existe).
   const sinFecha = [];
   for (const a of acciones) {
     if (a.estado === "Pendiente" && !a.fechaProgramada) sinFecha.push({ key: `a-${a.id}`, tipo: esTareaAccion(a) ? "accionTarea" : "seguimiento", accion: a });
   }
   for (const h of core.hilos) {
     if (h.tipo !== "tarea" || h.estado !== "Activo") continue;
-    if (!h.fecha) sinFecha.push({ key: `h-${h.id}`, tipo: "tarea", hilo: h });
+    if (!pendientePorHiloId.has(h.id)) sinFecha.push({ key: `h-${h.id}`, tipo: "tarea", hilo: h });
     for (const s of h.subtareas || []) {
       if (!s.hecha && !s.fecha) sinFecha.push({ key: `st-${h.id}-${s.id}`, tipo: "subtarea", hilo: h, subtarea: s });
     }
@@ -2255,7 +2304,9 @@ function ResumenHoyModal({ core, setCore, acciones, setAcciones, onOpen, onClose
     if (!nuevaFecha || seleccionados.size === 0) return;
     const elegidos = [...seleccionados].map((k) => eventoPorKey.get(k)).filter(Boolean);
     const idsAcciones = new Set(elegidos.filter((e) => e.tipo === "seguimiento" || e.tipo === "accionTarea").map((e) => e.accion.id));
-    const hilosConFecha = new Set(elegidos.filter((e) => e.tipo === "tarea").map((e) => e.hilo.id));
+    // "tarea" acá son tareas sin ninguna fecha todavía (ver sinFecha) — reprogramarlas es
+    // crearles la acción pendiente por primera vez, mismo mecanismo que cualquier otra.
+    const hilosSinAccion = elegidos.filter((e) => e.tipo === "tarea").map((e) => e.hilo);
     const subtareasPorHilo = new Map();
     elegidos.filter((e) => e.tipo === "subtarea").forEach((e) => {
       if (!subtareasPorHilo.has(e.hilo.id)) subtareasPorHilo.set(e.hilo.id, new Set());
@@ -2265,15 +2316,21 @@ function ResumenHoyModal({ core, setCore, acciones, setAcciones, onOpen, onClose
     if (idsAcciones.size > 0) {
       setAcciones((prev) => prev.map((a) => (idsAcciones.has(a.id) ? { ...a, fechaProgramada: nuevaFecha, avisoEnviado: false, avisoVistoEnApp: false } : a)));
     }
-    if (hilosConFecha.size > 0 || subtareasPorHilo.size > 0) {
+    if (hilosSinAccion.length > 0) {
+      const r = { fecha: nuevaFecha, hora: "", aviso: null, recurrente: false, repiteCadaN: null, repiteUnidad: null };
+      setAcciones((prev) => {
+        let next = prev;
+        for (const h of hilosSinAccion) next = [accionPendienteDeTarea(h.id, r, next), ...next];
+        return next;
+      });
+    }
+    if (subtareasPorHilo.size > 0) {
       setCore((prev) => ({
         ...prev,
         hilos: prev.hilos.map((h) => {
-          let hh = h;
-          if (hilosConFecha.has(h.id)) hh = { ...hh, fecha: nuevaFecha, avisoEnviado: false, avisoVistoEnApp: false };
           const subIds = subtareasPorHilo.get(h.id);
-          if (subIds) hh = { ...hh, subtareas: (hh.subtareas || []).map((s) => (subIds.has(s.id) ? { ...s, fecha: nuevaFecha, avisoEnviado: false, avisoVistoEnApp: false } : s)) };
-          return hh;
+          if (!subIds) return h;
+          return { ...h, subtareas: (h.subtareas || []).map((s) => (subIds.has(s.id) ? { ...s, fecha: nuevaFecha, avisoEnviado: false, avisoVistoEnApp: false } : s)) };
         }),
       }));
     }
@@ -3053,17 +3110,25 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
 
   const contarColumna = (colId) => tareas.filter((h) => colId === "todo" || (h.columnaTareaId || null) === colId).length;
 
+  // La fecha de una tarea vive en su acción pendiente (mismo mecanismo que un seguimiento),
+  // no en el hilo — este mapa resuelve hiloId -> esa acción para ordenar/mostrar.
+  const pendientePorHiloId = useMemo(() => {
+    const map = new Map();
+    for (const a of acciones) if (a.estado === "Pendiente") map.set(a.hiloId, a);
+    return map;
+  }, [acciones]);
+
   const tareasColumna = useMemo(() => {
     return tareas
       .filter((h) => columnaActiva === "todo" || (h.columnaTareaId || null) === columnaActiva)
       .sort((a, b) => {
-        const fa = a.fecha || "", fb = b.fecha || "";
+        const fa = pendientePorHiloId.get(a.id)?.fechaProgramada || "", fb = pendientePorHiloId.get(b.id)?.fechaProgramada || "";
         if (fa && fb) return fa < fb ? -1 : fa > fb ? 1 : 0;
         if (fa && !fb) return -1;
         if (!fa && fb) return 1;
         return (b.fechaCreacion || "").localeCompare(a.fechaCreacion || "");
       });
-  }, [tareas, columnaActiva]);
+  }, [tareas, columnaActiva, pendientePorHiloId]);
 
   const moverTarea = (hiloId, colId) => {
     setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === hiloId ? { ...h, columnaTareaId: colId } : h)) }));
@@ -3087,9 +3152,14 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
   const crearTareaRapida = () => {
     if (!tituloNuevo.trim()) return;
     const hoy = todayISO();
-    const aviso = horaNueva && avisoNuevo.activo ? avisoNuevo : null;
-    const nuevoHilo = { id: uid("H"), titulo: tituloNuevo.trim(), notas: [], fecha: fechaNueva, hora: horaNueva, aviso, avisoEnviado: false, avisoVistoEnApp: false, estado: "Activo", fechaCreacion: hoy, tipo: "tarea", columnaTareaId: columnaActiva === "todo" ? null : columnaActiva, hiloRelacionadoId: null, notaCierre: "", recurrente: false, repiteCadaN: null, repiteUnidad: null };
+    const hiloId = uid("H");
+    const nuevoHilo = { id: hiloId, titulo: tituloNuevo.trim(), notas: [], estado: "Activo", fechaCreacion: hoy, tipo: "tarea", columnaTareaId: columnaActiva === "todo" ? null : columnaActiva, hiloRelacionadoId: null, notaCierre: "" };
     setCore((prev) => ({ ...prev, hilos: [nuevoHilo, ...prev.hilos] }));
+    if (fechaNueva) {
+      const aviso = horaNueva && avisoNuevo.activo ? avisoNuevo : null;
+      const r = { fecha: fechaNueva, hora: horaNueva, aviso, recurrente: false, repiteCadaN: null, repiteUnidad: null };
+      setAcciones((prev) => [accionPendienteDeTarea(hiloId, r, prev), ...prev]);
+    }
     setTituloNuevo("");
     setFechaNueva("");
     setHoraNueva("");
@@ -3211,15 +3281,17 @@ function TareasView({ core, setCore, acciones, setAcciones, onOpen }) {
 // Edita una tarea: título y fecha/hora de su próxima acción, en un solo formulario — mismos
 // campos que al crearla (ver crearTareaRapida en TareasView), para mantener la lógica de
 // edición consistente con creación en toda la app (ver EditarHiloPrincipalForm).
-function EditarTareaForm({ hilo, core, setCore, acciones = [], onClose }) {
+function EditarTareaForm({ hilo, core, setCore, acciones = [], setAcciones, onClose }) {
+  // La fecha de una tarea vive en su acción pendiente (mismo mecanismo que un seguimiento).
+  const pendiente = acciones.find((a) => a.hiloId === hilo.id && a.estado === "Pendiente");
   const [titulo, setTitulo] = useState(hilo.titulo);
-  const [conFecha, setConFecha] = useState(!!(hilo.fecha || hilo.hora));
+  const [conFecha, setConFecha] = useState(!!pendiente);
   const [prog, setProg] = useState(() => ({
-    ...programacionInicial({ modoFecha: "especifica", fecha: hilo.fecha || todayISO(), aviso: hilo.aviso || core.parametros.avisoDefaultTareas }),
-    hora: hilo.hora || "",
-    recurrente: !!hilo.recurrente,
-    repiteCadaN: hilo.repiteCadaN || 1,
-    repiteUnidad: hilo.repiteUnidad || "meses",
+    ...programacionInicial({ modoFecha: "especifica", fecha: pendiente?.fechaProgramada || todayISO(), aviso: pendiente?.aviso || core.parametros.avisoDefaultTareas }),
+    hora: pendiente?.horaProgramada || "",
+    recurrente: !!pendiente?.recurrente,
+    repiteCadaN: pendiente?.repiteCadaN || 1,
+    repiteUnidad: pendiente?.repiteUnidad || "meses",
   }));
 
   const especificaInhabil = conFecha && resolverProgramacion(prog, acciones, core.parametros).inhabil;
@@ -3227,21 +3299,22 @@ function EditarTareaForm({ hilo, core, setCore, acciones = [], onClose }) {
   const guardar = (forzar) => {
     if (!titulo.trim()) return;
     const tituloFinal = titulo.trim();
+    setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === hilo.id ? { ...h, titulo: tituloFinal } : h)) }));
     if (!conFecha) {
-      const cambioFecha = !!(hilo.fecha || hilo.hora);
-      setCore((prev) => ({
-        ...prev,
-        hilos: prev.hilos.map((h) => (h.id === hilo.id ? { ...h, titulo: tituloFinal, fecha: "", hora: "", aviso: null, avisoEnviado: cambioFecha ? false : !!h.avisoEnviado, avisoVistoEnApp: cambioFecha ? false : !!h.avisoVistoEnApp, recurrente: false, repiteCadaN: null, repiteUnidad: null } : h)),
-      }));
+      if (pendiente) setAcciones((prev) => prev.filter((a) => a.id !== pendiente.id));
       onClose();
       return;
     }
     const r = resolverProgramacion(forzar ? { ...prog, confirmar: true } : prog, acciones, core.parametros);
-    const avisoCambio = r.fecha !== (hilo.fecha || "") || r.hora !== (hilo.hora || "") || JSON.stringify(r.aviso) !== JSON.stringify(hilo.aviso || null);
-    setCore((prev) => ({
-      ...prev,
-      hilos: prev.hilos.map((h) => (h.id === hilo.id ? { ...h, titulo: tituloFinal, fecha: r.fecha, hora: r.hora, aviso: r.aviso, avisoEnviado: avisoCambio ? false : !!h.avisoEnviado, avisoVistoEnApp: avisoCambio ? false : !!h.avisoVistoEnApp, recurrente: r.recurrente, repiteCadaN: r.repiteCadaN, repiteUnidad: r.repiteUnidad } : h)),
-    }));
+    const avisoCambio = !pendiente || r.fecha !== pendiente.fechaProgramada || r.hora !== (pendiente.horaProgramada || "") || JSON.stringify(r.aviso) !== JSON.stringify(pendiente.aviso || null);
+    setAcciones((prev) => {
+      if (pendiente) {
+        return prev.map((a) => (a.id === pendiente.id
+          ? { ...a, fechaProgramada: r.fecha, horaProgramada: r.hora, aviso: r.aviso, avisoEnviado: avisoCambio ? false : a.avisoEnviado, avisoVistoEnApp: avisoCambio ? false : a.avisoVistoEnApp, recurrente: r.recurrente, repiteCadaN: r.repiteCadaN, repiteUnidad: r.repiteUnidad }
+          : a));
+      }
+      return [accionPendienteDeTarea(hilo.id, r, prev), ...prev];
+    });
     onClose();
   };
 
@@ -4671,7 +4744,7 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       {showEditarTitulo && (
         esTarea ? (
           <Modal title="Editar tarea" onClose={() => setShowEditarTitulo(false)}>
-            <EditarTareaForm hilo={hilo} core={core} setCore={setCore} acciones={acciones} onClose={() => setShowEditarTitulo(false)} />
+            <EditarTareaForm hilo={hilo} core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onClose={() => setShowEditarTitulo(false)} />
           </Modal>
         ) : (
           <Modal title="Editar hilo" onClose={() => setShowEditarTitulo(false)}>
@@ -4706,15 +4779,19 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
 
       {showAgregarTarea && (
         <Modal title="Agregar tarea" onClose={() => setShowAgregarTarea(false)}>
-          <AgregarTareaAlHiloForm
+          <AgregarTareaForm
             core={core}
             acciones={acciones}
+            modoVinculo="hilo"
             hiloClienteId={id}
             personasDelHilo={personasDelHilo}
             onVincular={(tareaId) => {
               setCore((prev) => ({ ...prev, hilos: prev.hilos.map((h) => (h.id === tareaId ? { ...h, hiloRelacionadoId: id } : h)) }));
             }}
-            onCrear={(nuevoHilo) => setCore((prev) => ({ ...prev, hilos: [nuevoHilo, ...prev.hilos] }))}
+            onCrear={(nuevoHilo, accionPendiente) => {
+              setCore((prev) => ({ ...prev, hilos: [nuevoHilo, ...prev.hilos] }));
+              if (accionPendiente) setAcciones((prev) => [accionPendiente, ...prev]);
+            }}
             onClose={() => setShowAgregarTarea(false)}
           />
         </Modal>
@@ -4775,11 +4852,11 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
           )}
           <div className="min-w-0 flex-1">
             <p className="text-base font-extrabold text-[#2A2118] truncate" title={textoPlanoDeMenciones(hilo.titulo)}><TextoConMenciones texto={hilo.titulo} onOpen={onOpen} /></p>
-            {(hilo.fecha || hilo.hora) && (
+            {primary && (primary.fechaProgramada || primary.horaProgramada) && (
               <p className="text-[10px] text-[#8A8272] mt-0.5 flex items-center gap-1">
-                {hilo.fecha ? fmtDateHora(hilo.fecha, hilo.hora, core.parametros.formatoHora) : fmtHora(hilo.hora, core.parametros.formatoHora)}
-                {hilo.aviso?.activo && <Bell size={10} className="shrink-0 text-[var(--tema-vinculo)]" aria-label="Tiene aviso programado" />}
-                {hilo.recurrente && <Repeat size={10} className="shrink-0 text-[#8A8272]" aria-label="Tarea repetitiva" />}
+                {primary.fechaProgramada ? fmtDateHora(primary.fechaProgramada, primary.horaProgramada, core.parametros.formatoHora) : fmtHora(primary.horaProgramada, core.parametros.formatoHora)}
+                {primary.aviso?.activo && <Bell size={10} className="shrink-0 text-[var(--tema-vinculo)]" aria-label="Tiene aviso programado" />}
+                {primary.recurrente && <Repeat size={10} className="shrink-0 text-[#8A8272]" aria-label="Tarea repetitiva" />}
               </p>
             )}
           </div>
@@ -5871,20 +5948,22 @@ function PersonaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
 
       {showAgregarTareaEntidad && (
         <Modal title="Agregar tarea" onClose={() => setShowAgregarTareaEntidad(false)}>
-          <AgregarTareaAEntidadForm
+          <AgregarTareaForm
             core={core}
             acciones={acciones}
+            modoVinculo="entidad"
             tareasExcluidas={tareasDeLaPersona.map((t) => t.id)}
             onVincular={(tareaId) => {
               setCore((prev) => ({ ...prev, vinculos: [...(prev.vinculos || []), vinc("Persona", id, "Hilo", tareaId, null, false, todayISO())] }));
               setShowAgregarTareaEntidad(false);
             }}
-            onCrear={(nuevoHilo) => {
+            onCrear={(nuevoHilo, accionPendiente) => {
               setCore((prev) => ({
                 ...prev,
                 hilos: [nuevoHilo, ...prev.hilos],
                 vinculos: [...(prev.vinculos || []), vinc("Persona", id, "Hilo", nuevoHilo.id, null, false, todayISO())],
               }));
+              if (accionPendiente) setAcciones((prev) => [accionPendiente, ...prev]);
               setShowAgregarTareaEntidad(false);
             }}
             onClose={() => setShowAgregarTareaEntidad(false)}
@@ -6522,7 +6601,12 @@ function EditarHiloPrincipalForm({ hilo, core, setCore, onClose }) {
 // Agrega una tarea a un hilo de cliente: buscando entre las tareas sueltas (sin vincular
 // todavía a ningún hilo de cliente) — priorizando las que comparten alguna persona con este
 // hilo — o creando una nueva si no la encuentra.
-function AgregarTareaAlHiloForm({ core, acciones = [], hiloClienteId, personasDelHilo, onVincular, onCrear, onClose }) {
+// Agrega una tarea existente (vinculándola) o crea una nueva — se usa tanto desde un hilo de
+// cliente puntual (modoVinculo="hilo": la tarea queda enganchada vía hiloRelacionadoId, y las
+// tareas de las mismas personas se priorizan en el buscador) como desde la ficha de una
+// Persona/Empresa/Obra (modoVinculo="entidad": vínculo genérico, sin priorizar por persona).
+function AgregarTareaForm({ core, acciones = [], modoVinculo, hiloClienteId, personasDelHilo, tareasExcluidas, onVincular, onCrear, onClose }) {
+  const esModoHilo = modoVinculo === "hilo";
   const [modo, setModo] = useState("existente"); // 'existente' | 'nueva'
   const [q, setQ] = useState("");
   const [titulo, setTitulo] = useState("");
@@ -6533,32 +6617,36 @@ function AgregarTareaAlHiloForm({ core, acciones = [], hiloClienteId, personasDe
   const columnas = core.kanbanColumnasTareas || [];
 
   const disponibles = useMemo(() => {
-    const personaIds = new Set(personasDelHilo.map((p) => p.id));
-    const sueltas = core.hilos.filter((h) => h.tipo === "tarea" && !h.hiloRelacionadoId);
     const texto = q.trim().toLowerCase();
-    const filtradas = texto ? sueltas.filter((h) => h.titulo.toLowerCase().includes(texto)) : sueltas;
-    const conMismaPersona = [];
-    const resto = [];
-    filtradas.forEach((h) => {
-      const coincide = personasActivasDeHilo(h, core).some((p) => personaIds.has(p.id));
-      (coincide ? conMismaPersona : resto).push(h);
-    });
-    return [...conMismaPersona, ...resto];
-  }, [core.hilos, q, personasDelHilo]);
+    if (esModoHilo) {
+      const personaIds = new Set(personasDelHilo.map((p) => p.id));
+      const sueltas = core.hilos.filter((h) => h.tipo === "tarea" && !h.hiloRelacionadoId);
+      const filtradas = texto ? sueltas.filter((h) => h.titulo.toLowerCase().includes(texto)) : sueltas;
+      const conMismaPersona = [];
+      const resto = [];
+      filtradas.forEach((h) => {
+        const coincide = personasActivasDeHilo(h, core).some((p) => personaIds.has(p.id));
+        (coincide ? conMismaPersona : resto).push(h);
+      });
+      return [...conMismaPersona, ...resto];
+    }
+    const excluidas = new Set(tareasExcluidas);
+    const sueltas = core.hilos.filter((h) => h.tipo === "tarea" && !excluidas.has(h.id));
+    return texto ? sueltas.filter((h) => h.titulo.toLowerCase().includes(texto)) : sueltas;
+  }, [core.hilos, q, personasDelHilo, tareasExcluidas, esModoHilo]);
 
   const especificaInhabil = conFecha && resolverProgramacion(prog, acciones, core.parametros).inhabil;
 
   const crear = (forzar) => {
     if (!titulo.trim()) return;
     const r = conFecha ? resolverProgramacion(forzar ? { ...prog, confirmar: true } : prog, acciones, core.parametros) : null;
+    const hiloId = uid("H");
     const nuevoHilo = {
-      id: uid("H"), titulo: titulo.trim(), notas: notas.trim() ? [{ id: uid("NT"), texto: notas.trim(), fecha: todayISO() }] : [],
-      fecha: r?.fecha || "", hora: r?.hora || "", aviso: r?.aviso || null, avisoEnviado: false, avisoVistoEnApp: false,
+      id: hiloId, titulo: titulo.trim(), notas: notas.trim() ? [{ id: uid("NT"), texto: notas.trim(), fecha: todayISO() }] : [],
       estado: "Activo", fechaCreacion: todayISO(), tipo: "tarea",
-      columnaTareaId: columnaId || null, hiloRelacionadoId: hiloClienteId, notaCierre: "",
-      recurrente: r?.recurrente || false, repiteCadaN: r?.repiteCadaN || null, repiteUnidad: r?.repiteUnidad || null,
+      columnaTareaId: columnaId || null, hiloRelacionadoId: esModoHilo ? hiloClienteId : null, notaCierre: "",
     };
-    onCrear(nuevoHilo);
+    onCrear(nuevoHilo, r ? accionPendienteDeTarea(hiloId, r, acciones) : null);
     setTitulo(""); setNotas(""); setColumnaId(""); setConFecha(false);
     setProg(programacionInicial({ modoFecha: "especifica", aviso: core.parametros.avisoDefaultTareas }));
     setModo("existente");
@@ -6586,7 +6674,7 @@ function AgregarTareaAlHiloForm({ core, acciones = [], hiloClienteId, personasDe
             <input autoFocus className={inputCls} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Título de la tarea..." />
           </Field>
           {disponibles.length === 0 ? (
-            <p className="text-sm text-[#A69C88]">No encontré tareas sueltas con ese criterio — probá creando una nueva.</p>
+            <p className="text-sm text-[#A69C88]">No encontré tareas{esModoHilo ? " sueltas" : ""} con ese criterio — probá creando una nueva.</p>
           ) : (
             <div className="space-y-1.5 max-h-72 overflow-y-auto">
               {disponibles.map((h) => (
@@ -6604,107 +6692,9 @@ function AgregarTareaAlHiloForm({ core, acciones = [], hiloClienteId, personasDe
       ) : (
         <>
           <Field label="Título de la tarea *"><CampoConMenciones core={core} autoFocus value={titulo} onChange={setTitulo} /></Field>
-          <Field label="Notas (opcional)"><CampoConMenciones core={core} multiline rows={2} value={notas} onChange={setNotas} /></Field>
-          <Field label="Columna del Kanban de Tareas (opcional)">
-            <select className={inputCls} value={columnaId} onChange={(e) => setColumnaId(e.target.value)}>
-              <option value="">— Sin columna —</option>
-              {columnas.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-            </select>
-          </Field>
-          <label className="flex items-center gap-2 mb-3 text-sm font-bold text-[#2A2118]">
-            <input type="checkbox" checked={conFecha} onChange={(e) => setConFecha(e.target.checked)} /> Con fecha programada
-          </label>
-          {conFecha && (
-            <SelectorProgramacion value={prog} onChange={setProg} acciones={acciones} parametros={core.parametros} labelRecurrente="Es una tarea repetitiva" />
+          {esModoHilo && (
+            <Field label="Notas (opcional)"><CampoConMenciones core={core} multiline rows={2} value={notas} onChange={setNotas} /></Field>
           )}
-          {especificaInhabil ? (
-            <BotonesGuardarFecha onGuardar={crear} />
-          ) : (
-            <PrimaryBtn full onClick={() => crear(false)}>Crear tarea</PrimaryBtn>
-          )}
-        </>
-      )}
-      <button type="button" onClick={onClose} className="w-full mt-3 border border-[#E4DECF] rounded-sm py-2.5 font-bold text-sm text-[#2A2118]">Listo</button>
-    </>
-  );
-}
-
-// Igual que AgregarTareaAlHiloForm, pero vincula la tarea directamente a una Persona/
-// Empresa/Obra (vínculo genérico) en vez de a un hilo de cliente puntual.
-function AgregarTareaAEntidadForm({ core, acciones = [], tareasExcluidas, onVincular, onCrear, onClose }) {
-  const [modo, setModo] = useState("existente"); // 'existente' | 'nueva'
-  const [q, setQ] = useState("");
-  const [titulo, setTitulo] = useState("");
-  const [columnaId, setColumnaId] = useState("");
-  const [conFecha, setConFecha] = useState(false);
-  const [prog, setProg] = useState(() => programacionInicial({ modoFecha: "especifica", aviso: core.parametros.avisoDefaultTareas }));
-  const columnas = core.kanbanColumnasTareas || [];
-
-  const disponibles = useMemo(() => {
-    const excluidas = new Set(tareasExcluidas);
-    const sueltas = core.hilos.filter((h) => h.tipo === "tarea" && !excluidas.has(h.id));
-    const texto = q.trim().toLowerCase();
-    return texto ? sueltas.filter((h) => h.titulo.toLowerCase().includes(texto)) : sueltas;
-  }, [core.hilos, q, tareasExcluidas]);
-
-  const especificaInhabil = conFecha && resolverProgramacion(prog, acciones, core.parametros).inhabil;
-
-  const crear = (forzar) => {
-    if (!titulo.trim()) return;
-    const r = conFecha ? resolverProgramacion(forzar ? { ...prog, confirmar: true } : prog, acciones, core.parametros) : null;
-    const nuevoHilo = {
-      id: uid("H"), titulo: titulo.trim(), notas: [],
-      fecha: r?.fecha || "", hora: r?.hora || "", aviso: r?.aviso || null, avisoEnviado: false, avisoVistoEnApp: false,
-      estado: "Activo", fechaCreacion: todayISO(), tipo: "tarea",
-      columnaTareaId: columnaId || null, hiloRelacionadoId: null, notaCierre: "",
-      recurrente: r?.recurrente || false, repiteCadaN: r?.repiteCadaN || null, repiteUnidad: r?.repiteUnidad || null,
-    };
-    onCrear(nuevoHilo);
-    setTitulo(""); setColumnaId(""); setConFecha(false);
-    setProg(programacionInicial({ modoFecha: "especifica", aviso: core.parametros.avisoDefaultTareas }));
-    setModo("existente");
-  };
-
-  return (
-    <>
-      <div className="flex gap-2 mb-3">
-        <button
-          type="button"
-          onClick={() => setModo("existente")}
-          style={{ backgroundColor: modo === "existente" ? "#2A2F36" : "#E7E2D8", color: modo === "existente" ? "#FFFFFF" : "#6B6352" }}
-          className="flex-1 py-2 rounded-sm text-sm font-bold"
-        >Tarea existente</button>
-        <button
-          type="button"
-          onClick={() => setModo("nueva")}
-          style={{ backgroundColor: modo === "nueva" ? "#2A2F36" : "#E7E2D8", color: modo === "nueva" ? "#FFFFFF" : "#6B6352" }}
-          className="flex-1 py-2 rounded-sm text-sm font-bold"
-        >Nueva tarea</button>
-      </div>
-      {modo === "existente" ? (
-        <>
-          <Field label="Buscar tarea">
-            <input autoFocus className={inputCls} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Título de la tarea..." />
-          </Field>
-          {disponibles.length === 0 ? (
-            <p className="text-sm text-[#A69C88]">No encontré tareas con ese criterio — probá creando una nueva.</p>
-          ) : (
-            <div className="space-y-1.5 max-h-72 overflow-y-auto">
-              {disponibles.map((h) => (
-                <button
-                  key={h.id}
-                  onClick={() => onVincular(h.id)}
-                  className="w-full text-left bg-[#F7F5F0] border border-[#E4DECF] rounded-sm p-2.5 text-sm font-semibold text-[#2A2118]"
-                >
-                  {h.titulo}
-                </button>
-              ))}
-            </div>
-          )}
-        </>
-      ) : (
-        <>
-          <Field label="Título de la tarea *"><CampoConMenciones core={core} autoFocus value={titulo} onChange={setTitulo} /></Field>
           <Field label="Columna del Kanban de Tareas (opcional)">
             <select className={inputCls} value={columnaId} onChange={(e) => setColumnaId(e.target.value)}>
               <option value="">— Sin columna —</option>
@@ -7518,20 +7508,22 @@ function EmpresaDetail({ id, core, setCore, acciones, setAcciones, onClose, onOp
 
       {showAgregarTareaEntidad && (
         <Modal title="Agregar tarea" onClose={() => setShowAgregarTareaEntidad(false)}>
-          <AgregarTareaAEntidadForm
+          <AgregarTareaForm
             core={core}
             acciones={acciones}
+            modoVinculo="entidad"
             tareasExcluidas={tareasDeLaEmpresa.map((t) => t.id)}
             onVincular={(tareaId) => {
               setCore((prev) => ({ ...prev, vinculos: [...(prev.vinculos || []), vinc("Empresa", id, "Hilo", tareaId, null, false, todayISO())] }));
               setShowAgregarTareaEntidad(false);
             }}
-            onCrear={(nuevoHilo) => {
+            onCrear={(nuevoHilo, accionPendiente) => {
               setCore((prev) => ({
                 ...prev,
                 hilos: [nuevoHilo, ...prev.hilos],
                 vinculos: [...(prev.vinculos || []), vinc("Empresa", id, "Hilo", nuevoHilo.id, null, false, todayISO())],
               }));
+              if (accionPendiente) setAcciones((prev) => [accionPendiente, ...prev]);
               setShowAgregarTareaEntidad(false);
             }}
             onClose={() => setShowAgregarTareaEntidad(false)}
@@ -7841,20 +7833,22 @@ function ObraDetail({ id, core, setCore, acciones, setAcciones, onClose, onOpen 
 
       {showAgregarTareaEntidad && (
         <Modal title="Agregar tarea" onClose={() => setShowAgregarTareaEntidad(false)}>
-          <AgregarTareaAEntidadForm
+          <AgregarTareaForm
             core={core}
             acciones={acciones}
+            modoVinculo="entidad"
             tareasExcluidas={tareasDeLaObra.map((t) => t.id)}
             onVincular={(tareaId) => {
               setCore((prev) => ({ ...prev, vinculos: [...(prev.vinculos || []), vinc("Obra", id, "Hilo", tareaId, null, false, todayISO())] }));
               setShowAgregarTareaEntidad(false);
             }}
-            onCrear={(nuevoHilo) => {
+            onCrear={(nuevoHilo, accionPendiente) => {
               setCore((prev) => ({
                 ...prev,
                 hilos: [nuevoHilo, ...prev.hilos],
                 vinculos: [...(prev.vinculos || []), vinc("Obra", id, "Hilo", nuevoHilo.id, null, false, todayISO())],
               }));
+              if (accionPendiente) setAcciones((prev) => [accionPendiente, ...prev]);
               setShowAgregarTareaEntidad(false);
             }}
             onClose={() => setShowAgregarTareaEntidad(false)}
