@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.66.0";
+const APP_VERSION = "2.67.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -2134,7 +2134,7 @@ export default function CRM({ userId, onLogout }) {
       )}
 
       {showResumenHoy && (
-        <ResumenHoyModal core={core} acciones={acciones} onOpen={openDetail} onClose={() => setShowResumenHoy(false)} />
+        <ResumenHoyModal core={core} setCore={setCore} acciones={acciones} setAcciones={setAcciones} onOpen={openDetail} onClose={() => setShowResumenHoy(false)} />
       )}
 
       {avisoEnPantalla && (
@@ -2169,7 +2169,7 @@ const TITULOS_EVENTO_RESUMEN = { tarea: "Tareas", subtarea: "Subtareas", accionT
 const DIAS_SEMANA_LARGO = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
 const nombreDia = (iso) => DIAS_SEMANA_LARGO[(parseISO(iso).getDay() + 6) % 7];
 
-function ResumenHoyModal({ core, acciones, onOpen, onClose }) {
+function ResumenHoyModal({ core, setCore, acciones, setAcciones, onOpen, onClose }) {
   const t = todayISO();
   const hoyDate = parseISO(t);
   const finSemanaActual = toISO(addDays(startOfWeekMonday(hoyDate), 4));
@@ -2184,6 +2184,8 @@ function ResumenHoyModal({ core, acciones, onOpen, onClose }) {
   const [tramosCount, setTramosCount] = useState(0);
   const [mostroTodas, setMostroTodas] = useState(false);
   const [verSinFecha, setVerSinFecha] = useState(false);
+  const [fechaReprogramar, setFechaReprogramar] = useState(t);
+  const [confirmarReprogramar, setConfirmarReprogramar] = useState(false);
 
   const esTareaAccion = (a) => core.hilos.find((h) => h.id === a.hiloId)?.tipo === "tarea";
 
@@ -2217,6 +2219,38 @@ function ResumenHoyModal({ core, acciones, onOpen, onClose }) {
   const hoy = eventos.filter((e) => e.fecha === t);
   const vencidas = eventos.filter((e) => e.fecha < t).sort(porFecha);
   const proximosDefault = eventos.filter((e) => (e.fecha > t && e.fecha <= finSemanaActual) || (tramosCount === 0 && e.fecha === lunesProximo)).sort(porFecha);
+
+  // Reprograma de una sola vez todas las vencidas a la fecha elegida a mano — a diferencia del
+  // selector de programación (período/específica), acá no se propone una fecha ajustada por
+  // hilo/acción: es un movimiento masivo explícito, se usa la fecha tal cual se cargó.
+  const reprogramarVencidas = () => {
+    const nuevaFecha = fechaReprogramar;
+    if (!nuevaFecha) return;
+    const idsAcciones = new Set(vencidas.filter((e) => e.tipo === "seguimiento" || e.tipo === "accionTarea").map((e) => e.accion.id));
+    const hilosConFecha = new Set(vencidas.filter((e) => e.tipo === "tarea").map((e) => e.hilo.id));
+    const subtareasPorHilo = new Map();
+    vencidas.filter((e) => e.tipo === "subtarea").forEach((e) => {
+      if (!subtareasPorHilo.has(e.hilo.id)) subtareasPorHilo.set(e.hilo.id, new Set());
+      subtareasPorHilo.get(e.hilo.id).add(e.subtarea.id);
+    });
+
+    if (idsAcciones.size > 0) {
+      setAcciones((prev) => prev.map((a) => (idsAcciones.has(a.id) ? { ...a, fechaProgramada: nuevaFecha, avisoEnviado: false, avisoVistoEnApp: false } : a)));
+    }
+    if (hilosConFecha.size > 0 || subtareasPorHilo.size > 0) {
+      setCore((prev) => ({
+        ...prev,
+        hilos: prev.hilos.map((h) => {
+          let hh = h;
+          if (hilosConFecha.has(h.id)) hh = { ...hh, fecha: nuevaFecha, avisoEnviado: false, avisoVistoEnApp: false };
+          const subIds = subtareasPorHilo.get(h.id);
+          if (subIds) hh = { ...hh, subtareas: (hh.subtareas || []).map((s) => (subIds.has(s.id) ? { ...s, fecha: nuevaFecha, avisoEnviado: false, avisoVistoEnApp: false } : s)) };
+          return hh;
+        }),
+      }));
+    }
+    setConfirmarReprogramar(false);
+  };
 
   const tramos = [];
   for (let c = 1; c <= tramosCount; c++) {
@@ -2299,6 +2333,19 @@ function ResumenHoyModal({ core, acciones, onOpen, onClose }) {
       <div>
         <Bloque titulo="Hoy" items={hoy} vacio="Nada programado para hoy." />
         <Bloque titulo="Vencidas" tono="text-[var(--tema-urgenciaVencida)]" items={vencidas} vacio="No hay pendientes vencidas." />
+        {vencidas.length > 0 && (
+          <div className="flex gap-2 mb-3 -mt-1.5">
+            <input type="date" min={t} className={`${inputCls} flex-1`} value={fechaReprogramar} onChange={(e) => setFechaReprogramar(e.target.value)} />
+            <button
+              type="button"
+              onClick={() => setConfirmarReprogramar(true)}
+              disabled={!fechaReprogramar}
+              className="shrink-0 border border-[#D8D2C4] rounded-sm px-3 text-xs font-bold text-[#2A2118] disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Reprogramar vencidas
+            </button>
+          </div>
+        )}
         <Bloque titulo="Próximos" items={proximosDefault} vacio="Nada programado por ahora." />
 
         {tramos.map((tr) => (
@@ -2335,6 +2382,15 @@ function ResumenHoyModal({ core, acciones, onOpen, onClose }) {
           </div>
         )}
       </div>
+      {confirmarReprogramar && (
+        <ConfirmDeleteModal
+          title="¿Confirmás?"
+          texto={`Se van a reprogramar ${vencidas.length} actividad${vencidas.length === 1 ? "" : "es"} vencida${vencidas.length === 1 ? "" : "s"} para el ${fmtDate(fechaReprogramar)}.`}
+          confirmLabel="Sí, reprogramar"
+          onCancel={() => setConfirmarReprogramar(false)}
+          onConfirm={reprogramarVencidas}
+        />
+      )}
     </Modal>
   );
 }
