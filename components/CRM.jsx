@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.70.2";
+const APP_VERSION = "2.70.3";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -1900,6 +1900,26 @@ export default function CRM({ userId, onLogout }) {
         });
         c = { ...c, hilos: hilosConvertidos };
         a = a2;
+        const ts = new Date().toISOString();
+        ultimoUpdatedAtRef.current = ts;
+        await saveCrmField(userId, "core", c, 0, ts);
+        await saveCrmField(userId, "acciones", a, 0, ts);
+      }
+      // Migración: limpiar acciones/subtareas Pendientes colgadas de hilos que ya estaban
+      // cerrados antes de que cerrar un hilo (CasillaFinalizar) empezara a resolverlas solo —
+      // si no, seguían contando como "vencidas" en Resumen de hoy, Calendario, el Tablero de
+      // control y el aviso push. No toca acciones "Realizada" (el historial queda intacto).
+      const hayPendientesDeHiloCerrado = a.some((acc) => acc.estado === "Pendiente" && c.hilos.find((h) => h.id === acc.hiloId)?.estado === "Cerrado");
+      const haySubtareaPendienteDeTareaCerrada = c.hilos.some((h) => h.tipo === "tarea" && h.estado === "Cerrado" && (h.subtareas || []).some((s) => !s.hecha));
+      if (hayPendientesDeHiloCerrado || haySubtareaPendienteDeTareaCerrada) {
+        a = a.filter((acc) => !(acc.estado === "Pendiente" && c.hilos.find((h) => h.id === acc.hiloId)?.estado === "Cerrado"));
+        c = {
+          ...c,
+          hilos: c.hilos.map((h) => {
+            if (h.tipo !== "tarea" || h.estado !== "Cerrado" || !(h.subtareas || []).some((s) => !s.hecha)) return h;
+            return { ...h, subtareas: h.subtareas.map((s) => (s.hecha ? s : { ...s, hecha: true })) };
+          }),
+        };
         const ts = new Date().toISOString();
         ultimoUpdatedAtRef.current = ts;
         await saveCrmField(userId, "core", c, 0, ts);
