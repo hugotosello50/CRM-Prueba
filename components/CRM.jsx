@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.70.3";
+const APP_VERSION = "2.70.4";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -4917,21 +4917,15 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
       </>
     );
 
+    // Una tarea simple (sin repetir, nunca "avanzada") no muestra nada de esto — la fecha ya
+    // se ve en el encabezado y se edita entera (fecha/hora/aviso/recurrencia/título) desde el
+    // lápiz de "editar tarea". El bloque de abajo solo tiene sentido para tareas recurrentes o
+    // que ya tienen historial (se usó "Avanzar" al menos una vez): ahí sí sirve seguir viéndolo
+    // y poder avanzar de nuevo.
+    const tareaConAvance = primary && (primary.recurrente || historial.length > 0);
+
     const bodyTarea = (
       <>
-        {/* Bloque: acción pendiente — siempre visible, misma lógica que en seguimientos. */}
-        {primary && (
-          <div className="flex items-start justify-between gap-2 mt-2">
-            {primary.notaPlanificada ? (
-              <p className="text-xs font-bold text-[#2A2118] pl-2.5 flex-1 min-w-0" style={{ borderLeft: `10px solid ${colorBorde}` }}><TextoConMenciones texto={primary.notaPlanificada} onOpen={onOpen} /></p>
-            ) : <span />}
-            <div className="flex items-center gap-0.5 shrink-0">
-              <IconBtn label="Editar acción" onClick={() => setEditingAccion(primary)}><Pencil size={16} /></IconBtn>
-              <IconBtn label="Eliminar acción" danger onClick={() => setDeletingAccionId(primary.id)}><Trash2 size={16} /></IconBtn>
-            </div>
-          </div>
-        )}
-
         <div className="mt-1.5">
           {contenidoContexto}
         </div>
@@ -4940,15 +4934,13 @@ function HiloAgendaCard({ hilo: hiloProp, accionesBucket, core, setCore, accione
           <p className="text-[10px] text-[var(--tema-peligro)] font-bold tracking-wide mt-1.5">⚠ Este hilo tiene {bucket.length} acciones pendientes a la vez — revisalo, no debería pasar.</p>
         )}
 
-        {primary && (
+        {tareaConAvance && (
           <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-dashed border-[#E4DECF] flex-nowrap">
             <div className="flex items-center gap-1.5 ml-auto min-w-0">
-              {tipoPrimary && <span className="min-w-0 flex-1 truncate text-right text-xs font-mono font-bold text-black" title={tipoPrimary.nombre}>{tipoPrimary.nombre}</span>}
               <span className="shrink-0 text-[10px] font-bold font-mono px-2 py-1 rounded-sm bg-[#F1DFB9] text-[#5C3F18]">
                 {fmtDateHora(masUrgente.fechaProgramada, masUrgente.horaProgramada, core.parametros.formatoHora, true)}
               </span>
               {primary.aviso?.activo && <Bell size={13} className="shrink-0 text-[var(--tema-vinculo)]" aria-label="Tiene aviso programado" />}
-              <span className="shrink-0"><IconBtn label="Reprogramar" onClick={() => setShowReprogramar(true)}><Pencil size={13} /></IconBtn></span>
               {primary.recurrente && <Repeat size={12} className="shrink-0 text-[#8A8272]" />}
               <button
                 type="button"
