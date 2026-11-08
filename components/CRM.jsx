@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabaseClient";
 // ---------------------------------------------------------------------------
 // Storage (Supabase, una fila por usuario en la tabla crm_data)
 // ---------------------------------------------------------------------------
-const APP_VERSION = "2.70.4";
+const APP_VERSION = "2.71.0";
 
 // Tipos de relación con id fijo (los usa el código para auto-vincular y para los informes):
 // la empresa dueña de una obra, y la jerarquía de grupo (cabecera/subsidiaria).
@@ -3327,10 +3327,12 @@ function EditarTareaForm({ hilo, core, setCore, acciones = [], setAcciones, onCl
     }
     const r = resolverProgramacion(forzar ? { ...prog, confirmar: true } : prog, acciones, core.parametros);
     const avisoCambio = !pendiente || r.fecha !== pendiente.fechaProgramada || r.hora !== (pendiente.horaProgramada || "") || JSON.stringify(r.aviso) !== JSON.stringify(pendiente.aviso || null);
+    // Cambiar la fecha o la periodicidad a mano arranca la serie repetitiva de nuevo desde ahí.
+    const serieCambio = pendiente && (r.fecha !== pendiente.fechaProgramada || r.repiteCadaN !== (pendiente.repiteCadaN ?? null) || r.repiteUnidad !== (pendiente.repiteUnidad ?? null));
     setAcciones((prev) => {
       if (pendiente) {
         return prev.map((a) => (a.id === pendiente.id
-          ? { ...a, fechaProgramada: r.fecha, horaProgramada: r.hora, aviso: r.aviso, avisoEnviado: avisoCambio ? false : a.avisoEnviado, avisoVistoEnApp: avisoCambio ? false : a.avisoVistoEnApp, recurrente: r.recurrente, repiteCadaN: r.repiteCadaN, repiteUnidad: r.repiteUnidad }
+          ? { ...a, fechaProgramada: r.fecha, horaProgramada: r.hora, aviso: r.aviso, avisoEnviado: avisoCambio ? false : a.avisoEnviado, avisoVistoEnApp: avisoCambio ? false : a.avisoVistoEnApp, recurrente: r.recurrente, repiteCadaN: r.repiteCadaN, repiteUnidad: r.repiteUnidad, fechaAncla: serieCambio ? null : a.fechaAncla }
           : a));
       }
       return [accionPendienteDeTarea(hilo.id, r, prev), ...prev];
@@ -3676,11 +3678,40 @@ function CasillaFinalizar({ hilo, acciones, setAcciones, setCore, size = 20 }) {
     setPidiendoTexto(false);
   };
 
+  const cerrar = () => {
+    if (tieneHistorial) setPidiendoTexto(true);
+    else cerrarDirecto();
+  };
+
+  // Tarea repetitiva: tildarla completa solo esta vez y genera sola la próxima fecha — salvo
+  // que se elija terminarla del todo.
+  const pendienteRecurrente = hilo.tipo === "tarea" && !finalizado
+    ? acciones.find((a) => a.hiloId === hilo.id && a.estado === "Pendiente" && a.recurrente && a.repiteCadaN && a.repiteUnidad)
+    : null;
+  const [preguntandoRecurrente, setPreguntandoRecurrente] = useState(false);
+  const completarOcurrencia = (notaHecho) => {
+    const p = pendienteRecurrente;
+    setAcciones((prev) => {
+      const numero = Math.max(0, ...prev.map((a) => a.numero || 0)) + 1;
+      const nueva = {
+        ...p, id: uid("A"), estado: "Pendiente", fechaRealizada: "", notaHecho: "",
+        fechaProgramada: proximaFechaRecurrente(p.fechaProgramada, p.fechaAncla, p.repiteCadaN, p.repiteUnidad),
+        fechaAncla: p.fechaAncla || p.fechaProgramada,
+        origenId: p.id, destinoId: null, numero, fechaCreacion: todayISO(), secuencia: Date.now() + 1,
+        avisoEnviado: false, avisoVistoEnApp: false,
+      };
+      return [nueva, ...prev.map((a) => (a.id === p.id
+        ? { ...a, estado: "Realizada", fechaRealizada: todayISO(), fechaProgramada: "", horaProgramada: "", notaHecho, destinoId: nueva.id, recurrente: false, repiteCadaN: null, repiteUnidad: null, aviso: null, secuencia: Date.now() }
+        : a))];
+    });
+    setPreguntandoRecurrente(false);
+  };
+
   const onClick = (e) => {
     e.stopPropagation();
     if (finalizado) { reabrir(); return; }
-    if (tieneHistorial) setPidiendoTexto(true);
-    else cerrarDirecto();
+    if (pendienteRecurrente) setPreguntandoRecurrente(true);
+    else cerrar();
   };
 
   return (
@@ -3699,7 +3730,52 @@ function CasillaFinalizar({ hilo, acciones, setAcciones, setCore, size = 20 }) {
           <TextoCierreForm onConfirmar={cerrarConTexto} onCancelar={() => setPidiendoTexto(false)} />
         </Modal>
       )}
+      {preguntandoRecurrente && (
+        <Modal title="Tarea repetitiva" onClose={() => setPreguntandoRecurrente(false)}>
+          <CompletarRecurrenteForm
+            pendiente={pendienteRecurrente}
+            onCompletar={completarOcurrencia}
+            onFinalizar={() => { setPreguntandoRecurrente(false); cerrar(); }}
+          />
+        </Modal>
+      )}
     </>
+  );
+}
+
+// Próxima fecha de una tarea repetitiva: se suma el período desde la fecha que tenía (no desde
+// hoy), salteando las ocurrencias que ya quedaron atrás. Se cuenta siempre desde la fecha
+// original (k períodos) y, en meses, un día inexistente (31 → febrero) queda en el último día del
+// mes — así un "todos los 31" no se va corriendo. Misma regla que lib/acciones.js.
+function sumarPeriodoRecurrente(fechaISO, n, unidad) {
+  const [y, m, d] = fechaISO.split("-").map(Number);
+  if (unidad === "meses") return toISO(new Date(y, m - 1 + n, Math.min(d, new Date(y, m - 1 + n + 1, 0).getDate())));
+  return toISO(new Date(y, m - 1, d + n * (unidad === "semanas" ? 7 : 1)));
+}
+function proximaFechaRecurrente(fechaActual, ancla, cadaN, unidad) {
+  const hoy = todayISO();
+  const actual = fechaActual || hoy;
+  const base = ancla || actual;
+  const minimo = actual > hoy ? actual : hoy;
+  const n = Number(cadaN) || 1;
+  let k = 1;
+  let f = sumarPeriodoRecurrente(base, n, unidad);
+  while (f <= minimo) f = sumarPeriodoRecurrente(base, n * ++k, unidad);
+  return f;
+}
+
+function CompletarRecurrenteForm({ pendiente, onCompletar, onFinalizar }) {
+  const [nota, setNota] = useState("");
+  const proxima = proximaFechaRecurrente(pendiente.fechaProgramada, pendiente.fechaAncla, pendiente.repiteCadaN, pendiente.repiteUnidad);
+  return (
+    <div>
+      <p className="text-sm text-[#2A2118] mb-3">Se repite cada {pendiente.repiteCadaN} {pendiente.repiteUnidad}. Al completarla, la próxima queda programada para el <span className="font-bold">{fmtDate(proxima)}</span>.</p>
+      <Field label="¿Qué hiciste? (opcional, queda en el historial)">
+        <textarea autoFocus className={inputCls} rows={2} value={nota} onChange={(e) => setNota(e.target.value)} />
+      </Field>
+      <PrimaryBtn full onClick={() => onCompletar(nota)}>Completar y programar la próxima</PrimaryBtn>
+      <button onClick={onFinalizar} className="w-full mt-2 border border-[#D8D2C4] rounded-sm py-2.5 font-bold text-sm text-[#6B6352]">Finalizar la tarea (no repetir más)</button>
+    </div>
   );
 }
 
